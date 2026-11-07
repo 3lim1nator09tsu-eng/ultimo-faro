@@ -1,0 +1,2651 @@
+// Client del prototipo: disegna lo stato, raccoglie i tocchi, non decide mai le regole.
+import { ABILITIES, APEX_RANK, AbilityId, ENEMIES, GameMode, HARDCORE_TOWERS, LEVELS, MODS, LOADOUT_SIZE, MAP_H, MAP_W, MAX_RANK, RANK_COSTS, RULES, STARTER_TOWERS, TICKS_PER_SECOND, TILE, TOWERS, TOWER_ORDER, TRACKS, TowerKind, Track, Branch, levelById } from "../sim-core/content";
+import { Command, GameEvent, GameOptions, GameState, apexBlock, apexPrice, applyCommands, modsOf, perleFor, cellEmerged, createGame, effStats, hashState, isBuildable, laneIsOpen, levelOf, rankedStats, restore, rewardFor, sellValue, specPrice, statsIn, snapshot, starsFor, step, upgradePrice, waveCount, wavePreview } from "../sim-core/sim";
+import { playBot } from "../sim-core/bot";
+import { HARDCORE, ModeDef, NIGHTS, SURVIVAL, disgeloFor, modeDef } from "../sim-core/modes";
+import { LocalTransport, Net, RealtimeTransport, Transport, roomCode } from "./net";
+import { NetMatch, Player, Setup } from "./netplay";
+import { renderLobby, renderOnline } from "./online-ui";
+import { AdminApi, Override, levelRef, renderAdminDrawer, renderAdminPanel } from "./admin";
+import { ChangeEntry, MEDALS, MISSIONS, MissionSlot, Totals, VERSION_NOTES, emptyTotals, levelFromXp, levelReward, missionProgress, missionTarget, missionText, newSlot } from "./progress";
+import { COLORS, applyMap, drawEnemy, drawFaro, drawShoal, drawTide, drawTowerShape, mapToScreen, renderBackground, toPx } from "./draw";
+
+const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
+const fmt = (n: number) => n.toLocaleString("it-IT");
+const canvas = $<HTMLCanvasElement>("map");
+const ctx = canvas.getContext("2d")!;
+const stage = $("stage");
+const app = $("app");
+const reducedMotion = (() => {
+  try {
+    return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  } catch {
+    return false;
+  }
+})();
+
+const store = {
+  get(key: string): string | null {
+    try {
+      return localStorage.getItem(key);
+    } catch {
+      return null;
+    }
+  },
+  set(key: string, value: string) {
+    try {
+      localStorage.setItem(key, value);
+    } catch {
+      /* il gioco funziona anche senza memoria locale */
+    }
+  },
+};
+
+// ---------- stato del client ----------
+
+interface Line {
+  who: string;
+  text: string;
+}
+
+const INTRO: Line[] = [
+  { who: "Anselma", text: "La Marea Nera risale il canale. Questo è l'ultimo faro acceso sulla costa di Valdena." },
+  { who: "Tobia", text: "Ho tre progetti e poco legname. Trascina una torre su una riva libera, vicino all'acqua nera." },
+  { who: "Anselma", text: "Tieni acceso il Faro per dieci ondate. Ogni nemico che passa gli toglie vite." },
+];
+const PORTO_LINES: Record<number, Line[]> = {
+  1: [{ who: "Tobia", text: "Durante l'ondata hai il Fascio del Faro: toccalo, poi tocca il gruppo più fitto. Si ricarica da solo." }],
+  2: [{ who: "Rin", text: "Corridori! Veloci ma fragili. Se ti sfuggono, la Gelata ferma tutti i nemici per tre secondi." }],
+  3: [{ who: "Rin", text: "Arrivano i Bruti. Sono corazzati: una balestra semplice li graffia appena. Pensa al Mortaio, o al Dardo perforante." }],
+  6: [{ who: "Tobia", text: "Un'intera marea di Risacche. Il Mortaio ne prende molte insieme, se le rallenti col Soffio." }],
+  10: [{ who: "Anselma", text: "Quella sagoma in fondo è il Grande Bruto. Se raggiunge il Faro, porta via 8 vite. Preparati." }],
+};
+
+let state: GameState = createGame(newSeed(), { allowed: STARTER_TOWERS });
+let log: Array<[number, Command[]]> = [];
+let speed = 1;
+let paused = false;
+let accumulator = 0;
+let lastFrame = 0;
+let placing: TowerKind | null = null;
+let ghost: { cx: number; cy: number } | null = null;
+let dragFromCard = false;
+let selectedId: number | null = null;
+let dialogQueue: Line[] = [];
+let soundOn = store.get("faro.audio") !== "off";
+let endShown = false;
+let flash = 0;
+let background: HTMLCanvasElement | null = null;
+let T = 40; // lato di una casella in pixel CSS
+let dpr = 1;
+let rot = false; // carta ruotata in verticale
+let below = false; // plancia sotto la carta
+let bgKey = "";
+let inMenu = true;
+let aiming = false;
+let aimPoint: { x: number; y: number } | null = null;
+let iceFlash = 0;
+let lastReward = 0;
+let lastCombo = 0;
+let goldFlash = 0;
+let dpsOn = false;
+const builtAt = new Map<number, number>();
+function towerDps(t: { id: number; damageDone: number }): number {
+  if (!builtAt.has(t.id)) builtAt.set(t.id, state.tick);
+  const secs = Math.max(1, (state.tick - builtAt.get(t.id)!) / TICKS_PER_SECOND);
+  return t.damageDone / secs;
+}
+const prevPos = new Map<number, { x: number; y: number }>();
+const aim = new Map<number, number>();
+
+interface Fx {
+  kind: "tracer" | "blast" | "float" | "zap" | "beam" | "ring";
+  pts?: number[];
+  x: number;
+  y: number;
+  x2?: number;
+  y2?: number;
+  r?: number;
+  text?: string;
+  color?: string;
+  born: number;
+  life: number;
+}
+let fx: Fx[] = [];
+
+function newSeed(): number {
+  // Il seed nasce qui e poi entra nella simulazione: da quel punto la partita è deterministica.
+  return (Date.now() ^ Math.floor(Math.random() * 0x7fffffff)) | 0;
+}
+
+const LEVEL_LINES: Record<string, Record<number, Line[]>> = {
+  porto: PORTO_LINES,
+  foce: {
+    1: [{ who: "Rin", text: "Due foci, due file di nemici. Le corsie si uniscono a metà strada: lì una torre le copre entrambe." }],
+    5: [{ who: "Tobia", text: "Quei congegni viola sono Sabotatori: stordiscono le torri vicine. Un Medico le libera, e la sua Cura totale le protegge tutte." }],
+    10: [{ who: "Anselma", text: "Il Grande Bruto risale la foce nord. Se raggiunge il Faro, porta via 8 vite." }],
+  },
+  marea: {
+    1: [{ who: "Anselma", text: "Con la bassa marea il fondale cambia. Guarda lo sbarramento a sud: prima o poi cederà." }],
+    4: [{ who: "Rin", text: "Il canale di marea si è aperto! Adesso arrivano anche da sud." }],
+    6: [{ who: "Tobia", text: "Le secche sono emerse: ora si può costruire in mezzo al canale. Un posto perfetto per un Mortaio." }],
+    10: [{ who: "Anselma", text: "Il Grande Bruto arriva dal canale di marea. Ultima ondata." }],
+  },
+};
+
+// Dialoghi delle modalità e delle Notti: compaiono una volta sola, come quelli della campagna.
+const MODE_LINES: Record<string, Record<number, Line[]>> = {
+  easy: {
+    1: [{ who: "Anselma", text: "Sopravvivenza: niente storia, solo la marea. Venti ondate, poi il Grande Bruto." }],
+    20: [{ who: "Tobia", text: "Eccolo. Il Grande Bruto non si ferma per niente: tutto il fuoco su di lui." }],
+  },
+  medium: {
+    15: [{ who: "Rin", text: "Da qui la marea porta i primi modificatori. Leggi l'anteprima dell'ondata prima di partire." }],
+    25: [{ who: "Anselma", text: "Il Capitano Annegato. Evoca Risacche mentre avanza: non lasciare che la corsia si riempia." }],
+  },
+  molten: {
+    1: [{ who: "Tobia", text: "Brace nell'acqua nera. I Tizzoni non sentono il Soffio: rallentarli non serve, vanno colpiti." }],
+    6: [{ who: "Rin", text: "Magmatici: quando cadono si spaccano in due Tizzoni. Il Mortaio prende tutti i pezzi." }],
+    30: [{ who: "Anselma", text: "Il Colosso di Brace. Due volte si coprirà di roccia fusa. Tieni pronto il Fascio." }],
+  },
+  fallen: {
+    3: [{ who: "Rin", text: "Spettri. Le torri normali non li vedono: servono il Cecchino, le torri Hardcore, o un Capitano accanto alle altre." }],
+    35: [{ who: "Anselma", text: "Il Re Caduto. Tre volte si rialzerà con lo scudo, e i suoi Cavalieri gli aprono la strada." }],
+  },
+  frost: {
+    2: [{ who: "Tobia", text: "Brinati. Quando muoiono vicino a una torre la congelano. Tienili lontani, o tieni vicino un Medico." }],
+    40: [{ who: "Anselma", text: "La Regina dell'Inverno. Il suo canto ferma tutto ciò che tocca. Questa è la notte più fredda della costa." }],
+  },
+  hardcore: {
+    1: [{ who: "Anselma", text: "Hardcore. Cinquanta ondate, dieci vite, ogni nemico con qualcosa in più. In fondo c'è il Leviatano." }],
+    50: [{ who: "Rin", text: "Il Leviatano emerge. Si rigenera, evoca, ruggisce. Le Perle Nere che hai speso servono adesso." }],
+  },
+  "natale:1": {
+    1: [{ who: "Anselma", text: "La vigilia. Qualcuno ha spento le luci della festa sulla costa, e la marea ha portato la neve." }],
+    20: [{ who: "Tobia", text: "Il Folletto Ladro! Ruba il cash mentre avanza: spendi prima che lo prenda lui." }],
+  },
+  "natale:2": { 25: [{ who: "Rin", text: "La Renna Nera. Scatta all'improvviso: tieni la Gelata per quando corre." }] },
+  "natale:3": { 30: [{ who: "Tobia", text: "Il Pupazzo Colossale. Se cade, si spezza in sei pupazzi più piccoli." }] },
+  "natale:4": { 35: [{ who: "Anselma", text: "La Befana vola sulla scopa, e nessuno la vede. Solo chi rileva gli invisibili può colpirla." }] },
+  "natale:5": {
+    1: [{ who: "Anselma", text: "L'ultima notte. Tutti quelli che hai respinto torneranno, e dietro di loro c'è Krampus." }],
+    40: [{ who: "Rin", text: "Krampus. Quattro scudi, ruba, evoca, stordisce. Se il Faro regge stanotte, regge per sempre." }],
+  },
+};
+const lineKey = () => (state.mode === "natale" ? `natale:${state.night}` : state.mode);
+
+// ---------- progressi permanenti ----------
+// Per ora restano su questo dispositivo; con Supabase passeranno al ledger del server.
+
+interface Meta {
+  v: 2;
+  schegge: number;
+  earned: number;
+  unlocked: TowerKind[];
+  loadout: TowerKind[];
+  ranks: Record<TowerKind, number>;
+  stars: Record<string, number>;
+  wins: Record<string, number>;
+  bestWave: Record<string, number>;
+  introSeen: boolean;
+  seenLines: string[];
+  perle: number;
+  xp: number;
+  totals: Totals;
+  missions: MissionSlot[];
+  missionNext: number;
+  hcWins: Record<string, number>;
+  medals: string[];
+  adminEnabled: boolean;
+  overrides: Override[];
+  changes: ChangeEntry[];
+  newsSeen: number;
+  modeWins: Record<string, number>;
+  modeBest: Record<string, number>;
+  nightWins: Record<string, number>;
+  nightBest: Record<string, number>;
+  mapPick: string;
+  account: string; // id dell'account a cui è legato questo salvataggio
+  rev: number;
+}
+
+function freshMeta(): Meta {
+  const ranks = {} as Record<TowerKind, number>;
+  for (const k of TOWER_ORDER) ranks[k] = 1;
+  const totals = emptyTotals();
+  return {
+    v: 2, schegge: 0, earned: 0, unlocked: [...STARTER_TOWERS], loadout: [...STARTER_TOWERS], ranks, stars: {}, wins: {}, bestWave: {}, introSeen: false, seenLines: [],
+    perle: 0, xp: 0, totals, missions: [0, 1, 2].map((i) => newSlot(i, totals)), missionNext: 3, hcWins: {}, medals: [], adminEnabled: false, overrides: [], changes: [], newsSeen: 0,
+    modeWins: {}, modeBest: {}, nightWins: {}, nightBest: {}, mapPick: "porto", account: "", rev: 0,
+  };
+}
+
+function loadMeta(raw: string | null = store.get("faro.meta.v1")): Meta {
+  const m = freshMeta();
+  try {
+    if (!raw) return m;
+    const d = JSON.parse(raw) as Record<string, unknown> & Partial<Meta>;
+    const n = (v: unknown, lo: number, hi: number, fb: number) => (typeof v === "number" && Number.isFinite(v) ? Math.max(lo, Math.min(hi, Math.floor(v))) : fb);
+    const record = (v: unknown, hi: number) => {
+      const out: Record<string, number> = {};
+      if (v && typeof v === "object") for (const l of LEVELS) if (l.id in (v as object)) out[l.id] = n((v as Record<string, unknown>)[l.id], 0, hi, 0);
+      return out;
+    };
+    m.schegge = n(d.schegge, 0, 1e9, 0);
+    m.earned = n(d.earned, 0, 1e9, 0);
+    m.introSeen = !!d.introSeen;
+    if (Array.isArray(d.unlocked)) for (const k of d.unlocked) if (TOWER_ORDER.includes(k) && !m.unlocked.includes(k)) m.unlocked.push(k);
+    for (const k of TOWER_ORDER) m.ranks[k] = n(d.ranks?.[k], 1, MAX_RANK, 1);
+    if (d.v === 2) {
+      m.stars = record(d.stars, 3);
+      m.wins = record(d.wins, 1e6);
+      m.bestWave = record(d.bestWave, 1e6);
+      if (Array.isArray(d.seenLines)) m.seenLines = d.seenLines.filter((x) => typeof x === "string");
+      if (Array.isArray(d.loadout)) m.loadout = d.loadout.filter((k, i, all) => m.unlocked.includes(k) && all.indexOf(k) === i).slice(0, LOADOUT_SIZE);
+    } else {
+      // Progressi della versione 0.3: valgono per il Porto.
+      m.stars.porto = n(d.bestStars, 0, 3, 0);
+      m.wins.porto = n(d.campaignWins, 0, 1e6, 0);
+      m.bestWave.porto = n(d.bestWave, 0, 1e6, 0);
+      m.loadout = m.unlocked.slice(0, LOADOUT_SIZE);
+    }
+    if (!m.loadout.length) m.loadout = [...STARTER_TOWERS];
+    m.perle = n(d.perle, 0, 1e9, 0);
+    m.xp = n(d.xp, 0, 1e12, m.earned);
+    if (d.totals && typeof d.totals === "object") for (const k of Object.keys(m.totals) as Array<keyof Totals>) m.totals[k] = n((d.totals as unknown as Record<string, unknown>)[k], 0, 1e12, 0);
+    if (Array.isArray(d.missions) && d.missions.length === 3) {
+      m.missions = d.missions.map((x: MissionSlot) => ({ pool: n(x?.pool, 0, MISSIONS.length - 1, 0), cycle: n(x?.cycle, 0, 1000, 0), base: n(x?.base, 0, 1e12, 0) }));
+      m.missionNext = n(d.missionNext, 3, 1e6, 3);
+    }
+    m.hcWins = record(d.hcWins, 1e6);
+    if (Array.isArray(d.medals)) m.medals = d.medals.filter((x) => typeof x === "string");
+    m.adminEnabled = !!d.adminEnabled;
+    if (Array.isArray(d.overrides)) m.overrides = d.overrides.filter((o) => o && TOWER_ORDER.includes(o.kind) && typeof o.value === "number");
+    if (Array.isArray(d.changes)) m.changes = d.changes.filter((c) => c && typeof c.title === "string").slice(-50);
+    m.newsSeen = n(d.newsSeen, 0, 1e6, 0);
+    const keyed = (v: unknown, keys: string[]) => {
+      const out: Record<string, number> = {};
+      if (v && typeof v === "object") for (const k of keys) if (k in (v as object)) out[k] = n((v as Record<string, unknown>)[k], 0, 1e6, 0);
+      return out;
+    };
+    const modeKeys = [...SURVIVAL.map((x) => x.id as string), "hardcore"];
+    const nightKeys = NIGHTS.map((x) => String(x.night));
+    m.modeWins = keyed(d.modeWins, modeKeys);
+    m.modeBest = keyed(d.modeBest, modeKeys);
+    m.nightWins = keyed(d.nightWins, nightKeys);
+    m.nightBest = keyed(d.nightBest, nightKeys);
+    if (typeof d.mapPick === "string" && LEVELS.some((l) => l.id === d.mapPick)) m.mapPick = d.mapPick;
+    if (typeof d.account === "string") m.account = d.account;
+    m.rev = n(d.rev, 0, 1e9, 0);
+  } catch {
+    /* dati illeggibili: si riparte da zero */
+  }
+  return m;
+}
+
+const levelOpen = (i: number) => i === 0 || (meta.wins[LEVELS[i - 1].id] ?? 0) > 0;
+const modeOpen = (m: ModeDef) => !m.unlock || (meta.modeWins[m.unlock] ?? 0) > 0;
+const nightOpen = (n: number) => n === 1 || (meta.nightWins[String(n - 1)] ?? 0) > 0;
+const modeName = (id: string) => (id === "hardcore" ? "Hardcore" : SURVIVAL.find((x) => x.id === id)?.name ?? id);
+/** Il Disgelo dipende dalla data di questo dispositivo; in multigiocatore vale quella di chi ospita. */
+function disgelo() {
+  const d = new Date();
+  return disgeloFor(d.getFullYear(), d.getMonth() + 1, d.getDate());
+}
+
+let meta = loadMeta();
+const net = new Net();
+let match: NetMatch | null = null;
+let cloudTimer = 0;
+let cloudNote = "";
+function saveMeta() {
+  meta.rev += 1;
+  store.set("faro.meta.v1", JSON.stringify(meta));
+  // Con l'accesso fatto, il salvataggio va anche online (raggruppando le modifiche ravvicinate).
+  if (net.session && meta.account === net.session.userId) {
+    clearTimeout(cloudTimer);
+    cloudTimer = window.setTimeout(pushCloud, 2500);
+  }
+}
+async function pushCloud() {
+  if (!net.session) return;
+  const { adminEnabled: _a, ...rest } = meta;
+  void _a;
+  try {
+    await net.pushSave(rest, meta.rev, meta.earned, meta.totals.wins, meta.totals.perle);
+    cloudNote = `Salvato online alle ${new Date().toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })}`;
+  } catch (e) {
+    cloudNote = `Salvataggio online non riuscito: ${(e as Error).message}`;
+  }
+  if (inMenu) renderOnlineSection();
+}
+/** Dopo l'accesso: il salvataggio online vince su quello del dispositivo, che resta come copia di riserva. */
+async function syncAfterLogin() {
+  if (!net.session) return;
+  const id = net.session.userId;
+  try {
+    const row = await net.loadSave();
+    if (row && row.meta && typeof row.meta === "object") {
+      store.set("faro.meta.backup", JSON.stringify(meta));
+      const keepAdmin = meta.adminEnabled;
+      meta = loadMeta(JSON.stringify(row.meta));
+      meta.adminEnabled = keepAdmin || net.session.isAdmin;
+      meta.account = id;
+      store.set("faro.meta.v1", JSON.stringify(meta));
+      applyOverrides();
+      cloudNote = "Progressi caricati dal salvataggio online";
+    } else {
+      meta.account = id;
+      await pushCloud();
+      cloudNote = "Progressi di questo dispositivo salvati online";
+    }
+  } catch (e) {
+    cloudNote = `Salvataggio online non disponibile: ${(e as Error).message}`;
+  }
+  if (net.session?.isAdmin) meta.adminEnabled = true;
+  store.set("faro.meta.v1", JSON.stringify(meta));
+  if (inMenu) renderMenu();
+}
+
+// Valori originali delle torri, per poter annullare le modifiche di bilanciamento.
+const TOWER_BASE = JSON.parse(JSON.stringify(TOWERS)) as typeof TOWERS;
+function applyOverrides() {
+  for (const k of TOWER_ORDER) {
+    const b = TOWER_BASE[k];
+    TOWERS[k].levels.forEach((l, i) => Object.assign(l, b.levels[i]));
+    Object.assign(TOWERS[k].branches.A, b.branches.A);
+    Object.assign(TOWERS[k].branches.B, b.branches.B);
+  }
+  for (const o of meta.overrides) levelRef(o.kind, o.lvl)[o.field as string] = o.value;
+}
+applyOverrides();
+const news = () => [...meta.changes].reverse().concat(VERSION_NOTES);
+const today = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
+
+// ---------- audio sintetizzato ----------
+
+let audio: AudioContext | null = null;
+const lastSound: Record<string, number> = {};
+
+function wakeAudio() {
+  if (audio) {
+    if (audio.state === "suspended") audio.resume().catch(() => {});
+    return;
+  }
+  try {
+    audio = new AudioContext();
+  } catch {
+    audio = null;
+  }
+}
+
+function tone(name: string, freq: number, to: number, dur: number, type: OscillatorType, gain: number, gapMs = 50) {
+  if (!soundOn || !audio || audio.state !== "running") return;
+  const now = performance.now();
+  if (now - (lastSound[name] ?? -1e9) < gapMs) return;
+  lastSound[name] = now;
+  const t = audio.currentTime;
+  const o = audio.createOscillator();
+  const g = audio.createGain();
+  o.type = type;
+  o.frequency.setValueAtTime(freq, t);
+  o.frequency.exponentialRampToValueAtTime(Math.max(20, to), t + dur);
+  g.gain.setValueAtTime(gain, t);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(g).connect(audio.destination);
+  o.start(t);
+  o.stop(t + dur + 0.02);
+}
+
+const sfx = {
+  shot: () => tone("shot", 880, 420, 0.05, "triangle", 0.035, 70),
+  thump: () => tone("thump", 150, 60, 0.16, "sine", 0.14, 90),
+  blast: () => tone("blast", 110, 40, 0.28, "sawtooth", 0.05, 90),
+  kill: () => tone("kill", 520, 760, 0.07, "sine", 0.03, 60),
+  leak: () => tone("leak", 180, 70, 0.4, "square", 0.05, 200),
+  build: () => tone("build", 330, 660, 0.14, "triangle", 0.08),
+  coin: () => tone("coin", 980, 1320, 0.12, "sine", 0.06),
+  horn: () => tone("horn", 110, 92, 0.9, "sawtooth", 0.045, 500),
+  deny: () => tone("deny", 200, 150, 0.12, "square", 0.03, 120),
+  zap: () => tone("zap", 1600, 300, 0.09, "sawtooth", 0.025, 90),
+  sabotage: () => tone("sabotage", 300, 900, 0.18, "square", 0.04, 150),
+  heal: () => tone("heal", 660, 990, 0.25, "sine", 0.05, 200),
+  rally: () => tone("rally", 330, 440, 0.6, "sawtooth", 0.06, 400),
+  apex: () => tone("apex", 220, 880, 0.9, "triangle", 0.1, 600),
+  combo: () => tone("combo", 1200, 1800, 0.06, "square", 0.02, 120),
+  song: () => tone("song", 880, 660, 0.8, "sine", 0.07, 500),
+  roar: () => tone("roar", 90, 40, 1.2, "sawtooth", 0.12, 800),
+  beam: () => tone("beam", 520, 1400, 0.35, "triangle", 0.09, 200),
+  freeze: () => tone("freeze", 2200, 900, 0.5, "sine", 0.06, 300),
+};
+
+// ---------- impaginazione ----------
+
+// Altezza della plancia compatta quando sta sotto la carta.
+const BELOW_PANEL = 146;
+const PANEL_W = 200;
+
+function layout(measured = 0) {
+  const box = app.getBoundingClientRect();
+  const cs = getComputedStyle(app);
+  const availW = box.width - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+  const availH = box.height - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
+  // Tre disposizioni possibili: vince quella con le caselle più grandi.
+  const side = Math.min((availW - PANEL_W - 8) / MAP_W, availH / MAP_H);
+  // Ogni fila di 6 carte in più (partita di prova con 12 torri) aggiunge circa 57 px.
+  const cardRows = Math.max(1, Math.ceil($("build").children.length / 6));
+  const belowH = Math.max(measured, BELOW_PANEL + (cardRows - 1) * 57);
+  const flat = Math.min(availW / MAP_W, (availH - belowH - 8) / MAP_H);
+  const turned = Math.min(availW / MAP_H, (availH - belowH - 8) / MAP_W);
+  let best = side;
+  let mode: "side" | "flat" | "turned" = "side";
+  if (flat > best * 1.04) {
+    best = flat;
+    mode = "flat";
+  }
+  if (turned > best * 1.04) {
+    best = turned;
+    mode = "turned";
+  }
+  rot = mode === "turned";
+  below = mode !== "side";
+  app.classList.toggle("landscape", !below);
+  app.classList.toggle("portrait", below);
+  const cols = rot ? MAP_H : MAP_W;
+  const rows = rot ? MAP_W : MAP_H;
+  const w = Math.max(cols * 14, Math.floor(best * cols));
+  T = w / cols;
+  const h = Math.round(T * rows);
+  stage.style.width = `${w}px`;
+  stage.style.height = `${h}px`;
+  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const pw = Math.round(w * dpr);
+  const ph = Math.round(h * dpr);
+  const key = `${pw}x${ph}:${rot}:${state.levelId}:${state.mode === "natale"}`;
+  if (key !== bgKey) {
+    bgKey = key;
+    canvas.width = pw;
+    canvas.height = ph;
+    background = renderBackground(levelOf(state).map, pw, ph, rot, state.mode === "natale");
+  }
+  // Con la plancia sotto, il dettaglio della torre si apre sopra la carta.
+  const detail = $("detail");
+  if (below && detail.parentElement !== stage) stage.append(detail);
+  if (!below && detail.parentElement === stage) $("panel").insertBefore(detail, $("bar"));
+  // La stima della plancia può sbagliare di qualche pixel: misura e ricalcola una volta.
+  if (below && !measured) {
+    const ph2 = Math.ceil($("panel").getBoundingClientRect().height);
+    if (h + 8 + ph2 > availH) layout(ph2);
+  }
+}
+
+/** Unità della simulazione → pixel del canvas. */
+function S(ux: number, uy: number): { x: number; y: number } {
+  const pxT = T * dpr;
+  return mapToScreen(rot, pxT, (ux / TILE) * pxT, (uy / TILE) * pxT);
+}
+
+function cellRect(cx: number, cy: number) {
+  const a = S(cx * TILE, cy * TILE);
+  const b = S((cx + 1) * TILE, (cy + 1) * TILE);
+  return { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), w: Math.abs(b.x - a.x), h: Math.abs(b.y - a.y) };
+}
+
+const turn = () => (rot ? Math.PI / 2 : 0);
+
+// ---------- plancia ----------
+
+const cards = new Map<TowerKind, HTMLButtonElement>();
+
+function buildCards() {
+  const host = $("build");
+  host.innerHTML = "";
+  host.classList.toggle("many", state.allowed.length > 6);
+  cards.clear();
+  for (const kind of state.allowed) {
+    const def = TOWERS[kind];
+    const b = document.createElement("button");
+    b.className = "card";
+    b.dataset.kind = kind;
+    b.setAttribute("aria-label", `${def.name}, costo ${def.levels[0].cost}. ${def.role}`);
+    const icon = document.createElement("canvas");
+    icon.width = 76;
+    icon.height = 76;
+    const ic = icon.getContext("2d")!;
+    drawTowerShape(ic, kind, 38, 38, 76, -0.6);
+    const name = document.createElement("span");
+    name.className = "name";
+    name.textContent = def.name;
+    const cost = document.createElement("span");
+    cost.className = "cost";
+    cost.textContent = `${def.levels[0].cost}`;
+    b.append(icon, name, cost);
+    host.append(b);
+    cards.set(kind, b);
+    b.addEventListener("pointerdown", (ev) => {
+      wakeAudio();
+      if (dialogQueue.length || isOver()) return;
+      if (!state.allowed.includes(kind)) {
+        toast(`Sblocca ${def.name} nell'Arsenale`);
+        sfx.deny();
+        return;
+      }
+      if (state.cash < def.levels[0].cost) {
+        toast(`Servono ${def.levels[0].cost} cash per ${def.name}`);
+        sfx.deny();
+        return;
+      }
+      ev.preventDefault();
+      if (placing === kind && !dragFromCard) {
+        setPlacing(null);
+        return;
+      }
+      selectTower(null);
+      setPlacing(kind);
+      if (below) toast(`${def.name}: tocca una riva libera`);
+      dragFromCard = true;
+      dragMoved = false;
+    });
+    // Da tastiera il pulsante resta utilizzabile: Invio seleziona la torre.
+    b.addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter" || ev.key === " ") {
+        ev.preventDefault();
+        setPlacing(placing === kind ? null : kind);
+      }
+    });
+  }
+}
+
+let dragMoved = false;
+const isOver = () => state.phase === "won" || state.phase === "lost";
+
+function setPlacing(kind: TowerKind | null) {
+  if (kind) setAiming(false);
+  placing = kind;
+  ghost = null;
+  dragFromCard = false;
+  for (const [k, b] of cards) b.classList.toggle("on", k === kind);
+}
+
+function selectTower(id: number | null) {
+  selectedId = id;
+  if (id !== null) setPlacing(null);
+}
+
+function setAiming(on: boolean) {
+  aiming = on;
+  aimPoint = null;
+  $("abFascio").classList.toggle("on", on);
+}
+
+let toastTimer = 0;
+function toast(text: string) {
+  const el = $("toast");
+  el.textContent = text;
+  el.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = window.setTimeout(() => (el.hidden = true), 1800);
+}
+
+function statsLine(kind: TowerKind, level: number, branch: Branch | null, rank = 1): string {
+  const s = rankedStats({ kind, level, branch }, rank);
+  const num = (v: number) => v.toLocaleString("it-IT", { maximumFractionDigits: 1 });
+  const range = num(s.range / TILE);
+  const pct = (bp: number) => `${Math.round(bp / 100)}%`;
+  if (kind === "grammofono") return `Il disco scelto dà +${pct(s.auraBp)} alle torri vicine. Raggio ${range}.`;
+  if (kind === "capitano") return `+${pct(s.hasteBp)} di cadenza alle torri vicine${s.rangeBuffBp ? `, +${pct(s.rangeBuffBp)} gittata` : ""}. Raggio ${range}.`;
+  if (kind === "medico") return `Libera le torri stordite, poi le protegge ${num(s.immune / TICKS_PER_SECOND)} s. Raggio ${range}.`;
+  if (s.pulseAll) return `Ogni secondo ${s.damage} danni a tutti i nemici nel raggio e toglie i modificatori${s.bossBp > 10000 ? `, x${s.bossBp / 10000} sui boss` : ""}. Raggio ${range}.`;
+  if (s.markTicks) return `Danno ${s.damage} ogni ${num(s.cooldown / TICKS_PER_SECOND)} s, ignora l'armatura e marchia: +${pct(s.markBp - 10000)} di danno subito. Gittata ${range}.`;
+  if (s.income > 0) {
+    const extra = s.interestBp ? `, più il ${s.interestBp / 100}% del cash fino a ${s.interestCap}` : s.lifePerWave ? `, più ${s.lifePerWave} vita` : "";
+    return `Rende ${s.income} cash a fine ondata${extra}.`;
+  }
+  if (s.cooldown === 0) {
+    const slow = Math.round((10000 - s.slowBp) / 100);
+    const extra = s.fragileBp > 10000 ? `, +${Math.round((s.fragileBp - 10000) / 100)}% danno subito` : "";
+    return `Rallenta del ${slow}%${extra}. Raggio ${range}.`;
+  }
+  const rate = num(TICKS_PER_SECOND / s.cooldown);
+  const area = s.radius ? `, area ${num(s.radius / TILE)}` : "";
+  const chain = s.chains ? `, salta su ${s.chains} nemici` : "";
+  const strong = TOWERS[kind].target === "strong" ? " Mira al più forte." : "";
+  return `Danno ${s.damage}, ${rate} colpi/s, gittata ${range}${area}${chain}.${strong}`;
+}
+
+function setButton(el: HTMLButtonElement, title: string, cost: number | null, note: string) {
+  const sig = `${title}|${cost}|${note}`;
+  if (el.dataset.sig !== sig) {
+    el.dataset.sig = sig;
+    el.innerHTML = "";
+    const b = document.createElement("b");
+    b.textContent = title;
+    if (cost !== null) {
+      const i = document.createElement("i");
+      i.textContent = fmt(cost);
+      b.append(i);
+    }
+    el.append(b);
+    if (note) {
+      const small = document.createElement("small");
+      small.textContent = note;
+      el.append(small);
+    }
+  }
+}
+
+function describeWave(index: number): string {
+  const groups = wavePreview(state, index);
+  const parts: string[] = [];
+  for (const g of groups) {
+    const tag = g.mods.length ? ` (${g.mods.map((m) => MODS[m].name).join(", ")})` : "";
+    if (g.boss) parts.push((g.enemy === "bruto" ? "Grande Bruto" : ENEMIES[g.enemy].name) + tag);
+    else parts.push(`${g.count} ${g.count === 1 ? ENEMIES[g.enemy].name : ENEMIES[g.enemy].plural}${tag}`);
+  }
+  return parts.join(", ");
+}
+
+function updatePanel() {
+  const lives = $("lives");
+  lives.textContent = String(state.lives);
+  lives.classList.toggle("low", state.lives <= 6);
+  $("cash").textContent = fmt(state.cash);
+  $("wave").textContent = state.mode !== "infinita" ? `${state.wave}/${waveCount(state)}` : String(state.wave);
+
+  const next = $("next");
+  const go = $<HTMLButtonElement>("go");
+  if (state.phase === "prep") {
+    const seconds = Math.ceil(state.prepLeft / TICKS_PER_SECOND);
+    const md = modeDef(state.mode, state.night);
+    const hc = state.sandbox ? "Prova · " : state.mode === "natale" ? `Notte ${state.night} · ` : md ? `${md.name} · ` : "";
+    setHtml(next, `<strong>${hc}Ondata ${state.wave + 1} tra ${seconds} s</strong><br>${describeWave(state.wave)}`);
+    go.hidden = false;
+    const bonus = Math.floor(state.prepLeft / TICKS_PER_SECOND) * RULES.skipBonusPerSecond;
+    setText(go, `Parti ora +${bonus} cash`);
+  } else if (state.phase === "wave") {
+    const left = state.enemies.length + state.spawns.length;
+    setHtml(next, `<strong>Ondata ${state.wave} in corso</strong><br>${left} ${left === 1 ? "nemico" : "nemici"} ancora in arrivo`);
+    go.hidden = true;
+  } else {
+    setHtml(next, "");
+    go.hidden = true;
+  }
+  $("abilities").hidden = state.phase !== "wave";
+  for (const [id, el] of [["fascio", $("abFascio")], ["gelata", $("abGelata")]] as Array<[AbilityId, HTMLElement]>) {
+    const cd = state.abilityCd[id];
+    const full = ABILITIES[id].cooldown;
+    el.style.setProperty("--p", String(1 - cd / full));
+    el.classList.toggle("ready", cd === 0);
+    setText(el.querySelector("small")!, cd === 0 ? "pronto" : `${Math.ceil(cd / TICKS_PER_SECOND)} s`);
+  }
+
+  for (const kind of state.allowed) {
+    const b = cards.get(kind);
+    if (!b) continue;
+    const locked = !state.allowed.includes(kind);
+    b.classList.toggle("locked", locked);
+    setText(b.querySelector(".cost") as HTMLElement, locked ? "Bloccata" : String(TOWERS[kind].levels[0].cost));
+    b.classList.toggle("poor", !locked && state.cash < TOWERS[kind].levels[0].cost);
+    b.classList.toggle("hint", state.towers.length === 0 && !placing && kind === state.allowed[0]);
+  }
+
+  const t = selectedId === null ? null : state.towers.find((x) => x.id === selectedId) ?? null;
+  if (selectedId !== null && !t) selectedId = null;
+  $("build").hidden = !!t && !below;
+  const detail = $("detail");
+  detail.hidden = !t;
+  if (t && below) {
+    // Il riquadro non deve coprire la torre scelta.
+    detail.classList.toggle("top", S(t.x, t.y).y / dpr > stage.clientHeight / 2);
+  }
+  if (t) {
+    const def = TOWERS[t.kind];
+    setText($("dName"), t.level >= 5 ? def.apex : t.branch ? def.branches[t.branch].name : def.name);
+    const rank = state.ranks[t.kind];
+    setText($("dLevel"), `${t.level >= 5 ? "Apex" : `Livello ${t.level}`}${rank > 1 ? ` · Rango ${rank}` : ""}`);
+    setText($("dStats"), statsLine(t.kind, t.level, t.branch, rank));
+    const up = $<HTMLButtonElement>("btnUp");
+    const a = $<HTMLButtonElement>("btnA");
+    const bb = $<HTMLButtonElement>("btnB");
+    const cost = upgradePrice(state, t);
+    up.hidden = cost === null;
+    if (cost !== null) {
+      setButton(up, `Migliora a livello ${t.level + 1}`, cost, statsLine(t.kind, t.level + 1, null, rank));
+      up.disabled = state.cash < cost;
+    }
+    const showSpec = t.level === 3;
+    a.hidden = !showSpec;
+    bb.hidden = !showSpec;
+    if (showSpec) {
+      const A = def.branches.A;
+      const B = def.branches.B;
+      const pa = specPrice(state, t, "A");
+      const pb = specPrice(state, t, "B");
+      setButton(a, A.name, pa, A.summary);
+      setButton(bb, B.name, pb, B.summary);
+      a.disabled = state.cash < pa;
+      bb.disabled = state.cash < pb;
+    }
+    const apexBtn = $<HTMLButtonElement>("btnApex");
+    apexBtn.hidden = t.level !== 4;
+    if (t.level === 4) {
+      const block = apexBlock(state, t);
+      const price = apexPrice(state, t);
+      setButton(apexBtn, `Apex: ${def.apex}`, block ? null : price, block ?? "Tutto più forte: danno x2,2, più gittata e area");
+      apexBtn.disabled = !!block || state.cash < price;
+    }
+    const dmg = t.damageDone;
+    setText($("dDps"), dmg > 0 ? `Danno inflitto: ${fmt(dmg)}${dpsOn ? ` · ${fmt(Math.round(towerDps(t)))} al secondo` : ""}` : "");
+    setText($("btnSell"), `Vendi +${fmt(sellValue(state, t))}`);
+    updateExtra(t);
+  }
+
+  $<HTMLButtonElement>("pause").setAttribute("aria-pressed", String(paused));
+  setText($("pause"), paused ? "Riprendi" : "Pausa");
+  $("speed").setAttribute("aria-pressed", String(speed === 2));
+  $("sound").setAttribute("aria-pressed", String(soundOn));
+}
+
+// Controlli delle torri di supporto: dischi del Grammofono e abilità di Capitano e Medico.
+function updateExtra(t: GameState["towers"][number]) {
+  const host = $("dExtra");
+  const def = TOWERS[t.kind];
+  const sig = `${t.id}:${t.kind}`;
+  if (host.dataset.sig !== sig) {
+    host.dataset.sig = sig;
+    host.innerHTML = "";
+    if (t.kind === "grammofono") {
+      for (const k of Object.keys(TRACKS) as Track[]) {
+        const b = document.createElement("button");
+        b.className = `track track-${k}`;
+        b.dataset.track = k;
+        b.textContent = TRACKS[k].name;
+        b.addEventListener("click", () => send({ t: "track", id: t.id, track: k }));
+        host.append(b);
+      }
+    } else if (def.ability) {
+      const b = document.createElement("button");
+      b.className = "ab towerAb";
+      b.innerHTML = `${def.ability.name}<small></small>`;
+      b.addEventListener("click", () => send({ t: "towerAbility", id: t.id }));
+      host.append(b);
+    }
+  }
+  host.hidden = !host.childElementCount;
+  for (const b of host.querySelectorAll<HTMLButtonElement>(".track")) b.setAttribute("aria-pressed", String(b.dataset.track === t.track));
+  const ab = host.querySelector<HTMLElement>(".towerAb");
+  if (ab) {
+    const full = statsIn(state, t).abilityCooldown;
+    ab.style.setProperty("--p", String(1 - t.abilityCd / full));
+    ab.classList.toggle("ready", t.abilityCd === 0);
+    const note = t.abilityLeft > 0 ? `attiva, ${Math.ceil(t.abilityLeft / TICKS_PER_SECOND)} s` : t.abilityCd === 0 ? def.ability!.summary : `${Math.ceil(t.abilityCd / TICKS_PER_SECOND)} s`;
+    setText(ab.querySelector("small")!, note);
+  }
+}
+
+function setText(el: HTMLElement, text: string) {
+  if (el.textContent !== text) el.textContent = text;
+}
+function setHtml(el: HTMLElement, html: string) {
+  if (el.dataset.html !== html) {
+    el.dataset.html = html;
+    el.innerHTML = html;
+  }
+}
+
+// ---------- comandi e tick ----------
+
+function send(cmd: Command) {
+  if (match && match.status === "playing" && match.state === state) {
+    const admin = cmd.t.startsWith("admin");
+    if (match.isHost) match.hostSubmit(cmd);
+    else if (admin) {
+      // Chi partecipa non può mandare comandi admin nel canale: passano dal database, che controlla il ruolo.
+      if (net.session?.isAdmin) net.adminCommand(match.code, cmd).then(() => toast("Comando admin inviato"), (e) => toast((e as Error).message));
+      else toast("Solo l'admin");
+    } else match.guestSubmit(cmd);
+    return;
+  }
+  const events = applyCommands(state, [cmd]);
+  const last = log[log.length - 1];
+  if (last && last[0] === state.tick) last[1].push(cmd);
+  else log.push([state.tick, [cmd]]);
+  handleEvents(events);
+}
+
+function handleEvents(events: GameEvent[]) {
+  const now = performance.now();
+  for (const ev of events) {
+    switch (ev.e) {
+      case "shot":
+        fx.push({ kind: "tracer", x: ev.x, y: ev.y, x2: ev.tx, y2: ev.ty, born: now, life: 110 });
+        setAim(ev.from, ev.x, ev.y, ev.tx, ev.ty);
+        sfx.shot();
+        break;
+      case "zap":
+        fx.push({ kind: "zap", x: ev.points[0], y: ev.points[1], pts: ev.points, born: now, life: 160 });
+        sfx.zap();
+        break;
+      case "beam":
+        fx.push({ kind: "beam", x: ev.x, y: ev.y, r: ev.radius, born: now, life: 520 });
+        sfx.beam();
+        break;
+      case "freeze":
+        iceFlash = 1;
+        sfx.freeze();
+        break;
+      case "sabotage":
+        fx.push({ kind: "zap", x: ev.x, y: ev.y, pts: [ev.x, ev.y, ev.tx, ev.ty], color: "#c9b8ff", born: now, life: 260 });
+        sfx.sabotage();
+        break;
+      case "heal":
+        fx.push({ kind: "ring", x: ev.x, y: ev.y, r: ev.all ? 9000 : ev.radius, color: "#7fd8a0", born: now, life: 500 });
+        sfx.heal();
+        break;
+      case "rally":
+        fx.push({ kind: "ring", x: ev.x, y: ev.y, r: ev.radius, color: COLORS.brass, born: now, life: 700 });
+        toast("Chiamata alle armi!");
+        sfx.rally();
+        break;
+      case "combo":
+        if (now - lastCombo > 350) {
+          lastCombo = now;
+          fx.push({ kind: "float", x: ev.x, y: ev.y - 400, text: `${ev.name}!`, color: ev.name === "Scossa" ? "#c9b8ff" : COLORS.ice, born: now, life: 700 });
+          sfx.combo();
+        }
+        break;
+      case "apex":
+        fx.push({ kind: "ring", x: ev.x, y: ev.y, r: 5000, color: COLORS.brass, born: now, life: 900 });
+        fx.push({ kind: "float", x: ev.x, y: ev.y - 500, text: ev.name, color: COLORS.brass, born: now, life: 1600 });
+        flash = 0;
+        goldFlash = 1;
+        toast(`Apex: ${ev.name}!`);
+        sfx.apex();
+        break;
+      case "song":
+        fx.push({ kind: "ring", x: ev.x, y: ev.y, r: ev.radius, color: "#c9b8ff", born: now, life: 800 });
+        toast(`${bossLabel()}: un canto stordisce le torri`);
+        sfx.song();
+        break;
+      case "roar":
+        fx.push({ kind: "ring", x: ev.x, y: ev.y, r: ev.radius, color: COLORS.coral, born: now, life: 900 });
+        toast(`${bossLabel()} ruggisce e si copre di scudi`);
+        flash = 0.8;
+        sfx.roar();
+        break;
+      case "summon":
+        fx.push({ kind: "ring", x: ev.x, y: ev.y, r: 1200, color: COLORS.ice, born: now, life: 500 });
+        break;
+      case "frost":
+        fx.push({ kind: "ring", x: ev.x, y: ev.y, r: ev.radius, color: "#e9fbff", born: now, life: 600 });
+        sfx.freeze();
+        break;
+      case "split":
+        fx.push({ kind: "blast", x: ev.x, y: ev.y, r: 900, born: now, life: 300 });
+        break;
+      case "steal":
+        if (ev.amount > 0) {
+          fx.push({ kind: "float", x: ev.x, y: ev.y - 400, text: `-${ev.amount} cash`, color: COLORS.coral, born: now, life: 900 });
+          sfx.deny();
+        }
+        break;
+      case "charge":
+        fx.push({ kind: "ring", x: ev.x, y: ev.y, r: 1500, color: "#ff9a9a", born: now, life: 400 });
+        toast("Carica!");
+        break;
+      case "laneOpen":
+        toast("Si apre un nuovo canale!");
+        flash = 0.6;
+        sfx.horn();
+        break;
+      case "emerge":
+        toast("Le secche sono emerse: ora si può costruire lì");
+        sfx.build();
+        break;
+      case "income": {
+        const faroCell = levelOf(state).map.faro;
+        const fx0 = Math.max(2500, faroCell[0] * TILE + 500);
+        const fy0 = faroCell[1] * TILE;
+        const text = `+${ev.amount} cash${ev.lives ? `, +${ev.lives} vite` : ""}`;
+        fx.push({ kind: "float", x: fx0 - 2000, y: fy0, text, color: "#9fd28b", born: now, life: 1400 });
+        sfx.coin();
+        break;
+      }
+      case "shell": {
+        const shell = state.shells.find((s) => s.id === ev.id);
+        if (shell) setAim(ev.from, shell.fromX, shell.fromY, shell.x, shell.y);
+        sfx.thump();
+        break;
+      }
+      case "blast":
+        fx.push({ kind: "blast", x: ev.x, y: ev.y, r: ev.radius, born: now, life: 320 });
+        sfx.blast();
+        break;
+      case "kill":
+        fx.push({ kind: "float", x: ev.x, y: ev.y, text: `+${ev.bounty}`, color: COLORS.brass, born: now, life: 650 });
+        sfx.kill();
+        break;
+      case "leak":
+        flash = 1;
+        sfx.leak();
+        break;
+      case "wave":
+        sfx.horn();
+        // Ogni dialogo d'ondata compare una volta sola: chi rigioca per il grind non viene interrotto.
+        const camp = state.mode === "campagna";
+        const lines = camp ? LEVEL_LINES[state.levelId]?.[ev.wave] : state.sandbox ? undefined : MODE_LINES[lineKey()]?.[ev.wave];
+        const key = camp ? `${state.levelId}:${ev.wave}` : `${lineKey()}:${ev.wave}`;
+        if (lines && !match && !meta.seenLines.includes(key)) {
+          meta.seenLines.push(key);
+          saveMeta();
+          openDialog(lines);
+        }
+        break;
+      case "built":
+      case "upgraded":
+        sfx.build();
+        break;
+      case "sold":
+        sfx.coin();
+        break;
+      case "reject":
+        toast(ev.reason);
+        sfx.deny();
+        break;
+      case "end":
+        finish(ev.phase);
+        break;
+    }
+  }
+  if (fx.length > 90) fx = fx.slice(-90);
+}
+
+function bossLabel(): string {
+  const b = state.enemies.find((e) => e.boss);
+  return !b ? "Il boss" : b.kind === "bruto" ? "Grande Bruto" : ENEMIES[b.kind].name;
+}
+
+function setAim(id: number, x: number, y: number, tx: number, ty: number) {
+  aim.set(id, Math.atan2(ty - y, tx - x));
+}
+
+function tick() {
+  prevPos.clear();
+  for (const e of state.enemies) prevPos.set(e.id, { x: e.x, y: e.y });
+  if (match && match.isHost && match.state === state) handleEvents(match.hostTick());
+  else handleEvents(step(state, []));
+}
+
+// ---------- dialoghi e fine partita ----------
+
+function openDialog(lines: Line[]) {
+  dialogQueue = [...lines];
+  showLine();
+}
+
+function showLine() {
+  const el = $("dialog");
+  const line = dialogQueue[0];
+  el.hidden = !line;
+  if (!line) return;
+  setText($("dSpeaker"), line.who);
+  setText($("dText"), line.text);
+}
+
+interface AwardResult {
+  schegge: number;
+  perle: number;
+  levelUps: number[];
+  medals: string[];
+  missionsDone: number;
+}
+
+function medalView() {
+  return { wins: meta.wins, stars: meta.stars, hcWins: meta.hcWins, unlocked: meta.unlocked, ranks: meta.ranks, totals: meta.totals, level: levelFromXp(meta.xp).level, modeWins: meta.modeWins, nightWins: meta.nightWins };
+}
+
+/** Assegna i premi della partita una volta sola. Le partite di prova non danno nulla. */
+function award(): AwardResult {
+  const out: AwardResult = { schegge: rewardFor(state), perle: perleFor(state), levelUps: [], medals: [], missionsDone: 0 };
+  if (state.adminTouched && !state.sandbox) {
+    // Partita toccata dall'admin: niente premi, niente classifiche.
+    out.schegge = 0;
+    out.perle = 0;
+    lastReward = 0;
+    return out;
+  }
+  lastReward = out.schegge;
+  if (state.sandbox) return out;
+  meta.schegge += out.schegge;
+  meta.earned += out.schegge;
+  meta.perle += out.perle;
+  const id = state.levelId;
+  const won = state.phase === "won";
+  if (state.mode === "campagna" && won) {
+    meta.wins[id] = (meta.wins[id] ?? 0) + 1;
+    meta.stars[id] = Math.max(meta.stars[id] ?? 0, starsFor(state.lives));
+  }
+  if (state.mode === "hardcore" && won) meta.hcWins[id] = (meta.hcWins[id] ?? 0) + 1;
+  if (modeDef(state.mode) && state.mode !== "natale") {
+    meta.modeBest[state.mode] = Math.max(meta.modeBest[state.mode] ?? 0, state.cleared);
+    if (won) meta.modeWins[state.mode] = (meta.modeWins[state.mode] ?? 0) + 1;
+  }
+  if (state.mode === "natale") {
+    const k = String(state.night);
+    meta.nightBest[k] = Math.max(meta.nightBest[k] ?? 0, state.cleared);
+    if (won) meta.nightWins[k] = (meta.nightWins[k] ?? 0) + 1;
+  }
+  if (state.mode === "infinita") meta.bestWave[id] = Math.max(meta.bestWave[id] ?? 0, state.cleared);
+  const t = meta.totals;
+  t.kills += state.kills;
+  t.combos += state.combos;
+  t.abilities += state.abilitiesUsed;
+  t.apex += state.apexBuilt;
+  t.bossKills += state.bossKills;
+  t.perle += out.perle;
+  if (won) t.wins += 1;
+  if (won && starsFor(state.lives) === 3) t.stars3 += 1;
+  if (state.mode === "hardcore") t.hcWaves = Math.max(t.hcWaves, state.cleared);
+  if (state.mode === "infinita") t.infRun = Math.max(t.infRun, state.cleared);
+  // Livello del giocatore: le Schegge guadagnate e le Perle (x10) diventano esperienza.
+  const before = levelFromXp(meta.xp).level;
+  meta.xp += out.schegge + out.perle * 10;
+  const after = levelFromXp(meta.xp).level;
+  for (let L = before + 1; L <= after; L++) {
+    const r = levelReward(L);
+    meta.schegge += r.schegge;
+    meta.perle += r.perle;
+    out.levelUps.push(L);
+  }
+  out.missionsDone = meta.missions.filter((m) => missionProgress(m, meta.totals) >= missionTarget(m)).length;
+  for (const m of MEDALS) {
+    if (!meta.medals.includes(m.id) && m.ok(medalView())) {
+      meta.medals.push(m.id);
+      out.medals.push(m.name);
+    }
+  }
+  saveMeta();
+  return out;
+}
+
+function finish(phase: "won" | "lost") {
+  if (endShown) return;
+  endShown = true;
+  dialogQueue = [];
+  $("dialog").hidden = true;
+  setPlacing(null);
+  selectTower(null);
+  setAiming(false);
+  const firstWin = phase === "won" && !(state.mode === "campagna" ? meta.wins[state.levelId] ?? 0 : 1);
+  const idx = LEVELS.findIndex((l) => l.id === state.levelId);
+  const res = award();
+  const reward = res.schegge;
+  const won = phase === "won";
+  const stars = starsFor(state.lives);
+  const infinite = state.mode === "infinita";
+  const md = modeDef(state.mode, state.night);
+  const bossName = md ? (md.boss.kind === "bruto" ? "Il Grande Bruto" : ENEMIES[md.boss.kind].name) : "";
+  setText($("endTitle"), won ? (md ? `${bossName} è caduto` : "Il Faro resta acceso") : infinite ? `Travolto all'ondata ${state.wave}` : "Il Faro si è spento");
+  setText($("endStars"), won ? "★".repeat(stars) + "☆".repeat(3 - stars) : "");
+  $("endStars").hidden = !won;
+  const summary = infinite
+    ? `Hai superato ${state.cleared} ondate, con ${state.kills} nemici abbattuti. Il tuo record qui è l'ondata ${meta.bestWave[state.levelId] ?? 0}.`
+    : `${won ? `${waveCount(state)} ondate respinte` : `Hai resistito fino all'ondata ${state.wave} di ${waveCount(state)}`}, con ${state.kills} nemici abbattuti e ${state.lives} ${state.lives === 1 ? "vita rimasta" : "vite rimaste"}.`;
+  const next = LEVELS[idx + 1];
+  const unlockedMode = won && md && state.mode !== "natale" ? SURVIVAL.concat(HARDCORE).filter((x) => x.unlock === state.mode).map((x) => x.name) : [];
+  const tip =
+    state.mode === "campagna" && firstWin
+      ? ` Hai sbloccato Infinita${next ? ` e il livello ${next.name}` : ""}.`
+      : unlockedMode.length && (meta.modeWins[state.mode] ?? 0) === 1
+        ? ` Hai sbloccato ${unlockedMode.join(" e ")}.`
+        : won && state.mode === "natale" && state.night < NIGHTS.length && (meta.nightWins[String(state.night)] ?? 0) === 1
+          ? ` Si apre la Notte ${state.night + 1}.`
+          : won && stars < 3 && !md
+            ? " Per le tre stelle servono almeno 18 vite."
+            : "";
+  setText($("endText"), summary + tip);
+  const extras = [
+    res.perle ? `+${res.perle} Perle Nere` : "",
+    ...res.levelUps.map((L) => `Livello ${L}!`),
+    ...res.medals.map((m) => `Medaglia: ${m}`),
+    res.missionsDone ? `${res.missionsDone === 1 ? "Una missione completata" : `${res.missionsDone} missioni completate`}: riscuoti nel menu` : "",
+  ].filter(Boolean);
+  setText($("endReward"), state.sandbox ? "Partita di prova: nessun premio" : state.adminTouched ? "Partita modificata dall'admin: nessun premio" : `+${reward} Schegge`);
+  setText($("endExtra"), extras.join(" · "));
+  $("end").hidden = false;
+}
+
+let lastOpts: GameOptions | null = null;
+function newMatch(mode: GameMode, level = state.levelId, seed = newSeed(), opts?: GameOptions) {
+  const o = opts ?? { mode, level, allowed: meta.loadout, ranks: meta.ranks };
+  lastOpts = o;
+  beginState(createGame(seed, o));
+}
+
+/** Prepara l'interfaccia per una partita già creata (in solitaria o ricevuta da chi ospita). */
+function beginState(st: GameState) {
+  state = st;
+  builtAt.clear();
+  goldFlash = 0;
+  $("adminDrawer").hidden = true;
+  buildCards();
+  layout();
+  log = [];
+  fx = [];
+  aim.clear();
+  prevPos.clear();
+  paused = false;
+  speed = 1;
+  accumulator = 0;
+  endShown = false;
+  flash = 0;
+  iceFlash = 0;
+  setPlacing(null);
+  selectTower(null);
+  setAiming(false);
+  $("end").hidden = true;
+  $("pauseLayer").hidden = true;
+  $("dialog").hidden = true;
+  dialogQueue = [];
+  inMenu = false;
+  $("menu").hidden = true;
+  if (!meta.introSeen && !match) {
+    meta.introSeen = true;
+    saveMeta();
+    openDialog(INTRO);
+  }
+}
+
+function restart() {
+  if (match) {
+    showLobby();
+    return;
+  }
+  // Rigioca con le stesse regole; in Natale il Disgelo si ricalcola dalla data di oggi.
+  const o = lastOpts ? { ...lastOpts } : undefined;
+  if (o && o.mode === "natale" && !o.sandbox) o.eventBp = disgelo().bp;
+  newMatch(state.mode, state.levelId, newSeed(), o);
+}
+
+function playNight(n: number) {
+  newMatch("natale", NIGHTS[n - 1].map, newSeed(), { mode: "natale", night: n, eventBp: disgelo().bp, allowed: meta.loadout, ranks: meta.ranks });
+}
+
+// ---------- menu e Arsenale ----------
+
+function showMenu() {
+  inMenu = true;
+  paused = false;
+  $("pauseLayer").hidden = true;
+  $("end").hidden = true;
+  $("menu").hidden = false;
+  renderMenu();
+}
+
+function renderMenu() {
+  setText($("mSchegge"), fmt(meta.schegge));
+  setText($("mPerle"), fmt(meta.perle));
+  const lv = levelFromXp(meta.xp);
+  setText($("mLevel"), `Livello ${lv.level}`);
+  setText($("mXp"), `${fmt(lv.into)} / ${fmt(lv.need)} XP`);
+  $("mXpBar").style.setProperty("--p", String(lv.into / lv.need));
+  $("adminOpen").hidden = !meta.adminEnabled;
+  renderOnlineSection();
+  renderMissions();
+  renderMedals();
+  renderNews();
+  const levels = $("levels");
+  levels.innerHTML = "";
+  LEVELS.forEach((l, i) => {
+    const open = levelOpen(i);
+    const won = (meta.wins[l.id] ?? 0) > 0;
+    const card = document.createElement("div");
+    card.className = `level${open ? "" : " closed"}`;
+    const stars = meta.stars[l.id] ?? 0;
+    const head = document.createElement("div");
+    head.className = "levelHead";
+    const name = document.createElement("b");
+    name.textContent = `${i + 1}. ${l.name}`;
+    const st = document.createElement("span");
+    st.className = "stars";
+    st.textContent = open ? "★".repeat(stars) + "☆".repeat(3 - stars) : "";
+    head.append(name, st);
+    const sub = document.createElement("small");
+    sub.textContent = open ? l.sub : `Si apre vincendo ${LEVELS[i - 1].name}`;
+    const row = document.createElement("div");
+    row.className = "levelBtns";
+    const play = document.createElement("button");
+    play.className = "mode";
+    play.dataset.play = l.id;
+    if (i === 0) play.id = "mCampagna";
+    play.textContent = "Gioca";
+    play.disabled = !open;
+    play.addEventListener("click", () => {
+      wakeAudio();
+      newMatch("campagna", l.id);
+    });
+    const inf = document.createElement("button");
+    inf.dataset.endless = l.id;
+    if (i === 0) inf.id = "mInfinita";
+    const best = meta.bestWave[l.id] ?? 0;
+    inf.textContent = won ? (best ? `Infinita · record ${best}` : "Infinita") : "Infinita";
+    inf.disabled = !won;
+    inf.title = won ? "" : "Si apre vincendo questo livello";
+    inf.addEventListener("click", () => {
+      wakeAudio();
+      newMatch("infinita", l.id);
+    });
+    row.append(play, inf);
+    card.append(head, sub, row);
+    levels.append(card);
+  });
+
+  renderModes();
+  renderNights();
+  setText($("squadNote"), `Squadra ${meta.loadout.length}/${LOADOUT_SIZE}: solo queste torri entrano in partita.`);
+  const host = $("arsenal");
+  host.innerHTML = "";
+  for (const kind of TOWER_ORDER) {
+    const def = TOWERS[kind];
+    const row = document.createElement("div");
+    const owned = meta.unlocked.includes(kind);
+    const inSquad = meta.loadout.includes(kind);
+    row.className = `row${inSquad ? " inSquad" : ""}${def.perle ? " hardcore" : ""}`;
+    const icon = document.createElement("canvas");
+    icon.width = 76;
+    icon.height = 76;
+    drawTowerShape(icon.getContext("2d")!, kind, 38, 38, 76, -0.6);
+    const text = document.createElement("div");
+    text.className = "rowText";
+    const rank = meta.ranks[kind];
+    const name = document.createElement("b");
+    name.textContent = def.name;
+    const role = document.createElement("small");
+    const apexNote = owned && rank < APEX_RANK ? ` · Apex dal rango ${APEX_RANK}` : "";
+    role.textContent = owned ? `${def.role} · Rango ${rank}/${MAX_RANK}${apexNote}` : def.perle ? `Torre Hardcore. ${def.role}` : def.role;
+    text.append(name, role);
+    const pips = document.createElement("span");
+    pips.className = "pips";
+    pips.setAttribute("aria-hidden", "true");
+    for (let i = 1; i <= MAX_RANK; i++) {
+      const pip = document.createElement("i");
+      if (owned && i <= rank) pip.className = "on";
+      pips.append(pip);
+    }
+    text.append(pips);
+    const btns = document.createElement("div");
+    btns.className = "rowBtns";
+    const btn = document.createElement("button");
+    btn.dataset.kind = kind;
+    let price = 0;
+    const pearls = !!def.perle && !owned;
+    if (pearls) {
+      price = def.perle!;
+      btn.textContent = `Sblocca · ${fmt(price)} Perle`;
+      btn.dataset.action = "unlock";
+      btn.classList.add("pearl");
+    } else if (!owned) {
+      price = def.unlock;
+      btn.textContent = `Sblocca · ${fmt(price)}`;
+      btn.dataset.action = "unlock";
+    } else if (rank < MAX_RANK) {
+      price = RANK_COSTS[rank];
+      btn.textContent = `Rango ${rank + 1} · ${fmt(price)}`;
+      btn.dataset.action = "rank";
+    } else {
+      btn.textContent = "Rango massimo";
+      btn.disabled = true;
+    }
+    if (price && (pearls ? meta.perle : meta.schegge) < price) {
+      btn.disabled = true;
+      btn.title = `Servono ${fmt(price)} ${pearls ? "Perle Nere" : "Schegge"}`;
+    }
+    btn.addEventListener("click", () => buyFromArsenal(kind));
+    btns.append(btn);
+    if (owned) {
+      const sq = document.createElement("button");
+      sq.className = "squad";
+      sq.dataset.squad = kind;
+      sq.setAttribute("aria-pressed", String(inSquad));
+      sq.textContent = inSquad ? "In squadra" : "Aggiungi";
+      sq.disabled = !inSquad && meta.loadout.length >= LOADOUT_SIZE;
+      if (inSquad && meta.loadout.length === 1) sq.disabled = true;
+      sq.addEventListener("click", () => toggleSquad(kind));
+      btns.append(sq);
+    }
+    row.append(icon, text, btns);
+    host.append(row);
+  }
+}
+
+function modeCard(m: ModeDef, host: HTMLElement) {
+  const open = modeOpen(m);
+  const wins = meta.modeWins[m.id] ?? 0;
+  const best = meta.modeBest[m.id] ?? 0;
+  const card = document.createElement("div");
+  card.className = `level modeCard${open ? "" : " closed"}${m.id === "hardcore" ? " hcCard" : ""}`;
+  card.style.setProperty("--accent", m.color);
+  const head = document.createElement("div");
+  head.className = "levelHead";
+  const name = document.createElement("b");
+  name.textContent = m.name;
+  const st = document.createElement("span");
+  st.className = "modeStatus";
+  st.textContent = wins ? `Vinta ${wins === 1 ? "" : `${wins} volte`}`.trim() : best ? `Record: ondata ${best}/${m.waves}` : `${m.waves} ondate`;
+  head.append(name, st);
+  const sub = document.createElement("small");
+  sub.textContent = open ? m.sub : `Si apre vincendo ${modeName(m.unlock!)}`;
+  const row = document.createElement("div");
+  row.className = "mapRow";
+  for (const l of LEVELS) {
+    const b = document.createElement("button");
+    b.className = "mapPick";
+    b.textContent = l.name.replace(/^La |^Il /, "");
+    b.setAttribute("aria-pressed", String(meta.mapPick === l.id));
+    b.disabled = !open;
+    b.addEventListener("click", () => {
+      meta.mapPick = l.id;
+      saveMeta();
+      renderMenu();
+    });
+    row.append(b);
+  }
+  const play = document.createElement("button");
+  play.className = "mode";
+  play.dataset.survival = m.id;
+  play.textContent = "Gioca";
+  play.disabled = !open;
+  play.addEventListener("click", () => {
+    wakeAudio();
+    newMatch(m.id, meta.mapPick);
+  });
+  row.append(play);
+  card.append(head, sub, row);
+  host.append(card);
+}
+
+function renderModes() {
+  const host = $("modes");
+  host.innerHTML = "";
+  for (const m of SURVIVAL) modeCard(m, host);
+  modeCard(HARDCORE, host);
+}
+
+function renderNights() {
+  const d = disgelo();
+  setText($("disgelo"), `${d.label} · forza ${Math.round(d.bp / 100)}%${d.next ? ` · prossimo disgelo ${d.next}` : ""}`);
+  const host = $("nights");
+  host.innerHTML = "";
+  for (const n of NIGHTS) {
+    const open = nightOpen(n.night);
+    const k = String(n.night);
+    const wins = meta.nightWins[k] ?? 0;
+    const best = meta.nightBest[k] ?? 0;
+    const card = document.createElement("div");
+    card.className = `level night${open ? "" : " closed"}${n.night === 5 ? " finale" : ""}`;
+    const head = document.createElement("div");
+    head.className = "levelHead";
+    const name = document.createElement("b");
+    name.textContent = n.name;
+    const st = document.createElement("span");
+    st.className = "modeStatus";
+    st.textContent = wins ? "Vinta" : best ? `Record ${best}/${n.waves}` : `${n.waves} ondate`;
+    head.append(name, st);
+    const sub = document.createElement("small");
+    sub.textContent = open ? `${n.sub} ${levelById(n.map).name}, 10 vite.` : `Si apre vincendo la Notte ${n.night - 1}`;
+    const play = document.createElement("button");
+    play.className = "mode";
+    play.dataset.night = k;
+    play.textContent = "Gioca";
+    play.disabled = !open;
+    play.addEventListener("click", () => {
+      wakeAudio();
+      playNight(n.night);
+    });
+    card.append(head, sub, play);
+    host.append(card);
+  }
+}
+
+// ---------- online ----------
+
+let reachable: boolean | null = null;
+let leaderboard: import("./net").LeaderRow[] | null = null;
+let hostTimer = 0;
+let lastAdminCmd = 0;
+
+const onlineApi = {
+  get net() {
+    return net;
+  },
+  get reachable() {
+    return reachable;
+  },
+  get cloudNote() {
+    return cloudNote;
+  },
+  get leaderboard() {
+    return leaderboard;
+  },
+  get mapPick() {
+    return meta.mapPick;
+  },
+  toast: (t: string) => toast(t),
+  rerender: () => renderMenu(),
+  afterLogin: () => syncAfterLogin(),
+  createRoom: (mode: GameMode, level: string, night: number) => createRoom(mode, level, night),
+  joinRoom: (code: string, local: boolean) => joinRoom(code, local),
+  async loadLeaderboard() {
+    try {
+      leaderboard = await net.leaderboard(20);
+    } catch (e) {
+      toast((e as Error).message);
+    }
+    renderOnlineSection();
+  },
+};
+
+function renderOnlineSection() {
+  const host = document.getElementById("online");
+  if (host) renderOnline(host, onlineApi);
+}
+
+async function checkServer() {
+  reachable = await net.ping();
+  if (net.session && reachable) {
+    // All'avvio si ricarica il ruolo e, se il salvataggio non è ancora legato, lo si collega.
+    if (meta.account !== net.session.userId) await syncAfterLogin();
+  }
+  if (inMenu) renderOnlineSection();
+}
+
+function me(): Player {
+  return { id: net.session?.userId ?? `ospite-${newSeed() >>> 0}`, name: net.session?.username ?? "ospite", loadout: [...meta.loadout], ranks: { ...meta.ranks }, seen: Date.now() };
+}
+
+function transportFor(code: string, local: boolean): Transport {
+  return local ? new LocalTransport(code) : new RealtimeTransport(net, code);
+}
+
+function wireMatch(m: NetMatch) {
+  m.onLobby = () => {
+    if (!$("lobby").hidden) renderLobby($("lobbyBody"), m, lobbyApi);
+  };
+  m.onStart = (st) => {
+    $("lobby").hidden = true;
+    beginState(st);
+    toast(m.isHost ? "Partita avviata" : "Partita iniziata");
+  };
+  m.onNote = (t) => toast(t);
+  m.onClosed = (why) => {
+    toast(why);
+    leaveMatch();
+    showMenu();
+  };
+}
+
+const lobbyApi = {
+  start() {
+    if (!match || !match.isHost) return;
+    const st = match.hostStart(newSeed());
+    $("lobby").hidden = true;
+    beginState(st);
+    lastOpts = null;
+    if (net.session && match.code.length === 5 && !(match as NetMatch & { local?: boolean }).local) net.updateRoom(match.code, { status: "playing" }).catch(() => {});
+  },
+  leave() {
+    leaveMatch();
+    showMenu();
+  },
+};
+
+function showLobby() {
+  if (!match) return;
+  inMenu = true;
+  $("menu").hidden = true;
+  $("end").hidden = true;
+  $("lobby").hidden = false;
+  renderLobby($("lobbyBody"), match, lobbyApi);
+}
+
+async function createRoom(mode: GameMode, level: string, night: number) {
+  if (!net.session) return toast("Serve l'accesso");
+  leaveMatch();
+  const code = roomCode();
+  const lvl = mode === "natale" ? NIGHTS[night - 1].map : level;
+  const setup: Setup = { mode, level: lvl, night, eventBp: mode === "natale" ? disgelo().bp : 10000 };
+  try {
+    await net.createRoom(code, mode, lvl, night);
+  } catch (e) {
+    toast((e as Error).message);
+    return;
+  }
+  match = new NetMatch("host", code, me(), transportFor(code, false), setup);
+  wireMatch(match);
+  lastAdminCmd = await net.lastCommandId(code).catch(() => 0);
+  startHostTimers(match, false);
+  showLobby();
+}
+
+async function joinRoom(code: string, local: boolean) {
+  if (!/^[A-Z0-9]{3,5}$/.test(code)) return toast("Codice stanza non valido");
+  leaveMatch();
+  if (local) {
+    // Prova senza server: chi entra per primo ospita.
+    const probe = new BroadcastChannel(`faro-probe-${code}`);
+    let hostSeen = false;
+    probe.onmessage = (ev) => {
+      if (ev.data === "host") hostSeen = true;
+    };
+    probe.postMessage("who");
+    await new Promise((r) => setTimeout(r, 400));
+    const role = hostSeen ? "guest" : "host";
+    if (role === "host") probe.onmessage = (ev) => ev.data === "who" && probe.postMessage("host");
+    else probe.close();
+    match = new NetMatch(role, code, me(), transportFor(code, true), { mode: "easy", level: meta.mapPick, night: 0, eventBp: 10000 });
+    (match as NetMatch & { local?: boolean; probe?: BroadcastChannel }).local = true;
+    if (role === "host") (match as NetMatch & { probe?: BroadcastChannel }).probe = probe;
+    wireMatch(match);
+    showLobby();
+    return;
+  }
+  if (!net.session) return toast("Serve l'accesso");
+  let row;
+  try {
+    row = await net.room(code);
+  } catch (e) {
+    toast((e as Error).message);
+    return;
+  }
+  if (!row || row.status === "ended") return toast("Stanza non trovata");
+  if (row.host === net.session.userId) return toast("Questa stanza è tua: creane una nuova");
+  match = new NetMatch("guest", code, me(), transportFor(code, false));
+  wireMatch(match);
+  showLobby();
+}
+
+function startHostTimers(m: NetMatch, local: boolean) {
+  clearInterval(hostTimer);
+  if (local) return;
+  let beat = 0;
+  hostTimer = window.setInterval(async () => {
+    if (match !== m) return;
+    // Comandi dell'admin arrivati dal database: entrano nel prossimo tick per tutti.
+    if (m.status === "playing") {
+      try {
+        const rows = await net.commandsAfter(m.code, lastAdminCmd);
+        for (const r of rows) {
+          lastAdminCmd = Math.max(lastAdminCmd, r.id);
+          const c = r.cmd as Command;
+          if (c && typeof c.t === "string" && c.t.startsWith("admin")) {
+            m.hostSubmit(c);
+            toast("L'admin è intervenuto nella partita");
+          }
+        }
+      } catch {
+        /* si riprova al prossimo giro */
+      }
+    }
+    if (beat++ % 3 === 0) {
+      const st = m.state;
+      const info = {
+        players: [...m.players.values()].map((p) => p.name),
+        wave: st?.wave ?? 0,
+        waves: st ? waveCount(st) : 0,
+        lives: st?.lives ?? 0,
+        cash: st?.cash ?? 0,
+        phase: st?.phase ?? "lobby",
+        tick: st?.tick ?? 0,
+      };
+      net.updateRoom(m.code, { status: m.status, info }).catch(() => {});
+    }
+  }, 2000);
+}
+
+function leaveMatch() {
+  if (!match) return;
+  const m = match;
+  match = null;
+  clearInterval(hostTimer);
+  m.leave();
+  (m as NetMatch & { probe?: BroadcastChannel }).probe?.close();
+  if (m.isHost && net.session && !(m as NetMatch & { local?: boolean }).local) net.updateRoom(m.code, { status: "ended" }).catch(() => {});
+  $("lobby").hidden = true;
+}
+
+// ---------- accesso admin ----------
+
+// Impronta della password admin per lo sblocco sul dispositivo. Le azioni sulle partite degli altri
+// passano comunque dal server, che controlla il ruolo dell'account.
+const ADMIN_HASH = "a6845d1b882c9b99c3014751ec790609a34e31523ee28b0f00df9f70e9a86b2f";
+async function sha256(text: string): Promise<string> {
+  const data = new TextEncoder().encode(text);
+  if (globalThis.crypto?.subtle) {
+    const buf = await crypto.subtle.digest("SHA-256", data);
+    return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
+  }
+  return sha256Plain(data);
+}
+
+/** SHA-256 senza WebCrypto, per le pagine aperte fuori da un contesto sicuro. */
+function sha256Plain(msg: Uint8Array): string {
+  const K = new Uint32Array([
+    0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+    0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da, 0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+    0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+    0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3, 0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
+  ]);
+  const H = new Uint32Array([0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19]);
+  const len = msg.length;
+  const total = Math.ceil((len + 9) / 64) * 64;
+  const buf = new Uint8Array(total);
+  buf.set(msg);
+  buf[len] = 0x80;
+  const bits = len * 8;
+  const dv = new DataView(buf.buffer);
+  dv.setUint32(total - 4, bits >>> 0);
+  dv.setUint32(total - 8, Math.floor(bits / 0x100000000));
+  const W = new Uint32Array(64);
+  const rotr = (x: number, n: number) => (x >>> n) | (x << (32 - n));
+  for (let off = 0; off < total; off += 64) {
+    for (let i = 0; i < 16; i++) W[i] = dv.getUint32(off + i * 4);
+    for (let i = 16; i < 64; i++) {
+      const s0 = rotr(W[i - 15], 7) ^ rotr(W[i - 15], 18) ^ (W[i - 15] >>> 3);
+      const s1 = rotr(W[i - 2], 17) ^ rotr(W[i - 2], 19) ^ (W[i - 2] >>> 10);
+      W[i] = (W[i - 16] + s0 + W[i - 7] + s1) >>> 0;
+    }
+    let [a, b, c, d, e, f, g, h] = H;
+    for (let i = 0; i < 64; i++) {
+      const t1 = (h + (rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25)) + ((e & f) ^ (~e & g)) + K[i] + W[i]) >>> 0;
+      const t2 = ((rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22)) + ((a & b) ^ (a & c) ^ (b & c))) >>> 0;
+      h = g;
+      g = f;
+      f = e;
+      e = (d + t1) >>> 0;
+      d = c;
+      c = b;
+      b = a;
+      a = (t1 + t2) >>> 0;
+    }
+    H[0] += a;
+    H[1] += b;
+    H[2] += c;
+    H[3] += d;
+    H[4] += e;
+    H[5] += f;
+    H[6] += g;
+    H[7] += h;
+  }
+  return [...H].map((x) => x.toString(16).padStart(8, "0")).join("");
+}
+
+function askAdminPassword() {
+  if (net.session?.isAdmin) {
+    meta.adminEnabled = true;
+    saveMeta();
+    toast("Pannello admin attivo");
+    renderMenu();
+    return;
+  }
+  const body = $("adminBody");
+  body.innerHTML = "";
+  const h = document.createElement("h2");
+  h.textContent = "Accesso admin";
+  const input = document.createElement("input");
+  input.type = "password";
+  input.id = "adminPass";
+  input.placeholder = "Password admin";
+  input.autocomplete = "current-password";
+  const ok = document.createElement("button");
+  ok.className = "mode";
+  ok.id = "adminPassOk";
+  ok.textContent = "Sblocca";
+  const no = document.createElement("button");
+  no.textContent = "Annulla";
+  const note = document.createElement("p");
+  note.className = "note";
+  note.textContent = "Sblocca il pannello su questo dispositivo. Per agire sulle stanze degli altri entra con l'account admin.";
+  const tryIt = async () => {
+    if ((await sha256(`ultimofaro:${input.value}`)) === ADMIN_HASH) {
+      meta.adminEnabled = true;
+      saveMeta();
+      toast("Pannello admin attivo");
+      openAdmin();
+    } else {
+      toast("Password sbagliata");
+      input.value = "";
+    }
+  };
+  ok.addEventListener("click", () => void tryIt());
+  input.addEventListener("keydown", (ev) => ev.key === "Enter" && void tryIt());
+  no.addEventListener("click", closeAdmin);
+  body.append(h, note, input, ok, no);
+  $("adminPanel").hidden = false;
+  input.focus();
+}
+
+function renderMissions() {
+  const host = $("missions");
+  host.innerHTML = "";
+  meta.missions.forEach((m, i) => {
+    const def = MISSIONS[m.pool];
+    const prog = Math.min(missionProgress(m, meta.totals), missionTarget(m));
+    const done = prog >= missionTarget(m);
+    const row = document.createElement("div");
+    row.className = `mission${done ? " done" : ""}`;
+    const text = document.createElement("div");
+    text.className = "rowText";
+    const b = document.createElement("b");
+    b.textContent = missionText(m);
+    const small = document.createElement("small");
+    small.textContent = `${fmt(Math.max(0, prog))} / ${fmt(missionTarget(m))} · premio ${def.schegge} Schegge${def.perle ? ` e ${def.perle} Perle` : ""}`;
+    const bar = document.createElement("span");
+    bar.className = "bar";
+    bar.style.setProperty("--p", String(Math.max(0, prog) / missionTarget(m)));
+    text.append(b, small, bar);
+    const btn = document.createElement("button");
+    btn.textContent = done ? "Riscuoti" : "In corso";
+    btn.disabled = !done;
+    btn.dataset.claim = String(i);
+    btn.addEventListener("click", () => {
+      meta.schegge += def.schegge;
+      meta.perle += def.perle ?? 0;
+      meta.missions[i] = newSlot(meta.missionNext++, meta.totals);
+      saveMeta();
+      sfx.coin();
+      renderMenu();
+    });
+    row.append(text, btn);
+    host.append(row);
+  });
+}
+
+function renderMedals() {
+  const host = $("medals");
+  host.innerHTML = "";
+  for (const m of MEDALS) {
+    const got = meta.medals.includes(m.id);
+    const d = document.createElement("div");
+    d.className = `medal${got ? " got" : ""}`;
+    d.title = m.text;
+    const b = document.createElement("b");
+    b.textContent = m.name;
+    const small = document.createElement("small");
+    small.textContent = m.text;
+    d.append(b, small);
+    host.append(d);
+  }
+  setText($("medalCount"), `${meta.medals.length}/${MEDALS.length}`);
+}
+
+function renderNews() {
+  const all = news();
+  const unread = Math.max(0, all.length - meta.newsSeen);
+  setText($("newsBadge"), unread ? String(unread) : "");
+  $("newsBadge").hidden = !unread;
+  const host = $("news");
+  host.innerHTML = "";
+  for (const entry of all.slice(0, 12)) {
+    const item = document.createElement("article");
+    item.className = `newsItem ${entry.kind}`;
+    const h = document.createElement("b");
+    h.textContent = entry.title;
+    const date = document.createElement("small");
+    date.textContent = `${entry.date} · ${entry.kind === "versione" ? "Aggiornamento" : "Bilanciamento"}`;
+    const ul = document.createElement("ul");
+    for (const it of entry.items) {
+      const li = document.createElement("li");
+      li.textContent = it;
+      ul.append(li);
+    }
+    item.append(h, date, ul);
+    host.append(item);
+  }
+}
+
+function toggleSquad(kind: TowerKind) {
+  const i = meta.loadout.indexOf(kind);
+  if (i >= 0) {
+    if (meta.loadout.length > 1) meta.loadout.splice(i, 1);
+  } else if (meta.loadout.length < LOADOUT_SIZE) meta.loadout.push(kind);
+  saveMeta();
+  renderMenu();
+}
+
+function buyFromArsenal(kind: TowerKind) {
+  wakeAudio();
+  const owned = meta.unlocked.includes(kind);
+  const pearls = !owned && !!TOWERS[kind].perle;
+  const price = owned ? RANK_COSTS[meta.ranks[kind]] : pearls ? TOWERS[kind].perle! : TOWERS[kind].unlock;
+  const wallet = pearls ? meta.perle : meta.schegge;
+  if (!price || wallet < price || (owned && meta.ranks[kind] >= MAX_RANK)) return;
+  if (pearls) meta.perle -= price;
+  else meta.schegge -= price;
+  if (owned) meta.ranks[kind] += 1;
+  else {
+    meta.unlocked.push(kind);
+    if (meta.loadout.length < LOADOUT_SIZE) meta.loadout.push(kind);
+  }
+  saveMeta();
+  sfx.coin();
+  renderMenu();
+}
+
+// ---------- pannello admin locale ----------
+
+function logChange(title: string, items: string[]) {
+  meta.changes.push({ date: today(), title, items, kind: "bilanciamento" });
+  meta.changes = meta.changes.slice(-50);
+}
+
+const adminApi: AdminApi = {
+  state: () => state,
+  send: (cmd) => send(cmd),
+  toast: (t) => toast(t),
+  startSandbox(level, mode, night, eventBp) {
+    $("adminPanel").hidden = true;
+    newMatch(mode, level, newSeed(), { mode, level, sandbox: true, ranks: meta.ranks, night, eventBp });
+    toast("Partita di prova: tutte le torri, nessun premio");
+  },
+  setSpeed(n) {
+    speed = n;
+  },
+  dps(on) {
+    if (on !== undefined) dpsOn = on;
+    return dpsOn;
+  },
+  progress: {
+    schegge: () => adminMeta(() => (meta.schegge += 1000), "+1.000 Schegge"),
+    perle: () => adminMeta(() => (meta.perle += 100), "+100 Perle Nere"),
+    xp: () => adminMeta(() => (meta.xp += 1000), "+1.000 XP"),
+    unlockAll: () => adminMeta(() => (meta.unlocked = [...TOWER_ORDER]), "Tutte le torri sbloccate"),
+    ranks5: () => adminMeta(() => TOWER_ORDER.forEach((k) => (meta.ranks[k] = MAX_RANK)), "Ranghi al massimo"),
+    ranks1: () => adminMeta(() => TOWER_ORDER.forEach((k) => (meta.ranks[k] = 1)), "Ranghi a 1"),
+    levels: () =>
+      adminMeta(() => {
+        LEVELS.forEach((l) => (meta.wins[l.id] = Math.max(1, meta.wins[l.id] ?? 0)));
+        SURVIVAL.forEach((m) => (meta.modeWins[m.id] = Math.max(1, meta.modeWins[m.id] ?? 0)));
+        NIGHTS.slice(0, 4).forEach((n) => (meta.nightWins[String(n.night)] = Math.max(1, meta.nightWins[String(n.night)] ?? 0)));
+      }, "Livelli, modalità e Notti aperti"),
+    missions: () => adminMeta(() => meta.missions.forEach((m) => {
+      const def = MISSIONS[m.pool];
+      if (def.best) meta.totals[def.key] = Math.max(meta.totals[def.key], missionTarget(m));
+      else m.base = meta.totals[def.key] - missionTarget(m);
+    }), "Missioni completate"),
+    reset: () => {
+      const keepAdmin = meta.adminEnabled;
+      const keepOverrides = meta.overrides;
+      const keepChanges = meta.changes;
+      meta = freshMeta();
+      meta.adminEnabled = keepAdmin;
+      meta.overrides = keepOverrides;
+      meta.changes = keepChanges;
+      meta.introSeen = true;
+      saveMeta();
+      toast("Progressi azzerati");
+      renderMenu();
+      openAdmin();
+    },
+  },
+  get online() {
+    if (!net.session?.isAdmin) return undefined;
+    return {
+      rooms: () => net.activeRooms(),
+      command: (code: string, cmd: Command) => net.adminCommand(code, cmd),
+    };
+  },
+  overrides: () => meta.overrides,
+  applyOverride(o) {
+    const ref = levelRef(o.kind, o.lvl);
+    const old = ref[o.field as string];
+    if (old === o.value) return;
+    meta.overrides = meta.overrides.filter((x) => !(x.kind === o.kind && x.lvl === o.lvl && x.field === o.field));
+    if (TOWER_BASE[o.kind] && (levelRef as unknown) && baseValue(o) !== o.value) meta.overrides.push(o);
+    applyOverrides();
+    const lvlName = o.lvl === "A" || o.lvl === "B" ? TOWERS[o.kind].branches[o.lvl].name : `livello ${o.lvl}`;
+    logChange(`${TOWERS[o.kind].name}, ${lvlName}`, [`${String(o.field)}: ${old} → ${o.value}`]);
+    saveMeta();
+    toast("Modifica applicata e registrata nella bacheca");
+    renderAdminPanel($("adminBody"), adminApi, closeAdmin);
+  },
+  resetOverrides() {
+    if (!meta.overrides.length) return;
+    logChange("Valori originali ripristinati", meta.overrides.map((o) => `${TOWERS[o.kind].name} ${o.lvl}: ${String(o.field)}`));
+    meta.overrides = [];
+    applyOverrides();
+    saveMeta();
+    toast("Valori originali ripristinati");
+    renderAdminPanel($("adminBody"), adminApi, closeAdmin);
+  },
+};
+
+function baseValue(o: Override): number {
+  const def = TOWER_BASE[o.kind];
+  const ref = (o.lvl === "A" || o.lvl === "B" ? def.branches[o.lvl] : def.levels[Number(o.lvl) - 1]) as unknown as Record<string, number>;
+  return ref[o.field as string];
+}
+
+function adminMeta(change: () => void, msg: string) {
+  change();
+  if (meta.loadout.length < LOADOUT_SIZE) for (const k of meta.unlocked) if (!meta.loadout.includes(k) && meta.loadout.length < LOADOUT_SIZE) meta.loadout.push(k);
+  saveMeta();
+  toast(msg);
+  renderMenu();
+}
+
+function openAdmin() {
+  $("adminPanel").hidden = false;
+  renderAdminPanel($("adminBody"), adminApi, closeAdmin);
+}
+
+function closeAdmin() {
+  $("adminPanel").hidden = true;
+  renderMenu();
+}
+
+// ---------- tocchi sulla carta ----------
+
+function pointerCell(ev: PointerEvent, lift: boolean): { cx: number; cy: number } {
+  const r = canvas.getBoundingClientRect();
+  // Trascinando col dito la torre appare sopra il polpastrello, così resta visibile.
+  const lx = ev.clientX - r.left;
+  const ly = ev.clientY - r.top - (lift && ev.pointerType === "touch" ? T * 0.9 : 0);
+  const mx = rot ? ly : lx;
+  const my = rot ? MAP_H * T - lx : ly;
+  return { cx: Math.floor(mx / T), cy: Math.floor(my / T) };
+}
+
+function pointerUnits(ev: PointerEvent): { x: number; y: number } {
+  const r = canvas.getBoundingClientRect();
+  const lx = ev.clientX - r.left;
+  const ly = ev.clientY - r.top;
+  const mx = rot ? ly : lx;
+  const my = rot ? MAP_H * T - lx : ly;
+  return { x: Math.round((mx / T) * TILE), y: Math.round((my / T) * TILE) };
+}
+
+function insideMap(ev: PointerEvent): boolean {
+  const r = canvas.getBoundingClientRect();
+  return ev.clientX >= r.left && ev.clientX < r.right && ev.clientY >= r.top && ev.clientY < r.bottom;
+}
+
+function tryPlace() {
+  if (!placing || !ghost) return;
+  if (!isBuildable(state, ghost.cx, ghost.cy)) {
+    toast("Qui non si può costruire");
+    sfx.deny();
+    ghost = null;
+    return;
+  }
+  send({ t: "build", kind: placing, cx: ghost.cx, cy: ghost.cy });
+  setPlacing(null);
+}
+
+function bindPointer() {
+  canvas.addEventListener("pointerdown", (ev) => {
+    wakeAudio();
+    if (dialogQueue.length || isOver()) return;
+    ev.preventDefault();
+    if (aiming) {
+      const p = pointerUnits(ev);
+      send({ t: "ability", id: "fascio", x: p.x, y: p.y });
+      setAiming(false);
+      return;
+    }
+    if (placing) {
+      ghost = pointerCell(ev, false);
+      return;
+    }
+    const c = pointerCell(ev, false);
+    const hit = state.towers.find((t) => t.cx === c.cx && t.cy === c.cy);
+    selectTower(hit ? hit.id : null);
+  });
+  window.addEventListener("pointermove", (ev) => {
+    if (aiming) aimPoint = insideMap(ev) ? pointerUnits(ev) : null;
+    if (!placing) return;
+    if (dragFromCard) {
+      if (insideMap(ev)) {
+        dragMoved = true;
+        ghost = pointerCell(ev, true);
+      } else {
+        ghost = null;
+      }
+    } else if (ev.buttons && insideMap(ev)) {
+      ghost = pointerCell(ev, false);
+    }
+  });
+  window.addEventListener("pointerup", (ev) => {
+    if (!placing) return;
+    if (dragFromCard) {
+      dragFromCard = false;
+      // Un semplice tocco sulla carta lascia la torre scelta: il prossimo tocco sulla mappa costruisce.
+      if (dragMoved && insideMap(ev)) tryPlace();
+      else if (dragMoved) setPlacing(null);
+      return;
+    }
+    if (insideMap(ev) && ghost) tryPlace();
+  });
+  window.addEventListener("pointercancel", () => {
+    if (dragFromCard) setPlacing(null);
+  });
+}
+
+function bindButtons() {
+  $("go").addEventListener("click", () => {
+    wakeAudio();
+    send({ t: "skip" });
+  });
+  $("pause").addEventListener("click", () => {
+    wakeAudio();
+    if (isOver()) return;
+    if (match && !match.isHost) {
+      toast("Pausa e velocità le decide chi ospita");
+      return;
+    }
+    paused = !paused;
+    $("pauseLayer").hidden = !paused;
+    if (paused) setText($("quit"), `Esci e incassa ${rewardFor(state)} Schegge`);
+  });
+  $("resume").addEventListener("click", () => {
+    paused = false;
+    $("pauseLayer").hidden = true;
+  });
+  $("quit").addEventListener("click", () => {
+    award();
+    leaveMatch();
+    showMenu();
+  });
+  $("abFascio").addEventListener("click", () => {
+    wakeAudio();
+    if (state.abilityCd.fascio > 0) {
+      toast(`Fascio pronto tra ${Math.ceil(state.abilityCd.fascio / TICKS_PER_SECOND)} s`);
+      return;
+    }
+    setPlacing(null);
+    selectTower(null);
+    setAiming(!aiming);
+    if (aiming) toast("Tocca il punto da colpire");
+  });
+  $("abGelata").addEventListener("click", () => {
+    wakeAudio();
+    send({ t: "ability", id: "gelata" });
+  });
+  $("toMenu").addEventListener("click", () => {
+    leaveMatch();
+    showMenu();
+  });
+  $("speed").addEventListener("click", () => {
+    wakeAudio();
+    if (match && !match.isHost) {
+      toast("Pausa e velocità le decide chi ospita");
+      return;
+    }
+    speed = speed === 1 ? 2 : 1;
+  });
+  $("sound").addEventListener("click", () => {
+    soundOn = !soundOn;
+    store.set("faro.audio", soundOn ? "on" : "off");
+    wakeAudio();
+  });
+  $("btnUp").addEventListener("click", () => {
+    if (selectedId !== null) send({ t: "upgrade", id: selectedId });
+  });
+  $("btnA").addEventListener("click", () => {
+    if (selectedId !== null) send({ t: "spec", id: selectedId, branch: "A" });
+  });
+  $("btnB").addEventListener("click", () => {
+    if (selectedId !== null) send({ t: "spec", id: selectedId, branch: "B" });
+  });
+  $("btnSell").addEventListener("click", () => {
+    if (selectedId !== null) {
+      send({ t: "sell", id: selectedId });
+      selectTower(null);
+    }
+  });
+  $("btnClose").addEventListener("click", () => selectTower(null));
+  $("again").addEventListener("click", restart);
+  $("dialog").addEventListener("click", () => {
+    wakeAudio();
+    dialogQueue.shift();
+    showLine();
+  });
+  $("btnApex").addEventListener("click", () => {
+    if (selectedId !== null) send({ t: "apex", id: selectedId });
+  });
+  $("adminOpen").addEventListener("click", openAdmin);
+  $("adminBtn").addEventListener("click", () => {
+    const d = $("adminDrawer");
+    d.hidden = !d.hidden;
+    if (!d.hidden) renderAdminDrawer(d, adminApi);
+  });
+  // Cinque tocchi sul titolo attivano o spengono il pannello admin.
+  let taps = 0;
+  let tapTimer = 0;
+  $("menuTitle").addEventListener("click", () => {
+    taps++;
+    clearTimeout(tapTimer);
+    tapTimer = window.setTimeout(() => (taps = 0), 1500);
+    if (taps >= 5) {
+      taps = 0;
+      if (meta.adminEnabled) {
+        meta.adminEnabled = false;
+        saveMeta();
+        toast("Pannello admin nascosto");
+        renderMenu();
+      } else askAdminPassword();
+    }
+  });
+  $("newsToggle").addEventListener("click", () => {
+    const n = $("news");
+    n.hidden = !n.hidden;
+    meta.newsSeen = news().length;
+    saveMeta();
+    renderNews();
+  });
+  window.addEventListener("keydown", (ev) => {
+    if (ev.key === "Escape") {
+      setPlacing(null);
+      selectTower(null);
+      setAiming(false);
+    }
+  });
+  window.addEventListener("hashchange", () => {
+    if (inMenu) renderMenu();
+  });
+}
+
+// ---------- disegno ----------
+
+function render(now: number) {
+  const pxT = T * dpr;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  if (background) ctx.drawImage(background, 0, 0);
+  const alpha = paused || dialogQueue.length || isOver() ? 1 : Math.min(1, accumulator / 100);
+  applyMap(ctx, rot, pxT);
+  const level = levelOf(state);
+  drawTide(ctx, pxT, now, reducedMotion, level.map, level.map.lanes.map((_, i) => laneIsOpen(state, i) || (state.phase === "prep" && state.wave + 1 >= (level.map.laneOpen[i] ?? 1))));
+  for (const e of level.map.emerge) for (const [cx, cy] of e.cells) drawShoal(ctx, pxT, cx, cy, cellEmerged(state, cx, cy), reducedMotion ? 0 : now);
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+
+  if (placing) {
+    ctx.save();
+    ctx.strokeStyle = "rgba(238,228,203,.2)";
+    ctx.lineWidth = 1;
+    for (let cy = 0; cy < MAP_H; cy++) {
+      for (let cx = 0; cx < MAP_W; cx++) {
+        if (!isBuildable(state, cx, cy)) continue;
+        const r = cellRect(cx, cy);
+        ctx.strokeRect(r.x + 2, r.y + 2, r.w - 4, r.h - 4);
+      }
+    }
+    ctx.restore();
+  }
+
+  const selected = selectedId === null ? null : state.towers.find((t) => t.id === selectedId);
+  if (selected) {
+    const p = S(selected.x, selected.y);
+    rangeRing(p.x, p.y, toPx(effStats(state, selected).range, pxT), TOWERS[selected.kind].family === "supporto" ? "#7fd8a0" : COLORS.brass);
+  }
+
+  for (const t of state.towers) {
+    const p = S(t.x, t.y);
+    const s = statsIn(state, t);
+    if (s.slowBp < 10000) {
+      // Aura visibile: il giocatore vede dove arriva il freddo.
+      ctx.save();
+      ctx.fillStyle = "rgba(165,228,236,.05)";
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, toPx(s.range, pxT), 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+    const angle = aim.has(t.id) ? aim.get(t.id)! + turn() : -0.6;
+    drawTowerShape(ctx, t.kind, p.x, p.y, pxT, angle, t.level, t.branch, reducedMotion ? 0 : now, t.track);
+    towerStatus(t, p.x, p.y, pxT, now);
+    if (t.id === selectedId) {
+      const r = cellRect(t.cx, t.cy);
+      ctx.save();
+      ctx.strokeStyle = COLORS.brass;
+      ctx.lineWidth = Math.max(1.5, pxT * 0.04);
+      ctx.strokeRect(r.x + 1, r.y + 1, r.w - 2, r.h - 2);
+      ctx.restore();
+    }
+  }
+
+  for (const e of state.enemies) {
+    const prev = prevPos.get(e.id);
+    const ux = prev ? prev.x + (e.x - prev.x) * alpha : e.x;
+    const uy = prev ? prev.y + (e.y - prev.y) * alpha : e.y;
+    const lane = e.boss ? 0 : e.offset;
+    const p = S(ux + lane * 0.5, uy + lane);
+    drawEnemy(ctx, e, p.x, p.y, pxT, now, reducedMotion);
+    if (e.mods || e.shield || e.mark) enemyMarks(e, p.x, p.y, pxT, now);
+  }
+
+  const faro = S(level.map.faro[0] * TILE + TILE / 2, level.map.faro[1] * TILE + TILE / 2);
+  drawFaro(ctx, pxT, now, state.lives, reducedMotion, faro.x, faro.y);
+
+  // Colpi di mortaio in volo: un arco tra torre e punto d'impatto.
+  for (const s of state.shells) {
+    const span = s.land - s.fired;
+    const prog = Math.min(1, (state.tick - s.fired + alpha) / span);
+    const p = S(s.fromX + (s.x - s.fromX) * prog, s.fromY + (s.y - s.fromY) * prog);
+    const y = p.y - Math.sin(prog * Math.PI) * pxT * 0.9;
+    ctx.save();
+    ctx.fillStyle = "#14191b";
+    ctx.strokeStyle = COLORS.cream;
+    ctx.lineWidth = Math.max(1, pxT * 0.025);
+    ctx.beginPath();
+    ctx.arc(p.x, y, pxT * 0.09, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  const clock = performance.now();
+  fx = fx.filter((f) => clock - f.born < f.life);
+  for (const f of fx) {
+    const k = (clock - f.born) / f.life;
+    const p = S(f.x, f.y);
+    ctx.save();
+    if (f.kind === "zap") {
+      const pts = f.pts!;
+      ctx.strokeStyle = f.color ?? "#e9e2ff";
+      ctx.shadowColor = "#a48cff";
+      ctx.shadowBlur = pxT * 0.25;
+      ctx.globalAlpha = 1 - k;
+      ctx.lineWidth = Math.max(1.5, pxT * 0.05);
+      ctx.beginPath();
+      for (let i = 0; i + 1 < pts.length; i += 2) {
+        const q = S(pts[i], pts[i + 1]);
+        if (i === 0) {
+          ctx.moveTo(q.x, q.y);
+          continue;
+        }
+        // Piccoli zig-zag tra un bersaglio e il successivo.
+        const prev = S(pts[i - 2], pts[i - 1]);
+        const mx = (prev.x + q.x) / 2 + ((i * 37) % 7 - 3) * pxT * 0.05;
+        const my = (prev.y + q.y) / 2 + ((i * 53) % 7 - 3) * pxT * 0.05;
+        ctx.lineTo(mx, my);
+        ctx.lineTo(q.x, q.y);
+      }
+      ctx.stroke();
+    } else if (f.kind === "ring") {
+      ctx.globalAlpha = (1 - k) * 0.9;
+      ctx.strokeStyle = f.color!;
+      ctx.lineWidth = Math.max(2, pxT * 0.08 * (1 - k));
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, toPx(f.r!, pxT) * (0.3 + 0.7 * k), 0, Math.PI * 2);
+      ctx.stroke();
+    } else if (f.kind === "beam") {
+      const r = toPx(f.r!, pxT);
+      ctx.globalCompositeOperation = "lighter";
+      ctx.globalAlpha = 1 - k;
+      const grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, r);
+      grad.addColorStop(0, "rgba(255,226,150,.9)");
+      grad.addColorStop(1, "rgba(255,226,150,0)");
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, r * (0.7 + 0.3 * k), 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "rgba(255,236,180,.55)";
+      ctx.fillRect(p.x - pxT * 0.18 * (1 - k), 0, pxT * 0.36 * (1 - k), p.y);
+    } else if (f.kind === "tracer") {
+      const q = S(f.x2!, f.y2!);
+      ctx.strokeStyle = COLORS.cream;
+      ctx.globalAlpha = 1 - k;
+      ctx.lineWidth = Math.max(1, pxT * 0.035);
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y);
+      ctx.lineTo(q.x, q.y);
+      ctx.stroke();
+    } else if (f.kind === "blast") {
+      const r = toPx(f.r!, pxT) * (0.45 + 0.55 * k);
+      ctx.globalAlpha = (1 - k) * 0.9;
+      ctx.strokeStyle = "#ffcf85";
+      ctx.lineWidth = Math.max(2, pxT * 0.09 * (1 - k));
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.fillStyle = "rgba(226,113,79,.2)";
+      ctx.fill();
+    } else {
+      ctx.globalAlpha = 1 - k * k;
+      ctx.fillStyle = f.color!;
+      ctx.font = `700 ${Math.round(pxT * 0.34)}px "Barlow Semi Condensed", "Arial Narrow", sans-serif`;
+      ctx.textAlign = "center";
+      ctx.fillText(f.text!, p.x, p.y - pxT * (0.3 + k * 0.5));
+    }
+    ctx.restore();
+  }
+
+  if (placing && ghost) {
+    const ok = isBuildable(state, ghost.cx, ghost.cy);
+    const r = cellRect(ghost.cx, ghost.cy);
+    const x = r.x + r.w / 2;
+    const y = r.y + r.h / 2;
+    rangeRing(x, y, toPx(TOWERS[placing].levels[0].range, pxT), ok ? COLORS.brass : COLORS.coral);
+    ctx.save();
+    ctx.globalAlpha = 0.85;
+    ctx.fillStyle = ok ? "rgba(224,179,84,.25)" : "rgba(226,113,79,.35)";
+    ctx.fillRect(r.x, r.y, r.w, r.h);
+    drawTowerShape(ctx, placing, x, y, pxT, -0.6);
+    ctx.restore();
+  }
+
+  if (state.towers.length === 0 && !placing && state.phase === "prep" && !dialogQueue.length) {
+    const p = rot ? S(5500, 4500) : S(9000, 7900);
+    ctx.save();
+    ctx.font = `italic ${Math.round(pxT * 0.42)}px "IM Fell English", Georgia, serif`;
+    ctx.textAlign = "center";
+    ctx.fillStyle = COLORS.cream;
+    ctx.shadowColor = "#000";
+    ctx.shadowBlur = pxT * 0.2;
+    ctx.fillText("Trascina una torre sulla riva", p.x, p.y);
+    ctx.restore();
+  }
+
+  if (aiming) {
+    ctx.save();
+    ctx.fillStyle = "rgba(255,226,150,.06)";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.restore();
+    if (aimPoint) {
+      const p = S(aimPoint.x, aimPoint.y);
+      rangeRing(p.x, p.y, toPx(ABILITIES.fascio.radius as number, pxT), "#ffe296");
+    }
+  }
+
+  if (state.mode === "natale" && !reducedMotion) {
+    // Neve che cade sulle Notti di Natale.
+    ctx.fillStyle = "rgba(245,250,255,.7)";
+    const W = canvas.width;
+    const H = canvas.height;
+    for (let i = 0; i < 60; i++) {
+      const sx = ((i * 137.5 + now * (0.012 + (i % 5) * 0.004)) % (W + 20)) - 10;
+      const sy = ((i * 89.3 + now * (0.03 + (i % 7) * 0.006)) % (H + 20)) - 10;
+      ctx.beginPath();
+      ctx.arc(sx + Math.sin(now * 0.001 + i) * 6 * dpr, sy, (1 + (i % 3)) * dpr, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  if (goldFlash > 0.01) {
+    ctx.save();
+    ctx.fillStyle = `rgba(224,179,84,${0.25 * goldFlash})`;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.restore();
+    goldFlash *= reducedMotion ? 0.5 : 0.93;
+  }
+
+  if (iceFlash > 0.01) {
+    ctx.save();
+    ctx.fillStyle = `rgba(165,228,236,${0.3 * iceFlash})`;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.restore();
+    iceFlash *= reducedMotion ? 0.5 : 0.94;
+  }
+
+  if (flash > 0.01) {
+    ctx.save();
+    ctx.fillStyle = `rgba(226,113,79,${0.28 * flash})`;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.restore();
+    flash *= 0.9;
+  }
+}
+
+// Stato della torre: stordita, protetta, potenziata dal supporto.
+function towerStatus(t: GameState["towers"][number], x: number, y: number, T: number, now: number) {
+  ctx.save();
+  if (t.stun > 0) {
+    ctx.fillStyle = "rgba(20,14,40,.55)";
+    ctx.beginPath();
+    ctx.arc(x, y, T * 0.42, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#c9b8ff";
+    ctx.lineWidth = Math.max(1, T * 0.04);
+    const a = (now * 0.01) % (Math.PI * 2);
+    ctx.beginPath();
+    ctx.arc(x, y, T * 0.42, a, a + 1.2);
+    ctx.arc(x, y, T * 0.42, a + Math.PI, a + Math.PI + 1.2);
+    ctx.stroke();
+  } else if (t.immune > 0) {
+    ctx.strokeStyle = "rgba(127,216,160,.8)";
+    ctx.lineWidth = Math.max(1, T * 0.03);
+    ctx.setLineDash([T * 0.08, T * 0.06]);
+    ctx.beginPath();
+    ctx.arc(x, y, T * 0.46, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  if (t.level >= 5) {
+    // Apex: anello d'ottone e tre punte di corona.
+    ctx.strokeStyle = COLORS.brass;
+    ctx.lineWidth = Math.max(2, T * 0.06);
+    ctx.beginPath();
+    ctx.arc(x, y, T * 0.47, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.fillStyle = COLORS.brass;
+    ctx.beginPath();
+    ctx.moveTo(x - T * 0.18, y - T * 0.42);
+    ctx.lineTo(x - T * 0.12, y - T * 0.58);
+    ctx.lineTo(x - T * 0.04, y - T * 0.46);
+    ctx.lineTo(x, y - T * 0.62);
+    ctx.lineTo(x + T * 0.04, y - T * 0.46);
+    ctx.lineTo(x + T * 0.12, y - T * 0.58);
+    ctx.lineTo(x + T * 0.18, y - T * 0.42);
+    ctx.closePath();
+    ctx.fill();
+  }
+  if (dpsOn && t.damageDone > 0) {
+    ctx.font = `700 ${Math.round(T * 0.26)}px "Barlow Semi Condensed", "Arial Narrow", sans-serif`;
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#fff";
+    ctx.shadowColor = "#000";
+    ctx.shadowBlur = 4;
+    ctx.fillText(`${Math.round(towerDps(t))}/s`, x, y + T * 0.68);
+    ctx.shadowBlur = 0;
+  }
+  // Piccoli segni dei bonus attivi, in alto a destra.
+  const marks: string[] = [];
+  if (t.bufDamage) marks.push(COLORS.coral);
+  if (t.bufRange) marks.push(COLORS.ice);
+  if (t.bufHaste) marks.push(COLORS.brass);
+  marks.forEach((c, i) => {
+    ctx.fillStyle = c;
+    ctx.beginPath();
+    ctx.moveTo(x + T * (0.28 + i * 0.12), y - T * 0.3);
+    ctx.lineTo(x + T * (0.33 + i * 0.12), y - T * 0.4);
+    ctx.lineTo(x + T * (0.38 + i * 0.12), y - T * 0.3);
+    ctx.fill();
+  });
+  ctx.restore();
+}
+
+function enemyMarks(e: GameState["enemies"][number], x: number, y: number, T: number, now: number) {
+  ctx.save();
+  const r = T * (e.boss ? 0.62 : e.kind === "bruto" ? 0.42 : 0.3);
+  if (e.shield > 0) {
+    ctx.strokeStyle = "rgba(201,184,255,.9)";
+    ctx.lineWidth = Math.max(1.5, T * 0.05);
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  // Un puntino colorato per modificatore, sotto il nemico.
+  const list = modsOf(e.mods);
+  list.forEach((m, i) => {
+    ctx.fillStyle = MODS[m].color;
+    ctx.beginPath();
+    ctx.arc(x + (i - (list.length - 1) / 2) * T * 0.14, y + r + T * 0.08, T * 0.055, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  if (e.mods & 1) {
+    // Benedetto: alone dorato che pulsa.
+    ctx.strokeStyle = `rgba(255,241,176,${0.4 + 0.3 * Math.sin(now * 0.008)})`;
+    ctx.lineWidth = Math.max(1, T * 0.03);
+    ctx.beginPath();
+    ctx.arc(x, y, r + T * 0.08, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  if (e.mark > 0) {
+    ctx.strokeStyle = COLORS.coral;
+    ctx.lineWidth = Math.max(1, T * 0.03);
+    ctx.beginPath();
+    ctx.moveTo(x - r * 0.6, y - r * 0.6);
+    ctx.lineTo(x + r * 0.6, y + r * 0.6);
+    ctx.moveTo(x + r * 0.6, y - r * 0.6);
+    ctx.lineTo(x - r * 0.6, y + r * 0.6);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function rangeRing(x: number, y: number, r: number, color: string) {
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.fillStyle = color;
+  ctx.globalAlpha = 0.1;
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.globalAlpha = 0.85;
+  ctx.lineWidth = Math.max(1, T * dpr * 0.03);
+  ctx.setLineDash([T * dpr * 0.14, T * dpr * 0.1]);
+  ctx.stroke();
+  ctx.restore();
+}
+
+// ---------- ciclo principale ----------
+
+function updateBossBar() {
+  const bar = $("bossBar");
+  const b = state.enemies.find((e) => e.boss);
+  bar.hidden = !b || inMenu;
+  if (!b) return;
+  setText($("bossName"), b.kind === "bruto" ? "Grande Bruto" : ENEMIES[b.kind].name);
+  $("bossHp").style.setProperty("--p", String(Math.max(0, b.hp) / b.maxHp));
+  $("bossShield").style.setProperty("--p", String(Math.min(1, b.shield / b.maxHp)));
+  const mods = modsOf(b.mods).map((m) => MODS[m].name).join(", ");
+  setText($("bossInfo"), mods ? `Modificatori: ${mods}` : "");
+}
+
+function frame(now: number) {
+  const dt = Math.min(250, now - (lastFrame || now));
+  lastFrame = now;
+  const guest = match && !match.isHost && match.state === state && !inMenu;
+  if (guest) {
+    // Chi partecipa segue chi ospita: esegue i tick confermati, più in fretta se è rimasto indietro.
+    prevPos.clear();
+    for (const e of state.enemies) prevPos.set(e.id, { x: e.x, y: e.y });
+    const ev = match!.guestTicks(match!.behind > 30 ? 30 : match!.behind > 4 ? 3 : 1);
+    if (ev.length) handleEvents(ev);
+    accumulator = 0;
+  } else if (!inMenu && !paused && !dialogQueue.length && !isOver()) {
+    accumulator += dt * speed;
+    let guard = 0;
+    while (accumulator >= 100 && guard < 12 && !dialogQueue.length && !isOver()) {
+      accumulator -= 100;
+      tick();
+      guard++;
+    }
+  }
+  updatePanel();
+  updateBossBar();
+  $("adminBtn").hidden = inMenu || !(meta.adminEnabled || state.sandbox);
+  if (match && match.isHost && match.state === state && (paused || isOver())) match.flush();
+  render(now);
+  requestAnimationFrame(frame);
+}
+
+function start(saved: { snap?: string; log?: Array<[number, Command[]]>; seen?: boolean }) {
+  if (saved.snap) {
+    state = restore(saved.snap);
+    log = saved.log ?? [];
+    paused = true;
+  }
+  buildCards();
+  bindPointer();
+  bindButtons();
+  layout();
+  new ResizeObserver(() => layout()).observe(app);
+  window.addEventListener("orientationchange", () => layout());
+  if (saved.snap) {
+    inMenu = false;
+    $("menu").hidden = true;
+    $("pauseLayer").hidden = false;
+  } else showMenu();
+  updatePanel();
+  requestAnimationFrame(frame);
+  void checkServer();
+
+  // Accesso per i test automatici e per chi collauda.
+  (window as unknown as Record<string, unknown>).__faro = {
+    get state() {
+      return state;
+    },
+    get log() {
+      return log;
+    },
+    hashState,
+    createGame,
+    step,
+    playBot,
+    get seed() {
+      return state.seed;
+    },
+    debug: {
+      sha256Plain: (t: string) => sha256Plain(new TextEncoder().encode(t)),
+      restart(seed: number, opts: GameOptions = {}) {
+        newMatch(opts.mode ?? "campagna", opts.level ?? "porto", seed, opts);
+        dialogQueue = [];
+        $("dialog").hidden = true;
+      },
+      get meta() {
+        return meta;
+      },
+      setSchegge(n: number) {
+        meta.schegge = n;
+        saveMeta();
+        if (inMenu) renderMenu();
+      },
+      get lastReward() {
+        return lastReward;
+      },
+      adminApi,
+      openAdmin,
+      send,
+      get match() {
+        return match;
+      },
+      net,
+      tick() {
+        tick();
+      },
+      closeDialog() {
+        dialogQueue = [];
+        $("dialog").hidden = true;
+      },
+      cellCenter(cx: number, cy: number) {
+        const r = canvas.getBoundingClientRect();
+        const p = S(cx * TILE + TILE / 2, cy * TILE + TILE / 2);
+        return { x: r.left + p.x / dpr, y: r.top + p.y / dpr };
+      },
+      get view() {
+        return { rot, below, T };
+      },
+    },
+  };
+  try {
+    (navigator as Navigator & { wakeLock?: { request(t: string): Promise<unknown> } }).wakeLock?.request("screen").catch(() => {});
+  } catch {
+    /* facoltativo */
+  }
+}
+
+const hot = (window as unknown as { claude?: { hot?: { snapshot?(f: () => unknown): void; ready?(f: (d: never) => void): void; data?: unknown } } }).claude?.hot;
+hot?.snapshot?.(() => ({ snap: snapshot(state), log }));
+if (hot?.ready) hot.ready(start as (d: never) => void);
+else start((hot?.data as { snap?: string }) ?? {});

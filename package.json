@@ -1,0 +1,17 @@
+{
+  "name": "ultimo-faro",
+  "version": "0.6.0",
+  "private": true,
+  "type": "module",
+  "description": "Tower defense per un gruppo ristretto: simulazione deterministica, client canvas, Supabase per account e multigiocatore.",
+  "scripts": {
+    "build": "node tools/build.mjs",
+    "test": "tsx tests/sim.test.ts",
+    "balance": "tsx tools/mode-lab.ts 6"
+  },
+  "devDependencies": {
+    "esbuild": "0.24.2",
+    "tsx": "4.19.2",
+    "typescript": "5.7.3"
+  }
+}

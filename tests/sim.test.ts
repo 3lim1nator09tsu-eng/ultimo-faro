@@ -1,0 +1,510 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import { CAMPAIGN_LENGTH, ENEMIES, LEVELS, RULES, STARTER_TOWERS, TOWERS, levelById, waveAt } from "../src/sim-core/content";
+import { Command, allIntegers, buildCost, createGame, damageAgainst, effStats, hashState, hpForWave, isBuildable, laneIsOpen, rankedStats, restore, rewardFor, sellValue, snapshot, step } from "../src/sim-core/sim";
+import { playBot } from "../src/sim-core/bot";
+
+const toWave = (s: ReturnType<typeof createGame>) => {
+  step(s, [{ t: "skip" }]);
+  assert.equal(s.phase, "wave");
+};
+
+test("stessi seed e comandi producono lo stesso hash", () => {
+  const a = playBot("mirato", 4242);
+  const b = playBot("mirato", 4242);
+  assert.equal(a.hash, b.hash);
+  assert.equal(a.ticks, b.ticks);
+});
+
+test("seed diversi producono partite diverse", () => {
+  assert.notEqual(playBot("mirato", 1).hash, playBot("mirato", 2).hash);
+});
+
+test("riprendere da uno snapshot non cambia la partita", () => {
+  const log: Array<[number, Command[]]> = [];
+  const full = playBot("mirato", 77, 80000, log);
+  const byTick = new Map(log);
+  let state = createGame(77);
+  while (state.phase !== "won" && state.phase !== "lost") {
+    step(state, byTick.get(state.tick) ?? []);
+    if (state.tick % 137 === 0) state = restore(snapshot(state));
+  }
+  assert.equal(hashState(state), full.hash);
+});
+
+test("lo stato contiene solo numeri interi in ogni tick", () => {
+  const log: Array<[number, Command[]]> = [];
+  playBot("mirato", 9, 80000, log);
+  const byTick = new Map(log);
+  const state = createGame(9);
+  while (state.phase !== "won" && state.phase !== "lost") {
+    step(state, byTick.get(state.tick) ?? []);
+    assert.ok(allIntegers(state), `numero non intero al tick ${state.tick}`);
+  }
+});
+
+test("il danno segue la formula del piano", () => {
+  assert.equal(damageAgainst(12, "cinetico", "risacca", 10000, false), 12);
+  // 100 contro Bruto: 100 x 0,60 x 100/140 = 42.
+  assert.equal(damageAgainst(100, "cinetico", "bruto", 10000, false), 42);
+  // Elettrico contro Bruto: 100 x 1,10 x 100/140 = 78.
+  assert.equal(damageAgainst(100, "elettrico", "bruto", 10000, false), 78);
+  assert.equal(damageAgainst(100, "cinetico", "bruto", 10000, true), 100);
+  assert.equal(damageAgainst(100, "cinetico", "risacca", 12500, false), 125);
+});
+
+test("la vita cresce con le ondate", () => {
+  assert.equal(hpForWave(100, 0, 10000), 100);
+  assert.equal(hpForWave(100, 10, 10000), 270);
+  assert.equal(hpForWave(100, 10, 20000), 540);
+});
+
+test("costruzione: percorso, scogli e caselle occupate sono rifiutati", () => {
+  const s = createGame(1);
+  assert.equal(isBuildable(s, 3, 3), false, "percorso");
+  assert.equal(isBuildable(s, 1, 4), false, "scoglio");
+  assert.equal(isBuildable(s, 15, 7), false, "faro");
+  assert.equal(isBuildable(s, 5, 4), true);
+  const ev = step(s, [{ t: "build", kind: "balestra", cx: 5, cy: 4 }]);
+  assert.ok(ev.some((e) => e.e === "built"));
+  assert.equal(s.cash, RULES.startCash - TOWERS.balestra.levels[0].cost);
+  assert.ok(step(s, [{ t: "build", kind: "balestra", cx: 5, cy: 4 }]).some((e) => e.e === "reject"));
+  assert.equal(s.towers.length, 1);
+});
+
+test("le torri non sbloccate vengono rifiutate", () => {
+  const s = createGame(1, { allowed: STARTER_TOWERS });
+  const ev = step(s, [{ t: "build", kind: "cecchino", cx: 5, cy: 4 }]);
+  assert.ok(ev.some((e) => e.e === "reject" && e.reason === "Torre non in squadra"));
+  assert.equal(s.towers.length, 0);
+});
+
+test("il cash non può andare sotto zero", () => {
+  const s = createGame(1);
+  const ev = step(s, [
+    { t: "build", kind: "mortaio", cx: 5, cy: 4 },
+    { t: "build", kind: "mortaio", cx: 6, cy: 4 },
+  ]);
+  assert.ok(ev.some((e) => e.e === "reject" && e.reason === "Cash insufficiente"));
+  assert.equal(s.towers.length, 1);
+  assert.ok(s.cash >= 0);
+});
+
+test("vendita: rimborso pieno nella stessa preparazione, poi 70%", () => {
+  const s = createGame(1);
+  step(s, [{ t: "build", kind: "balestra", cx: 5, cy: 4 }]);
+  assert.equal(sellValue(s, s.towers[0]), 100);
+  toWave(s);
+  assert.equal(sellValue(s, s.towers[0]), 70);
+  const before = s.cash;
+  step(s, [{ t: "sell", id: s.towers[0].id }]);
+  assert.equal(s.cash, before + 70);
+});
+
+test("specializzazione: solo dal livello 3 e senza ritorno", () => {
+  const s = createGame(1);
+  s.cash = 5000;
+  step(s, [{ t: "build", kind: "balestra", cx: 5, cy: 4 }]);
+  const id = s.towers[0].id;
+  assert.ok(step(s, [{ t: "spec", id, branch: "A" }]).some((e) => e.e === "reject"));
+  step(s, [{ t: "upgrade", id }]);
+  step(s, [{ t: "upgrade", id }]);
+  assert.ok(step(s, [{ t: "upgrade", id }]).some((e) => e.e === "reject"));
+  step(s, [{ t: "spec", id, branch: "B" }]);
+  assert.equal(s.towers[0].level, 4);
+  assert.ok(step(s, [{ t: "spec", id, branch: "A" }]).some((e) => e.e === "reject"));
+});
+
+test("il rango aumenta danno, rallentamento e rendita del 10% per rango", () => {
+  const b = { kind: "balestra" as const, level: 1, branch: null };
+  assert.equal(rankedStats(b, 1).damage, 12);
+  assert.equal(rankedStats(b, 3).damage, 14);
+  assert.equal(rankedStats({ kind: "soffio", level: 1, branch: null }, 5).slowBp, 5800);
+  assert.equal(rankedStats({ kind: "officina", level: 1, branch: null }, 2).income, 33);
+  const s = createGame(1, { ranks: { balestra: 9 } });
+  assert.equal(s.ranks.balestra, 5, "il rango massimo è 5");
+});
+
+test("la Bobina colpisce più nemici con un solo fulmine", () => {
+  const s = createGame(1);
+  step(s, [{ t: "build", kind: "bobina", cx: 4, cy: 2 }]);
+  toWave(s);
+  let zap = null;
+  for (let i = 0; i < 400 && !zap; i++) zap = step(s, []).find((e) => e.e === "zap") ?? null;
+  assert.ok(zap && zap.e === "zap");
+  assert.ok(zap.points.length >= 6, "almeno due bersagli");
+});
+
+test("l'Officina paga a fine ondata", () => {
+  const s = createGame(1);
+  s.cash = 5000;
+  step(s, [
+    { t: "build", kind: "officina", cx: 0, cy: 8 },
+    { t: "build", kind: "mortaio", cx: 2, cy: 3 },
+    { t: "build", kind: "balestra", cx: 4, cy: 2 },
+  ]);
+  toWave(s);
+  let income = null;
+  for (let i = 0; i < 3000 && !income; i++) income = step(s, []).find((e) => e.e === "income") ?? null;
+  assert.ok(income && income.e === "income" && income.amount === 30);
+});
+
+test("abilità: si usano solo in ondata e poi si ricaricano", () => {
+  const s = createGame(1);
+  assert.ok(step(s, [{ t: "ability", id: "gelata" }]).some((e) => e.e === "reject"));
+  toWave(s);
+  for (let i = 0; i < 40; i++) step(s, []);
+  assert.ok(s.enemies.length > 0);
+  step(s, [{ t: "ability", id: "gelata" }]);
+  assert.ok(s.enemies.every((e) => e.stun > 0));
+  assert.ok(step(s, [{ t: "ability", id: "gelata" }]).some((e) => e.e === "reject"));
+  const e = s.enemies[0];
+  const hp = e.hp;
+  step(s, [{ t: "ability", id: "fascio", x: e.x, y: e.y }]);
+  assert.ok(e.hp < hp || !s.enemies.includes(e));
+});
+
+test("Infinita continua oltre la decima ondata", () => {
+  assert.ok(waveAt(LEVELS[0], CAMPAIGN_LENGTH + 4).some((g) => g.boss));
+  const r = playBot("mirato", 3, 400000, undefined, { mode: "infinita" });
+  assert.equal(r.phase, "lost");
+  assert.ok(r.wave > CAMPAIGN_LENGTH);
+});
+
+test("le Schegge premiano ondate, vittoria e stelle", () => {
+  const s = createGame(1);
+  s.cleared = 10;
+  s.phase = "won";
+  s.lives = 20;
+  assert.equal(rewardFor(s), 100 + 50 + 60);
+});
+
+test("i comandi admin segnano la partita e producono effetti", () => {
+  const s = createGame(1);
+  step(s, [{ t: "adminCash", amount: 500 }]);
+  assert.equal(s.cash, RULES.startCash + 500);
+  assert.equal(s.adminTouched, true);
+  step(s, [{ t: "adminSpawn", enemy: "bruto", count: 3 }]);
+  for (let i = 0; i < 20; i++) step(s, []);
+  assert.equal(s.enemies.length, 3);
+});
+
+test("senza torri si perde, e solo torri rallentanti non bastano", () => {
+  assert.equal(playBot("idle", 5).phase, "lost");
+  assert.equal(playBot("soloSoffio", 5).phase, "lost");
+});
+
+test("il giocatore attento vince con le torri di partenza, ma perde vite", () => {
+  const r = playBot("mirato", 11, 80000, undefined, { allowed: STARTER_TOWERS });
+  assert.equal(r.phase, "won");
+  assert.ok(r.lives < 18, `vite ${r.lives}`);
+});
+
+test("il contenuto ha valori positivi", () => {
+  for (const e of Object.values(ENEMIES)) assert.ok(e.hp > 0 && e.speed > 0);
+});
+
+test("ogni livello ha 10 ondate e corsie che finiscono sul Faro", () => {
+  for (const l of LEVELS) {
+    assert.equal(l.waves.length, 10, l.id);
+    for (const lane of l.map.lanes) assert.deepEqual([...lane[lane.length - 1]], [...l.map.faro], l.id);
+  }
+});
+
+test("Doppia Foce: i nemici arrivano da due corsie", () => {
+  const s = createGame(1, { level: "foce" });
+  step(s, [{ t: "skip" }]);
+  for (let i = 0; i < 120; i++) step(s, []);
+  assert.ok(new Set(s.enemies.map((e) => e.lane)).size === 2);
+});
+
+test("Bassa Marea: il canale si apre all'ondata 4 e le secche emergono alla 6", () => {
+  const s = createGame(1, { level: "marea" });
+  s.cash = 1e6;
+  assert.equal(laneIsOpen(s, 1), false);
+  assert.equal(isBuildable(s, 5, 4), false, "secca ancora sommersa");
+  const seen: string[] = [];
+  while (s.wave < 6) {
+    for (const e of step(s, [{ t: "skip" }, { t: "adminCash", amount: 0 }])) if (e.e === "laneOpen" || e.e === "emerge") seen.push(e.e);
+    for (const e of s.enemies) e.hp = 0;
+  }
+  assert.ok(laneIsOpen(s, 1));
+  assert.ok(isBuildable(s, 5, 4), "secca emersa");
+  assert.deepEqual(seen, ["laneOpen", "emerge"]);
+});
+
+test("Grammofono: il disco Danno aumenta il danno, il disco Sconto abbassa i costi", () => {
+  const s = createGame(1);
+  s.cash = 5000;
+  step(s, [{ t: "build", kind: "grammofono", cx: 5, cy: 4 }, { t: "build", kind: "balestra", cx: 5, cy: 3 }]);
+  step(s, []);
+  const b = s.towers.find((t) => t.kind === "balestra")!;
+  assert.equal(effStats(s, b).damage, 13);
+  const g = s.towers.find((t) => t.kind === "grammofono")!;
+  step(s, [{ t: "track", id: g.id, track: "sconto" }]);
+  assert.equal(buildCost(s, "balestra", 6, 4), 90);
+  assert.equal(buildCost(s, "balestra", 14, 0), 100);
+});
+
+test("Capitano: più cadenza, e la Chiamata alle armi la aumenta ancora", () => {
+  const s = createGame(1);
+  s.cash = 5000;
+  step(s, [{ t: "build", kind: "capitano", cx: 5, cy: 4 }, { t: "build", kind: "balestra", cx: 5, cy: 3 }]);
+  step(s, []);
+  const b = s.towers.find((t) => t.kind === "balestra")!;
+  const c = s.towers.find((t) => t.kind === "capitano")!;
+  assert.equal(effStats(s, b).cooldown, 9);
+  assert.ok(step(s, [{ t: "towerAbility", id: c.id }]).some((e) => e.e === "reject"), "solo in ondata");
+  step(s, [{ t: "skip" }]);
+  step(s, [{ t: "towerAbility", id: c.id }]);
+  step(s, []);
+  assert.equal(effStats(s, b).cooldown, 6);
+});
+
+test("Sabotatore stordisce una torre, il Medico la libera", () => {
+  const s = createGame(1);
+  s.cash = 5000;
+  step(s, [{ t: "build", kind: "balestra", cx: 2, cy: 0 }, { t: "adminSpawn", enemy: "sabotatore", count: 1 }]);
+  let stunned = false;
+  for (let i = 0; i < 300 && !stunned; i++) stunned = step(s, []).some((e) => e.e === "sabotage");
+  assert.ok(stunned);
+  assert.ok(s.towers[0].stun > 0);
+  const ev = step(s, [{ t: "build", kind: "medico", cx: 4, cy: 0 }]);
+  assert.ok(ev.some((e) => e.e === "heal"));
+  assert.equal(s.towers[0].stun, 0);
+  assert.ok(s.towers[0].immune > 0);
+});
+
+test("ogni livello è vincibile da un bot con buone torri", () => {
+  for (const id of ["porto", "foce"]) {
+    const r = playBot("mirato", 21, 80000, undefined, { level: id, allowed: ["balestra", "mortaio", "soffio", "cecchino", "bobina", "officina"] });
+    assert.equal(r.phase, "won", id);
+  }
+  void levelById;
+});
+
+// ---------- 0.5: Hardcore, boss, Apex, combo, comandi admin ----------
+import { HARDCORE_LENGTH, hardcoreWaves } from "../src/sim-core/content";
+import { apexBlock, perleFor, modBit } from "../src/sim-core/sim";
+import { HARDCORE, NIGHTS, SURVIVAL, disgeloFor, modeWaves } from "../src/sim-core/modes";
+import { waveCount } from "../src/sim-core/sim";
+
+const spawnOne = (s: ReturnType<typeof createGame>, enemy: any, mods: any[] = [], extra: Record<string, unknown> = {}) => {
+  step(s, [{ t: "adminSpawn", enemy, count: 1, mods, ...extra } as any]);
+  for (let i = 0; i < 3 && !s.enemies.length; i++) step(s, []);
+  return s.enemies[s.enemies.length - 1];
+};
+
+test("modificatori: Gonfio raddoppia la vita, Schermato dà uno scudo, Corazzato più armatura", () => {
+  const a = createGame(1);
+  const plain = spawnOne(a, "bruto");
+  const b = createGame(1);
+  const fat = spawnOne(b, "bruto", ["gonfio", "schermato"]);
+  assert.equal(fat.maxHp, plain.maxHp * 2);
+  assert.equal(fat.shield, Math.floor((fat.maxHp * 4000) / 10000));
+  assert.ok(fat.mods & modBit("schermato"));
+});
+
+test("modificatori: Agile corre di più, Benedetto si rigenera", () => {
+  const a = createGame(1);
+  const slow = spawnOne(a, "risacca");
+  const b = createGame(1);
+  const fast = spawnOne(b, "risacca", ["agile", "benedetto"]);
+  for (let i = 0; i < 20; i++) {
+    step(a, []);
+    step(b, []);
+  }
+  assert.ok(fast.dist > slow.dist);
+  fast.hp = 10;
+  step(b, []);
+  assert.ok(fast.hp > 10);
+});
+
+test("Provocatore: le torri nel raggio devono colpire lui", () => {
+  const s = createGame(1);
+  s.cash = 5000;
+  step(s, [{ t: "build", kind: "balestra", cx: 2, cy: 2 }]);
+  step(s, [{ t: "adminSpawn", enemy: "risacca", count: 3 }, { t: "adminSpawn", enemy: "risacca", count: 1, mods: ["provocatore"] }]);
+  let target = -1;
+  for (let i = 0; i < 200 && target < 0; i++) {
+    const shot = step(s, []).find((e) => e.e === "shot");
+    if (shot && shot.e === "shot") target = shot.to;
+  }
+  const taunt = s.enemies.find((e) => e.mods & modBit("provocatore"));
+  assert.ok(taunt);
+  assert.equal(target, taunt!.id);
+});
+
+test("il Purificatore toglie i modificatori", () => {
+  const s = createGame(1);
+  s.cash = 5000;
+  step(s, [{ t: "build", kind: "purificatore", cx: 2, cy: 2 }]);
+  const e = spawnOne(s, "bruto", ["benedetto", "schermato", "gonfio"]);
+  for (let i = 0; i < 60; i++) step(s, []);
+  assert.equal(e.mods, modBit("gonfio"));
+  assert.equal(e.shield, 0);
+});
+
+test("combo: i colpi cinetici su un nemico congelato fanno Frantumazione", () => {
+  const s = createGame(1);
+  s.cash = 5000;
+  step(s, [{ t: "build", kind: "balestra", cx: 2, cy: 2 }, { t: "skip" }]);
+  for (let i = 0; i < 40; i++) step(s, []);
+  step(s, [{ t: "ability", id: "gelata" }]);
+  let combo = false;
+  for (let i = 0; i < 30 && !combo; i++) combo = step(s, []).some((e) => e.e === "combo");
+  assert.ok(combo);
+  assert.ok(s.combos > 0);
+});
+
+test("Apex: serve il rango 3, uno per tipo, e potenzia molto la torre", () => {
+  const low = createGame(1);
+  low.cash = 1e6;
+  step(low, [{ t: "build", kind: "balestra", cx: 5, cy: 4 }]);
+  const t0 = low.towers[0];
+  step(low, [{ t: "upgrade", id: t0.id }, { t: "upgrade", id: t0.id }, { t: "spec", id: t0.id, branch: "A" }]);
+  assert.match(apexBlock(low, t0) ?? "", /rango 3/);
+  const s = createGame(1, { ranks: { balestra: 3 } });
+  s.cash = 1e6;
+  step(s, [{ t: "build", kind: "balestra", cx: 5, cy: 4 }, { t: "build", kind: "balestra", cx: 6, cy: 4 }]);
+  const [a, b] = s.towers;
+  for (const t of [a, b]) step(s, [{ t: "upgrade", id: t.id }, { t: "upgrade", id: t.id }, { t: "spec", id: t.id, branch: "A" }]);
+  const before = rankedStats(a, 3).damage;
+  assert.ok(step(s, [{ t: "apex", id: a.id }]).some((e) => e.e === "apex"));
+  assert.equal(a.level, 5);
+  assert.ok(rankedStats(a, 3).damage >= before * 2);
+  assert.ok(step(s, [{ t: "apex", id: b.id }]).some((e) => e.e === "reject"));
+});
+
+test("boss: il Capitano Annegato evoca, la Sirena stordisce, il Leviatano si scherma a metà vita", () => {
+  const s = createGame(1, { level: "foce" });
+  s.cash = 5000;
+  step(s, [{ t: "build", kind: "balestra", cx: 1, cy: 0 }]);
+  spawnOne(s, "annegato", [], { boss: true });
+  let summon = false;
+  for (let i = 0; i < 80 && !summon; i++) summon = step(s, []).some((e) => e.e === "summon");
+  assert.ok(summon);
+  const m = createGame(1, { level: "marea" });
+  m.cash = 5000;
+  step(m, [{ t: "build", kind: "balestra", cx: 1, cy: 1 }]);
+  spawnOne(m, "sirena", [], { boss: true });
+  let song = false;
+  for (let i = 0; i < 80 && !song; i++) song = step(m, []).some((e) => e.e === "song");
+  assert.ok(song);
+  assert.ok(m.towers[0].stun > 0);
+  const l = createGame(1);
+  const lev = spawnOne(l, "leviatano", [], { boss: true });
+  lev.hp = Math.floor(lev.maxHp / 2);
+  assert.ok(step(l, []).some((e) => e.e === "roar"));
+  assert.ok(lev.shield > 0);
+});
+
+test("Hardcore: 50 ondate con modificatori, 10 vite, Leviatano finale e Perle Nere", () => {
+  const waves = modeWaves(HARDCORE, LEVELS[0]);
+  assert.equal(waves.length, 50);
+  assert.ok(waves.slice(1).every((w) => w.some((g) => (g.mods ?? []).length > 0)), "ogni ondata dopo la prima ha un modificatore");
+  assert.ok(waves[49].some((g) => g.enemy === "leviatano" && g.boss));
+  const s = createGame(1, { mode: "hardcore" });
+  assert.equal(s.lives, 10);
+  assert.equal(waveCount(s), 50);
+  s.cleared = 5;
+  s.bossKills = 1;
+  assert.equal(perleFor(s), 10);
+  assert.equal(perleFor(createGame(1)), 0);
+});
+
+test("modalità: le ondate crescono con il boss, ogni modalità finisce con il suo boss", () => {
+  const counts = SURVIVAL.map((m) => m.waves);
+  assert.deepEqual(counts, [20, 25, 30, 35, 40]);
+  for (const m of SURVIVAL) {
+    for (const lvl of LEVELS) {
+      const w = modeWaves(m, lvl);
+      assert.equal(w.length, m.waves);
+      assert.ok(w[m.waves - 1].some((g) => g.boss && g.enemy === m.boss.kind), `${m.id} finisce con ${m.boss.kind}`);
+      assert.ok(w.every((x) => x.length >= 1 && x.every((g) => g.count >= 1 && Number.isSafeInteger(g.hpMulBp ?? 0))));
+    }
+  }
+  assert.deepEqual(NIGHTS.map((n) => n.waves), [20, 25, 30, 35, 40]);
+  assert.equal(NIGHTS[4].boss.kind, "krampus");
+  const g = createGame(1, { mode: "natale", night: 3 });
+  assert.equal(g.levelId, NIGHTS[2].map);
+  assert.equal(g.lives, 10);
+  assert.equal(waveCount(g), 30);
+});
+
+test("Disgelo: gelo pieno fino a novembre, poi cala ogni settimana di dicembre", () => {
+  assert.equal(disgeloFor(2026, 11, 30).bp, 10000);
+  assert.equal(disgeloFor(2026, 12, 1).bp, 8800);
+  assert.equal(disgeloFor(2026, 12, 9).bp, 7800);
+  assert.equal(disgeloFor(2026, 12, 15).bp, 6800);
+  assert.equal(disgeloFor(2026, 12, 25).bp, 6000);
+  assert.equal(disgeloFor(2027, 1, 3).bp, 6000);
+  const a = createGame(1, { mode: "natale", night: 1, eventBp: 6000 });
+  const b = createGame(1, { mode: "natale", night: 1, eventBp: 10000 });
+  for (let i = 0; i < 320; i++) {
+    step(a, []);
+    step(b, []);
+  }
+  assert.ok(a.enemies.length > 0 && a.enemies[0].maxHp < b.enemies[0].maxHp, "il Disgelo abbassa la vita");
+});
+
+test("invisibili: solo chi rileva li colpisce, il Capitano presta il rilevamento", () => {
+  const s = createGame(5, { sandbox: true });
+  step(s, [{ t: "adminSpawn", enemy: "spettro", count: 1 }]);
+  step(s, []);
+  const e = s.enemies[0];
+  // Balestra accanto al percorso: non lo vede.
+  step(s, [{ t: "build", kind: "balestra", cx: 2, cy: 2 }]);
+  assert.equal(s.towers.length, 1);
+  for (let i = 0; i < 40; i++) step(s, []);
+  const hp1 = s.enemies.find((x) => x.id === e.id)?.hp ?? 0;
+  assert.equal(hp1, e.maxHp, "la Balestra non vede lo Spettro");
+  step(s, [{ t: "build", kind: "capitano", cx: 2, cy: 3 }]);
+  assert.equal(s.towers.length, 2);
+  for (let i = 0; i < 40; i++) step(s, []);
+  const still = s.enemies.find((x) => x.id === e.id);
+  assert.ok(!still || still.hp < e.maxHp, "con il Capitano vicino lo colpisce");
+});
+
+test("divisione, gelo alla morte, furto e immunità al rallentamento", () => {
+  const s = createGame(9, { sandbox: true });
+  step(s, [{ t: "adminSpawn", enemy: "magmatico", count: 1 }, { t: "adminSpawn", enemy: "brinato", count: 1 }]);
+  for (let i = 0; i < 20; i++) step(s, []);
+  step(s, [{ t: "build", kind: "balestra", cx: 2, cy: 2 }]);
+  const mag = s.enemies.find((x) => x.kind === "magmatico")!;
+  const bri = s.enemies.find((x) => x.kind === "brinato")!;
+  mag.hp = 0;
+  bri.hp = 0;
+  bri.x = s.towers[0].x;
+  bri.y = s.towers[0].y;
+  const ev = step(s, []);
+  assert.equal(s.enemies.filter((x) => x.kind === "tizzone").length, 2, "il Magmatico si divide in due Tizzoni");
+  assert.ok(ev.some((x) => x.e === "frost"), "il Brinato congela");
+  assert.ok(s.towers[0].stun > 0, "la torre vicina è congelata");
+  // Furto del Folletto.
+  const f = createGame(3, { sandbox: true });
+  step(f, [{ t: "adminSpawn", enemy: "folletto", count: 1 }]);
+  const cash0 = f.cash;
+  let stolen = 0;
+  for (let i = 0; i < 80; i++) for (const x of step(f, [])) if (x.e === "steal") stolen += x.amount;
+  assert.ok(stolen > 0 && f.cash <= cash0 - stolen + 0, "il Folletto ruba cash");
+  // Tizzone ignora il Soffio.
+  const t = createGame(4, { sandbox: true });
+  step(t, [{ t: "adminSpawn", enemy: "tizzone", count: 1 }, { t: "build", kind: "soffio", cx: 0, cy: 2 }]);
+  for (let i = 0; i < 12; i++) step(t, []);
+  assert.ok(t.enemies.every((x) => x.speedBp === 10000), "il Tizzone non si rallenta");
+});
+
+test("sandbox e comandi admin: tutte le torri, nessun premio, vite infinite, salto d'ondata", () => {
+  const s = createGame(1, { sandbox: true, allowed: ["balestra"] });
+  assert.equal(s.allowed.length, 12);
+  assert.ok(s.cash >= 100000);
+  step(s, [{ t: "adminGod", on: true }, { t: "adminSpawn", enemy: "corridore", count: 5, mods: ["agile"] }]);
+  for (let i = 0; i < 600; i++) step(s, []);
+  assert.equal(s.lives, 20);
+  step(s, [{ t: "adminWave", wave: 7 }]);
+  assert.equal(s.wave, 6);
+  s.phase = "won";
+  s.cleared = 10;
+  assert.equal(rewardFor(s), 0);
+});

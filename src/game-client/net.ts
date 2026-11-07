@@ -345,11 +345,20 @@ export class RealtimeTransport implements Transport {
           this.retries = 0;
           for (const q of this.queue.splice(0)) ws.send(q);
           this.emitStatus("open");
-        } else this.emitStatus("error", m.payload?.response?.reason ?? "Accesso al canale negato");
+        } else {
+          // Ingresso rifiutato (per esempio il canale si sta ancora preparando): si chiude e si riprova.
+          this.emitStatus("error", m.payload?.response?.reason ?? "Accesso al canale negato");
+          ws.close();
+        }
+        return;
+      }
+      if ((m.event === "phx_error" || m.event === "phx_close") && m.topic === this.topic) {
+        ws.close();
         return;
       }
       if (m.event === "system" && m.payload?.status === "error") {
         this.emitStatus("error", m.payload?.message ?? "Errore del canale");
+        ws.close();
         return;
       }
       if (m.event === "broadcast" && m.payload?.event) {

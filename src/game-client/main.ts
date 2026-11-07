@@ -1562,7 +1562,9 @@ async function joinRoom(code: string, local: boolean) {
   }
   if (!row || row.status === "ended") return toast("Stanza non trovata");
   if (row.host === net.session.userId) return toast("Questa stanza è tua: creane una nuova");
-  match = new NetMatch("guest", code, me(), transportFor(code, false));
+  // Modalità e mappa si leggono subito dalla stanza; il resto arriva da chi ospita.
+  const setup: Setup = { mode: row.mode as GameMode, level: row.level, night: row.night, eventBp: 10000 };
+  match = new NetMatch("guest", code, me(), transportFor(code, false), setup);
   wireMatch(match);
   showLobby();
 }

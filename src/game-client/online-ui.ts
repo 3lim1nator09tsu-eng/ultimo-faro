@@ -187,7 +187,11 @@ export function renderLobby(host: HTMLElement, m: NetMatch, api: LobbyApi) {
     list,
     m.isHost
       ? el("button", { class: "mode", id: "lobbyStart", text: m.status === "playing" ? "Partita in corso" : "Avvia la partita", disabled: m.status === "playing", onclick: () => api.start() })
-      : el("p", { class: "note", text: m.status === "playing" ? "Partita in corso: ti unisci tra un attimo." : "In attesa che chi ospita avvii la partita." }),
+      : el("p", {
+          class: "note",
+          id: "lobbyWait",
+          text: !m.gotLobby ? "Mi collego con chi ospita…" : m.status === "playing" ? "Partita in corso: ti unisci tra un attimo." : "In attesa che chi ospita avvii la partita.",
+        }),
     el("button", { id: "lobbyLeave", text: "Esci dalla stanza", onclick: () => api.leave() }),
   );
 }

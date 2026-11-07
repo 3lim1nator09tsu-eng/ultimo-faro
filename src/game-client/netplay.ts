@@ -34,6 +34,8 @@ export class NetMatch {
   setup: Setup;
   lastFrameAt = 0;
   desyncs = 0;
+  /** Chi partecipa ha ricevuto almeno una volta la sala d'attesa da chi ospita. */
+  gotLobby = false;
   /** Tick confermato da chi ospita: gli altri non possono andare oltre. */
   confirmed = 0;
   onLobby: () => void = () => {};
@@ -91,7 +93,11 @@ export class NetMatch {
     this.pingTimer = window.setInterval(() => {
       this.t.send("ping", { id: this.me.id });
       this.touch(this.me.id);
-      if (this.role === "host") this.prune();
+      if (this.role === "host") {
+        this.prune();
+        // In sala d'attesa la si ritrasmette: chi è appena entrato la riceve anche se ha perso il primo messaggio.
+        if (this.status === "lobby") this.broadcastLobby();
+      } else if (!this.gotLobby) this.t.send("join", { p: this.me });
       // Chi ospita tace da troppo: si chiede lo stato completo.
       if (this.role === "guest" && this.status === "playing" && Date.now() - this.lastFrameAt > 8000) this.requestSync();
     }, 3000);
@@ -226,6 +232,7 @@ export class NetMatch {
   private guestLobby(p: { players: Player[]; setup: Setup; status: NetMatch["status"] }) {
     this.players = new Map(p.players.map((x) => [x.id, { ...x, seen: Date.now() }]));
     this.setup = p.setup;
+    this.gotLobby = true;
     if (!this.players.has(this.me.id)) this.t.send("join", { p: this.me });
     if (p.status === "playing" && !this.state) this.requestSync();
     this.onLobby();
@@ -306,8 +313,8 @@ export class NetMatch {
     this.confirmed = p.confirmed;
     this.syncing = false;
     this.lastFrameAt = Date.now();
-    if (first) this.onStart(this.state);
-    else this.onStart(this.state);
+    void first;
+    this.onStart(this.state);
   }
 
   leave() {

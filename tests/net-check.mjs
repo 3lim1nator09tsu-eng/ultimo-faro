@@ -26,7 +26,7 @@ const guestTry = await B.evaluate(() => {
   window.__faro.debug.adminApi.balance.setDraft("modes", { mode: "easy", field: "lives", value: 999 });
   return JSON.stringify(window.__faro.debug.balance());
 });
-ok(guestTry === JSON.stringify({ towers: [], modes: [], maps: [] }), `senza admin le prove di bilanciamento sono ignorate (${guestTry})`);
+ok(guestTry === JSON.stringify({ towers: [], modes: [], maps: [], shop: [] }), `senza admin le prove di bilanciamento sono ignorate (${guestTry})`);
 const enter = async (p) => {
   await p.evaluate(() => { document.querySelector(".olLocal").open = true; });
   await p.fill("#olLocalCode", "PROVA");

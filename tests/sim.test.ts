@@ -1037,3 +1037,23 @@ test("Notte 5: i momenti rapidi premiano chi risponde e puniscono chi sbaglia", 
   const b = playBot("mirato", 4, 30000, undefined, { mode: "natale", night: 5, eventBp: 6000 });
   assert.equal(a.hash, b.hash);
 });
+
+test("Bilanciamento: prezzi dell'Arsenale in Schegge e Perle", async () => {
+  const B = await import("../src/sim-core/balance");
+  const C = await import("../src/sim-core/content");
+  assert.equal(C.TOWERS.kingpin.unlock, 1000);
+  assert.equal(C.TOWERS.kingpin.perle, 40);
+  assert.deepEqual(C.HARDCORE_TOWERS, ["arpione", "mitragliera", "purificatore"]);
+  const raw = { shop: [{ key: "kingpin.unlock", value: 1500 }, { key: "kingpin.perle", value: 60 }, { key: "rank.3", value: 250 }, { key: "rank.1", value: 5 }, { key: "nessuna.unlock", value: 5 }, { key: "kingpin.cost", value: 5 }] };
+  const b = B.cleanBalance(raw);
+  assert.equal(b.shop!.length, 3);
+  B.applyBalance(b);
+  assert.equal(C.TOWERS.kingpin.unlock, 1500);
+  assert.equal(C.TOWERS.kingpin.perle, 60);
+  assert.equal(C.RANK_COSTS[2], 250);
+  assert.equal(B.shopValue("rank.3", true), 200);
+  B.applyBalance();
+  assert.equal(C.TOWERS.kingpin.unlock, 1000);
+  assert.equal(C.RANK_COSTS[2], 200);
+  assert.equal(B.balanceSize(B.pruneBalance({ towers: [], modes: [], maps: [], shop: [{ key: "kingpin.perle", value: 40 }] })), 0);
+});

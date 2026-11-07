@@ -129,6 +129,15 @@ export const MEDALS: Array<{ id: string; name: string; text: string; ok: (m: Med
 export const VERSION_NOTES: ChangeEntry[] = [
   {
     date: "2026-11-07",
+    title: "Versione 0.10.1: prezzi dell'Arsenale",
+    kind: "versione",
+    items: [
+      "Il Kingpin ora si sblocca con 1000 Schegge e 40 Perle insieme",
+      "L'admin può cambiare dal pannello i prezzi di sblocco (Schegge e Perle) e i costi dei ranghi, per tutti",
+    ],
+  },
+  {
+    date: "2026-11-07",
     title: "Versione 0.10: le tue scelte contano",
     kind: "versione",
     items: [

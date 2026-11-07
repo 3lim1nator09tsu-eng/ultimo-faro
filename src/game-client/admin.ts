@@ -2,12 +2,19 @@
 // Le prove di bilanciamento valgono su questo dispositivo; pubblicate, valgono per tutti dal server.
 import { NIGHTS, SURVIVAL } from "../sim-core/modes";
 import { ADMIN_ONLY, EVENT_LEVELS, levelById, ENEMIES, EnemyKind, GameMode, LEVELS, MAX_RANK, MOD_ORDER, MODS, Mod, SURVIVAL_MAPS, TOWERS, TOWER_ORDER, TowerKind } from "../sim-core/content";
+import { ShopOv, shopValue } from "../sim-core/balance";
 import { ALL_MODES, Balance, LevelKey, MAP_FIELDS, MODE_FIELDS, MapOv, ModeOv, TOWER_FIELDS, TowerOv, Unit, balanceSize, fromShown, levelRef, mapBaseValue, mapValue, modeBaseValue, modeByKey, modeKey, modeValue, toShown, towerBaseValue } from "../sim-core/balance";
 import { Command, GameState } from "../sim-core/sim";
 import type { GrantPayload, PeekRow } from "./net";
 
-export type BalanceKind = "towers" | "modes" | "maps";
-export type BalanceEntry = TowerOv | ModeOv | MapOv;
+export type BalanceKind = "towers" | "modes" | "maps" | "shop";
+export type BalanceEntry = TowerOv | ModeOv | MapOv | ShopOv;
+
+const shopLabel = (key: string) => {
+  const [a, b] = key.split(".");
+  if (a === "rank") return `Arsenale · Rango ${b} (tutte le torri), Schegge`;
+  return `${TOWERS[a as TowerKind].name} · Sblocco in ${b === "perle" ? "Perle" : "Schegge"}`;
+};
 
 export interface AdminApi {
   state(): GameState;
@@ -73,6 +80,10 @@ export function describeEntry(kind: BalanceKind, o: BalanceEntry): string {
     const t = o as TowerOv;
     const f = TOWER_FIELDS.find((x) => x.field === t.field)!;
     return `${TOWERS[t.kind].name}, ${levelName(t.kind, t.lvl)} · ${f.label.replace(/ \(.*\)$/, "")}: ${shown(f.unit, towerBaseValue(t))} → ${shown(f.unit, t.value)}`;
+  }
+  if (kind === "shop") {
+    const o2 = o as ShopOv;
+    return `${shopLabel(o2.key)}: ${shopValue(o2.key, true).toLocaleString("it-IT")} → ${o2.value.toLocaleString("it-IT")}`;
   }
   if (kind === "modes") {
     const m = o as ModeOv;
@@ -261,11 +272,40 @@ function towerBalanceTab(body: HTMLElement, api: AdminApi, redraw: () => void) {
     remember();
     refreshForm();
   });
+  // Arsenale: prezzi di sblocco della torre scelta e dei ranghi (uguali per tutte le torri).
+  const shop = el("div", { class: "adForm", id: "adShopForm" });
+  const refreshShop = () => {
+    shop.innerHTML = "";
+    const def = TOWERS[pick.kind];
+    if (def.exclusive) shop.append(el("p", { class: "note", text: def.exclusive === "admin" ? "Torre admin: non si compra." : "Premio della Notte 5: non si compra." }));
+    else
+      for (const [field, label] of [["unlock", "Sblocco: Schegge"], ["perle", "Sblocco: Perle Nere"]] as const) {
+        const key = `${pick.kind}.${field}`;
+        shop.append(numberRow(label, "n", shopValue(key), shopValue(key, true), { "data-shop": key }, (v) => {
+          api.balance.setDraft("shop", { key, value: v });
+          redraw();
+        }, api.toast));
+      }
+    shop.append(el("h4", { text: "Ranghi, per tutte le torri (Schegge)" }));
+    for (let r = 2; r <= MAX_RANK; r++) {
+      const key = `rank.${r}`;
+      shop.append(numberRow(`Salire al rango ${r}`, "n", shopValue(key), shopValue(key, true), { "data-shop": key }, (v) => {
+        api.balance.setDraft("shop", { key, value: v });
+        redraw();
+      }, api.toast));
+    }
+  };
+  kind.addEventListener("change", refreshShop);
   refreshLevels();
   refreshForm();
+  refreshShop();
   body.append(
     el("p", { text: "Le modifiche valgono subito su questo dispositivo, così le provi. Quando ti convincono, pubblicale: arrivano a tutti i giocatori al prossimo avvio del gioco." }),
     el("label", { class: "adField" }, "Torre", kind),
+    el("h3", { text: "Arsenale: prezzo di sblocco" }),
+    el("p", { class: "note", text: "Se metti sia Schegge sia Perle, servono tutte e due. 0 = niente di quella valuta." }),
+    shop,
+    el("h3", { text: "In partita" }),
     el("label", { class: "adField" }, "Livello", lvl),
     form,
   );
@@ -351,8 +391,15 @@ function modeBalanceTab(body: HTMLElement, api: AdminApi, redraw: () => void) {
 }
 
 function entries(b: Balance): Array<[BalanceKind, BalanceEntry]> {
-  return [...b.towers.map((o): [BalanceKind, BalanceEntry] => ["towers", o]), ...b.modes.map((o): [BalanceKind, BalanceEntry] => ["modes", o]), ...b.maps.map((o): [BalanceKind, BalanceEntry] => ["maps", o])];
+  return [
+    ...b.towers.map((o): [BalanceKind, BalanceEntry] => ["towers", o]),
+    ...b.modes.map((o): [BalanceKind, BalanceEntry] => ["modes", o]),
+    ...b.maps.map((o): [BalanceKind, BalanceEntry] => ["maps", o]),
+    ...(b.shop ?? []).map((o): [BalanceKind, BalanceEntry] => ["shop", o]),
+  ];
 }
+/** Tutte le voci in righe leggibili, per la bacheca. */
+export const describeAll = (b: Balance) => entries(b).map(([k, o]) => describeEntry(k, o));
 
 /** Prove locali, pubblicazione e valori già pubblicati: in fondo alle due schede di bilanciamento. */
 function balanceFooter(body: HTMLElement, api: AdminApi, redraw: () => void) {

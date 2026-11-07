@@ -234,9 +234,9 @@ export interface TowerDef {
   family: Family;
   damageType: DamageType;
   target: Targeting;
-  unlock: number; // prezzo in Schegge; 0 = disponibile da subito
+  unlock: number; // prezzo di sblocco in Schegge; 0 = niente Schegge
   ability?: { name: string; summary: string };
-  perle?: number; // torre Hardcore: si compra con le Perle Nere
+  perle?: number; // prezzo di sblocco in Perle Nere (torri Hardcore, Kingpin); si somma alle Schegge
   exclusive?: "admin" | "evento"; // solo per gli admin, oppure premio dell'evento
   maxPerPlayer?: number; // quante se ne possono piazzare per giocatore
   apex: string; // nome della torre al livello 6
@@ -576,7 +576,8 @@ TOWERS.kingpin = {
   family: "attacco",
   damageType: "cinetico",
   target: "first",
-  unlock: 600,
+  unlock: 1000,
+  perle: 40,
   maxPerPlayer: 4,
   levels: [
     { ...base, cost: 800, damage: 30, cooldown: 4, range: 4200, detect: true, spawnEvery: 110, spawnMax: 2, unitSet: 1, unitBp: 10000, queueSlots: 1 },
@@ -638,7 +639,7 @@ for (const k of DETECTORS) {
 }
 
 export const TOWER_ORDER: TowerKind[] = ["balestra", "mortaio", "soffio", "cecchino", "bobina", "officina", "grammofono", "capitano", "medico", "kingpin", "arpione", "mitragliera", "purificatore", "cometa", "custode", "campana"];
-export const HARDCORE_TOWERS: TowerKind[] = TOWER_ORDER.filter((k) => TOWERS[k].perle);
+export const HARDCORE_TOWERS: TowerKind[] = ["arpione", "mitragliera", "purificatore"];
 
 // Apex: il livello 6 della torre, uno per tipo e per partita, con il rango permanente almeno 3.
 export const APEX_RANK = 3;

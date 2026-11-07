@@ -2,7 +2,7 @@
 // Si parte sempre dai valori scritti nel codice, poi si applicano i livelli in ordine
 // (globale dal server, poi le prove locali dell'admin). Lo stesso insieme di valori
 // va dato a tutti i dispositivi di una partita, altrimenti la simulazione diverge.
-import { Branch, EVENT_LEVELS, LEVELS, TOWERS, TOWER_ORDER, TowerKind, TowerStats } from "./content";
+import { Branch, EVENT_LEVELS, LEVELS, MAX_RANK, RANK_COSTS, TOWERS, TOWER_ORDER, TowerKind, TowerStats } from "./content";
 import { HARDCORE, ModeDef, NIGHTS, NightDef, SURVIVAL, clearModeCache } from "./modes";
 
 export type LevelKey = "1" | "2" | "3" | Branch | "A2" | "B2";
@@ -22,13 +22,40 @@ export interface MapOv {
   field: "survivalHpBp" | "startCash";
   value: number;
 }
+/** Prezzi dell'Arsenale: "kingpin.unlock" (Schegge), "kingpin.perle" (Perle), "rank.3" (Schegge per salire al rango 3). */
+export interface ShopOv {
+  key: string;
+  value: number;
+}
 export interface Balance {
   towers: TowerOv[];
   modes: ModeOv[];
   maps: MapOv[];
+  shop?: ShopOv[];
 }
 
-export const emptyBalance = (): Balance => ({ towers: [], modes: [], maps: [] });
+export const emptyBalance = (): Balance => ({ towers: [], modes: [], maps: [], shop: [] });
+
+const RANK_BASE = [...RANK_COSTS];
+/** Valore di un prezzo dell'Arsenale: attuale oppure originale. */
+export function shopValue(key: string, base = false): number {
+  const [a, b] = key.split(".");
+  if (a === "rank") return (base ? RANK_BASE : RANK_COSTS)[Number(b) - 1] ?? 0;
+  const def = (base ? TOWER_BASE : TOWERS)[a as TowerKind];
+  if (!def) return 0;
+  return b === "perle" ? def.perle ?? 0 : def.unlock;
+}
+export function shopKeyOk(key: string): boolean {
+  const [a, b] = key.split(".");
+  if (a === "rank") return Number.isInteger(Number(b)) && Number(b) >= 2 && Number(b) <= MAX_RANK;
+  return TOWER_ORDER.includes(a as TowerKind) && (b === "unlock" || b === "perle");
+}
+function setShop(key: string, v: number) {
+  const [a, b] = key.split(".");
+  if (a === "rank") RANK_COSTS[Number(b) - 1] = v;
+  else if (b === "perle") TOWERS[a as TowerKind].perle = v || undefined;
+  else TOWERS[a as TowerKind].unlock = v;
+}
 
 export type Unit = "n" | "tile" | "tick" | "pct" | "slow" | "bp";
 
@@ -259,6 +286,11 @@ export function cleanBalance(raw: unknown): Balance {
       if (!o || !ALL_MAPS.some((l) => l.id === o.map) || !MAP_FIELDS.some((f) => f.field === o.field) || !fin(o.value, 0, 100000)) continue;
       out.maps.push({ map: o.map, field: o.field, value: Math.round(o.value) });
     }
+  if (Array.isArray(r.shop))
+    for (const o of r.shop as ShopOv[]) {
+      if (!o || typeof o.key !== "string" || !shopKeyOk(o.key) || !fin(o.value, 0, 1_000_000)) continue;
+      out.shop!.push({ key: o.key, value: Math.round(o.value) });
+    }
   return out;
 }
 
@@ -267,12 +299,14 @@ export function mergeBalance(...layers: Balance[]): Balance {
   const t = new Map<string, TowerOv>();
   const m = new Map<string, ModeOv>();
   const p = new Map<string, MapOv>();
+  const sh = new Map<string, ShopOv>();
   for (const b of layers) {
+    for (const o of b.shop ?? []) sh.set(o.key, o);
     for (const o of b.towers) t.set(`${o.kind}|${o.lvl}|${String(o.field)}`, o);
     for (const o of b.modes) m.set(`${o.mode}|${o.field}`, o);
     for (const o of b.maps) p.set(`${o.map}|${o.field}`, o);
   }
-  return { towers: [...t.values()], modes: [...m.values()], maps: [...p.values()] };
+  return { towers: [...t.values()], modes: [...m.values()], maps: [...p.values()], shop: [...sh.values()] };
 }
 
 /** Toglie le voci uguali al valore originale: restano solo le modifiche vere. */
@@ -284,6 +318,7 @@ export function pruneBalance(b: Balance): Balance {
       const base = MAP_BASE.get(ALL_MAPS.find((l) => l.id === o.map)!)!;
       return (base[o.field] ?? (o.field === "survivalHpBp" ? 10000 : 0)) !== o.value;
     }),
+    shop: (b.shop ?? []).filter((o) => shopValue(o.key, true) !== o.value),
   };
 }
 
@@ -309,7 +344,10 @@ export function applyBalance(...layers: Balance[]): void {
       Object.assign(t.branches2.A, b.branches2.A);
       Object.assign(t.branches2.B, b.branches2.B);
     }
+    t.unlock = b.unlock;
+    t.perle = b.perle;
   }
+  RANK_BASE.forEach((v, i) => (RANK_COSTS[i] = v));
   for (const [m, s] of MODE_BASE) {
     for (const k of SCALARS) {
       if (s.scalars[k] === undefined) delete (m as unknown as Record<string, unknown>)[k];
@@ -339,6 +377,7 @@ export function applyBalance(...layers: Balance[]): void {
     const l = ALL_MAPS.find((x) => x.id === o.map);
     if (l) (l as unknown as Record<string, number>)[o.field] = o.value;
   }
+  for (const o of all.shop ?? []) setShop(o.key, o.value);
   clearModeCache();
 }
 
@@ -350,4 +389,4 @@ export function balanceSig(b: Balance): string {
   return h.toString(16);
 }
 
-export const balanceSize = (b: Balance) => b.towers.length + b.modes.length + b.maps.length;
+export const balanceSize = (b: Balance) => b.towers.length + b.modes.length + b.maps.length + (b.shop?.length ?? 0);

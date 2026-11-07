@@ -7,7 +7,7 @@ import { HARDCORE, ModeDef, NIGHTS, SURVIVAL, disgeloFor, modeDef } from "../sim
 import { GrantPayload, LocalTransport, Net, RealtimeTransport, Transport, roomCode } from "./net";
 import { NetMatch, Player, Setup } from "./netplay";
 import { renderLobby, renderOnline } from "./online-ui";
-import { AdminApi, BalanceEntry, BalanceKind, describeEntry, renderAdminDrawer, renderAdminPanel } from "./admin";
+import { AdminApi, BalanceEntry, BalanceKind, describeAll, describeEntry, renderAdminDrawer, renderAdminPanel } from "./admin";
 import { Balance, applyBalance, balanceSize, cleanBalance, emptyBalance, mergeBalance, pruneBalance } from "../sim-core/balance";
 import { ChangeEntry, MEDALS, MISSIONS, MissionSlot, Totals, VERSION_NOTES, emptyTotals, levelFromXp, levelReward, missionProgress, missionTarget, missionText, newSlot } from "./progress";
 import { COLORS, enemySize, applyMap, drawEnemy, drawFaro, drawShoal, drawTide, drawTowerShape, mapToScreen, renderBackground, toPx } from "./draw";
@@ -1508,7 +1508,7 @@ function renderMenu() {
     const row = document.createElement("div");
     const owned = meta.unlocked.includes(kind);
     const inSquad = meta.loadout.includes(kind);
-    row.className = `row${inSquad ? " inSquad" : ""}${def.perle ? " hardcore" : ""}${def.exclusive ? ` excl-${def.exclusive}` : ""}`;
+    row.className = `row${inSquad ? " inSquad" : ""}${HARDCORE_TOWERS.includes(kind) ? " hardcore" : ""}${def.exclusive ? ` excl-${def.exclusive}` : ""}`;
     const icon = document.createElement("canvas");
     icon.width = 76;
     icon.height = 76;
@@ -1520,7 +1520,7 @@ function renderMenu() {
     name.textContent = def.name;
     const role = document.createElement("small");
     const apexNote = owned && rank < APEX_RANK ? ` · Apex dal rango ${APEX_RANK}` : "";
-    role.textContent = owned ? `${def.role} · Rango ${rank}/${MAX_RANK}${apexNote}` : def.perle ? `Torre Hardcore. ${def.role}` : def.role;
+    role.textContent = owned ? `${def.role} · Rango ${rank}/${MAX_RANK}${apexNote}` : HARDCORE_TOWERS.includes(kind) ? `Torre Hardcore. ${def.role}` : def.role;
     text.append(name, role);
     const pips = document.createElement("span");
     pips.className = "pips";
@@ -1535,32 +1535,29 @@ function renderMenu() {
     btns.className = "rowBtns";
     const btn = document.createElement("button");
     btn.dataset.kind = kind;
-    let price = 0;
-    const pearls = !!def.perle && !owned;
+    const price = unlockPrice(kind);
+    let need: string | null = null;
     if (def.exclusive === "evento" && !owned) {
       btn.textContent = "Vinci la Notte 5";
       btn.disabled = true;
       btn.title = "Premio per chi vince l'ultima Notte di Natale";
-    } else if (pearls) {
-      price = def.perle!;
-      btn.textContent = `Sblocca · ${fmt(price)} Perle`;
-      btn.dataset.action = "unlock";
-      btn.classList.add("pearl");
     } else if (!owned) {
-      price = def.unlock;
-      btn.textContent = `Sblocca · ${fmt(price)}`;
+      btn.textContent = `Sblocca · ${priceText(price)}`;
       btn.dataset.action = "unlock";
+      if (price.perle) btn.classList.add("pearl");
+      if (meta.schegge < price.schegge || meta.perle < price.perle) need = `Servono ${priceText(price)}`;
     } else if (rank < MAX_RANK) {
-      price = RANK_COSTS[rank];
-      btn.textContent = `Rango ${rank + 1} · ${fmt(price)}`;
+      const r = RANK_COSTS[rank];
+      btn.textContent = `Rango ${rank + 1} · ${fmt(r)}`;
       btn.dataset.action = "rank";
+      if (meta.schegge < r) need = `Servono ${fmt(r)} Schegge`;
     } else {
       btn.textContent = "Rango massimo";
       btn.disabled = true;
     }
-    if (price && (pearls ? meta.perle : meta.schegge) < price) {
+    if (need) {
       btn.disabled = true;
-      btn.title = `Servono ${fmt(price)} ${pearls ? "Perle Nere" : "Schegge"}`;
+      btn.title = need;
     }
     btn.addEventListener("click", () => buyFromArsenal(kind));
     btns.append(btn);
@@ -2018,18 +2015,29 @@ function toggleSquad(kind: TowerKind) {
   renderMenu();
 }
 
+/** Prezzo di sblocco: Schegge, Perle o tutte e due insieme. */
+function unlockPrice(kind: TowerKind) {
+  return { schegge: TOWERS[kind].unlock, perle: TOWERS[kind].perle ?? 0 };
+}
+function priceText(p: { schegge: number; perle: number }) {
+  const parts = [p.schegge ? `${fmt(p.schegge)} Schegge` : "", p.perle ? `${fmt(p.perle)} Perle` : ""].filter(Boolean);
+  return parts.join(" + ") || "gratis";
+}
+
 function buyFromArsenal(kind: TowerKind) {
   wakeAudio();
   const owned = meta.unlocked.includes(kind);
   if (!owned && TOWERS[kind].exclusive) return;
-  const pearls = !owned && !!TOWERS[kind].perle;
-  const price = owned ? RANK_COSTS[meta.ranks[kind]] : pearls ? TOWERS[kind].perle! : TOWERS[kind].unlock;
-  const wallet = pearls ? meta.perle : meta.schegge;
-  if (!price || wallet < price || (owned && meta.ranks[kind] >= MAX_RANK)) return;
-  if (pearls) meta.perle -= price;
-  else meta.schegge -= price;
-  if (owned) meta.ranks[kind] += 1;
-  else {
+  if (owned) {
+    const r = RANK_COSTS[meta.ranks[kind]];
+    if (meta.ranks[kind] >= MAX_RANK || !r || meta.schegge < r) return;
+    meta.schegge -= r;
+    meta.ranks[kind] += 1;
+  } else {
+    const p = unlockPrice(kind);
+    if (meta.schegge < p.schegge || meta.perle < p.perle) return;
+    meta.schegge -= p.schegge;
+    meta.perle -= p.perle;
     meta.unlocked.push(kind);
     if (meta.loadout.length < LOADOUT_SIZE) meta.loadout.push(kind);
   }
@@ -2138,7 +2146,7 @@ const adminApi: AdminApi = {
     clearDraft() {
       if (!isAdmin()) return;
       if (!balanceSize(meta.draft)) return;
-      if (!net.session?.isAdmin) logChange("Valori originali ripristinati", [...meta.draft.towers.map((o) => describeEntry("towers", o)), ...meta.draft.modes.map((o) => describeEntry("modes", o)), ...meta.draft.maps.map((o) => describeEntry("maps", o))]);
+      if (!net.session?.isAdmin) logChange("Valori originali ripristinati", describeAll(meta.draft));
       meta.draft = emptyBalance();
       applyAll();
       saveMeta();
@@ -2149,7 +2157,7 @@ const adminApi: AdminApi = {
       if (!balanceSize(meta.draft)) return;
       // Si riparte dall'ultima versione sul server, per non cancellare le modifiche di un altro admin.
       await loadPublished(false);
-      const items = [...meta.draft.towers.map((o) => describeEntry("towers", o)), ...meta.draft.modes.map((o) => describeEntry("modes", o)), ...meta.draft.maps.map((o) => describeEntry("maps", o))];
+      const items = describeAll(meta.draft);
       const next = pruneBalance(mergeBalance(published, meta.draft));
       await publishBalance(next, title || "Bilanciamento aggiornato", items);
       meta.draft = emptyBalance();

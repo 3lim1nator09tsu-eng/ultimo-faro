@@ -478,7 +478,7 @@ for (const vp of [{ width: 390, height: 760 }, { width: 844, height: 390 }]) {
   check("Notte 1 aperta, Notte 2 chiusa", !(await page.locator('[data-night="1"]').isDisabled()) && (await page.locator('[data-night="2"]').isDisabled()));
   check("il Disgelo è indicato nel menu", /forza \d+%/.test(await page.locator("#disgelo").textContent()));
   check("la sezione Online mostra l'accesso", await page.locator("#olLogin").isVisible());
-  check("le torri Hardcore si comprano con le Perle", (await page.locator("#arsenal button.pearl").count()) === 3);
+  check("torri Hardcore e Kingpin chiedono Perle", (await page.locator("#arsenal button.pearl").count()) === 4);
   check("i livelli 2 e 3 sono chiusi all'inizio", (await page.locator('[data-play="foce"]').isDisabled()) && (await page.locator('[data-play="marea"]').isDisabled()));
   check("senza Schegge non si sblocca", await page.locator('#arsenal button[data-kind="cecchino"]').isDisabled());
   check("il menu non scorre di lato", await page.evaluate(() => document.getElementById("menu").scrollWidth <= innerWidth));
@@ -512,6 +512,22 @@ for (const vp of [{ width: 390, height: 760 }, { width: 844, height: 390 }]) {
   const meta2 = await page.evaluate(() => window.__faro.debug.meta);
   check("l'Arsenale sblocca e alza di rango", meta2.unlocked.includes("cecchino") && meta2.ranks.balestra === 2 && meta2.schegge === 1000 - 150 - 100, JSON.stringify(meta2));
   await page.screenshot({ path: `${outDir}/14-arsenal.png` });
+  // Il Kingpin vuole Schegge e Perle insieme.
+  await page.evaluate(() => {
+    window.__faro.debug.setSchegge(2000);
+    window.__faro.debug.meta.perle = 0;
+    window.__faro.debug.setSchegge(2000);
+  });
+  const kp = page.locator('#arsenal button[data-kind="kingpin"]');
+  check("il Kingpin chiede Schegge e Perle", /1\.?000 Schegge \+ 40 Perle/.test(await kp.textContent()) && (await kp.isDisabled()), await kp.textContent());
+  await page.evaluate(() => {
+    window.__faro.debug.meta.perle = 50;
+    window.__faro.debug.setSchegge(2000);
+  });
+  await kp.tap();
+  const meta3 = await page.evaluate(() => window.__faro.debug.meta);
+  check("con entrambe le valute il Kingpin si sblocca", meta3.unlocked.includes("kingpin") && meta3.schegge === 1000 && meta3.perle === 10, `${meta3.schegge} ${meta3.perle}`);
+  if (meta3.loadout.includes("kingpin")) await page.locator('#arsenal button[data-squad="kingpin"]').tap();
   await page.locator("#mCampagna").tap();
   await page.waitForTimeout(150);
   const st = await page.evaluate(() => window.__faro.state);

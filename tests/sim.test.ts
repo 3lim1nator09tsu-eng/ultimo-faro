@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { CAMPAIGN_LENGTH, ENEMIES, LEVELS, RULES, STARTER_TOWERS, TOWERS, levelById, waveAt } from "../src/sim-core/content";
-import { Command, allIntegers, buildCost, createGame, damageAgainst, effStats, hashState, hpForWave, isBuildable, laneIsOpen, rankedStats, restore, rewardFor, sellValue, snapshot, step } from "../src/sim-core/sim";
+import { Command, allIntegers, buildCost, createGame, damageAgainst, effStats, hashState, hpForWave, isBuildable, laneIsOpen, rankedStats, restore, rewardFor, sellValue, snapshot, step, towerStats } from "../src/sim-core/sim";
 import { playBot } from "../src/sim-core/bot";
 
 const toWave = (s: ReturnType<typeof createGame>) => {
@@ -616,4 +616,55 @@ test("Kingpin: evoca unità che camminano, combattono e portano cash", () => {
   }
   assert.equal(hashState(a), hashState(b), "le unità sono deterministiche");
   void paid;
+});
+
+test("Kingpin: spara, costa 800, coda da 1 a 4 posti, scagnozzi gratis, due percorsi e Taglia", () => {
+  const s = createGame(8, { mode: "easy", allowed: ["kingpin"] });
+  assert.equal(TOWERS.kingpin.levels[0].cost, 800);
+  s.cash = 20000;
+  step(s, [{ t: "build", kind: "kingpin", cx: 2, cy: 2 }]);
+  const k = s.towers[0];
+  assert.deepEqual(k.queue, ["scagnozzo"]);
+  step(s, [{ t: "queue", id: k.id, unit: "scagnozzo" }]);
+  assert.equal(k.queue.length, 1, "al livello 1 la coda ha un posto");
+  step(s, [{ t: "upgrade", id: k.id }, { t: "upgrade", id: k.id }]);
+  for (const u of ["portavalori", "buttafuori", "scagnozzo"] as const) step(s, [{ t: "queue", id: k.id, unit: u }]);
+  assert.equal(k.queue.length, 3, "al livello 3 la coda ha tre posti");
+  step(s, [{ t: "spec", id: k.id, branch: "A" }, { t: "queue", id: k.id, unit: "sicario" }]);
+  assert.equal(k.queue.length, 4, "dal livello 4 la coda ha quattro posti");
+  step(s, [{ t: "unqueue", id: k.id, index: 0 }]);
+  assert.deepEqual(k.queue, ["portavalori", "buttafuori", "sicario"]);
+  // Il percorso scelto al livello 4 resta: il livello 5 è La Cupola, non un Apex.
+  step(s, [{ t: "apex", id: k.id }]);
+  assert.equal(k.level, 5);
+  assert.equal(towerStats(k).spawnEvery, TOWERS.kingpin.branches2!.A.spawnEvery);
+  assert.equal(s.apexBuilt, 0);
+  step(s, [{ t: "skip" }]);
+  step(s, [{ t: "adminSpawn", enemy: "bruto", count: 3, hpMulBp: 1000000 }]);
+  for (let i = 0; i < 30; i++) step(s, []);
+  // Taglia: 20 s di ricarica, i nemici in campo valgono di più per il proprietario.
+  const ev = step(s, [{ t: "towerAbility", id: k.id }]);
+  assert.ok(ev.some((x) => x.e === "bounty"));
+  assert.ok(k.abilityCd >= 199, "20 secondi di ricarica");
+  assert.ok(s.enemies.filter((e) => e.kind === "bruto").every((e) => (e.bounty ?? 0) > 0), "i nemici in campo hanno la taglia");
+  const cash0 = s.cash;
+  const seen = new Set<string>();
+  for (let i = 0; i < 400; i++) {
+    step(s, []);
+    for (const u of s.units) seen.add(u.kind);
+  }
+  assert.ok(seen.has("portavalori") && seen.has("buttafuori") && seen.has("sicario"), `in campo: ${[...seen].join(", ")}`);
+  assert.ok(s.cash >= cash0, "gli scagnozzi non costano");
+  s.enemies = [];
+  // Il percorso Boss: il Kingpin fa più danno, gli scagnozzi meno.
+  assert.ok(TOWERS.kingpin.branches.B.damage > TOWERS.kingpin.branches.A.damage * 2);
+  assert.ok(TOWERS.kingpin.branches.B.unitBp < TOWERS.kingpin.branches.A.unitBp);
+  assert.ok(allIntegers(s));
+  // Spara anche con la coda vuota.
+  const g = createGame(9, { mode: "easy", allowed: ["kingpin"] });
+  g.cash = 2000;
+  step(g, [{ t: "build", kind: "kingpin", cx: 2, cy: 2 }]);
+  step(g, [{ t: "unqueue", id: g.towers[0].id, index: 0 }, { t: "skip" }]);
+  for (let i = 0; i < 300; i++) step(g, []);
+  assert.ok(g.towers[0].damageDone > 0 && g.units.length === 0, "spara anche con la coda vuota");
 });

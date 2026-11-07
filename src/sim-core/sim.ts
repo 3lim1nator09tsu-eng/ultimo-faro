@@ -37,6 +37,7 @@ import {
   UNITS,
   UNIT_ORDER,
   UnitKind,
+  KINGPIN_QUEUE,
 } from "./content";
 import { hpMulFor, modeDef, waveFor, waveTotal } from "./modes";
 
@@ -66,6 +67,9 @@ export interface Enemy {
   phase: number;
   skillCd: number; // furto o scatto
   chargeLeft: number;
+  bounty?: number; // tick di Taglia rimasti
+  bountyOwner?: number;
+  bountyBp?: number;
 }
 
 export interface Tower {
@@ -94,6 +98,7 @@ export interface Tower {
   rank: number; // rango permanente del proprietario per questa torre
   spawnCd: number; // Kingpin: tick alla prossima evocazione
   spawnN: number; // Kingpin: unità evocate finora
+  queue: UnitKind[]; // Kingpin: la coda che si ripete, fino a 4 posti
 }
 
 /** Unità del Kingpin: camminano dal Faro verso il mare e combattono i nemici che incontrano. */
@@ -203,6 +208,8 @@ type CommandBody =
   | { t: "ability"; id: "fascio"; x: number; y: number }
   | { t: "ability"; id: "gelata" }
   | { t: "apex"; id: number }
+  | { t: "queue"; id: number; unit: UnitKind }
+  | { t: "unqueue"; id: number; index: number }
   | { t: "adminCash"; amount: number; to?: number }
   | { t: "adminSpawn"; enemy: EnemyKind; count: number; lane?: number; mods?: Mod[]; boss?: boolean; hpMulBp?: number }
   | { t: "adminLives"; lives: number }
@@ -231,6 +238,7 @@ export type GameEvent =
   | { e: "charge"; x: number; y: number }
   | { e: "split"; x: number; y: number }
   | { e: "unit"; x: number; y: number; kind: UnitKind }
+  | { e: "bounty"; x: number; y: number }
   | { e: "kill"; x: number; y: number; bounty: number; boss: boolean }
   | { e: "leak"; damage: number }
   | { e: "income"; amount: number; lives: number; amounts?: number[] }
@@ -381,13 +389,15 @@ function randomInt(state: GameState, maxExclusive: number): number {
 /** Valori della torre al suo livello, senza rango. */
 export function towerStats(t: Pick<Tower, "kind" | "level" | "branch">): TowerStats {
   const def = TOWERS[t.kind];
-  if (t.level >= 5 && t.branch) return apexStats(def.branches[t.branch]);
+  if (t.level >= 5 && t.branch) return def.branches2 ? def.branches2[t.branch] : apexStats(def.branches[t.branch]);
   if (t.level >= 4 && t.branch) return def.branches[t.branch];
   return def.levels[t.level - 1];
 }
 
 export function apexPrice(state: GameState, t: Tower): number {
   if (!t.branch) return 0;
+  const two = TOWERS[t.kind].branches2;
+  if (two) return discounted(two[t.branch].cost, discountAt(state, t.x, t.y, t.id));
   const base = Math.floor((TOWERS[t.kind].branches[t.branch].cost * APEX_COST_BP) / 100000) * 10;
   return discounted(base, discountAt(state, t.x, t.y, t.id));
 }
@@ -395,6 +405,7 @@ export function apexPrice(state: GameState, t: Tower): number {
 /** Motivo per cui l'Apex non si può costruire, oppure null se si può. */
 export function apexBlock(state: GameState, t: Tower): string | null {
   if (t.level !== 4) return "Serve la specializzazione";
+  if (TOWERS[t.kind].branches2) return null; // secondo miglioramento del percorso: niente rango né limite
   if ((t.rank ?? 1) < APEX_RANK) return `Serve il rango ${APEX_RANK} nell'Arsenale`;
   if (state.towers.some((o) => o.kind === t.kind && o.level >= 5)) return "Un solo Apex per tipo";
   return null;
@@ -622,6 +633,7 @@ function applyCommand(state: GameState, cmd: Command, events: GameEvent[]): void
         rank: ranksOf(state, p)[cmd.kind] ?? 1,
         spawnCd: 20,
         spawnN: 0,
+        queue: cmd.kind === "kingpin" ? ["scagnozzo"] : [],
       });
       events.push({ e: "built", id, kind: cmd.kind });
       return;
@@ -679,8 +691,9 @@ function applyCommand(state: GameState, cmd: Command, events: GameEvent[]): void
       addCash(state, p, -cost);
       t.invested += cost;
       t.level = 5;
-      state.apexBuilt += 1;
-      events.push({ e: "apex", x: t.x, y: t.y, name: TOWERS[t.kind].apex });
+      const two = TOWERS[t.kind].branches2;
+      if (!two) state.apexBuilt += 1;
+      events.push(two ? { e: "upgraded", id: t.id } : { e: "apex", x: t.x, y: t.y, name: TOWERS[t.kind].apex });
       return;
     }
     case "track": {
@@ -689,6 +702,26 @@ function applyCommand(state: GameState, cmd: Command, events: GameEvent[]): void
       if (t.kind !== "grammofono") return reject("Solo il Grammofono cambia disco");
       if (cmd.track !== "danno" && cmd.track !== "gittata" && cmd.track !== "sconto") return reject("Disco sconosciuto");
       t.track = cmd.track;
+      return;
+    }
+    case "queue": {
+      const t = mine(cmd.id);
+      if (!t) return;
+      if (t.kind !== "kingpin") return reject("Solo il Kingpin manda scagnozzi");
+      const bit = UNIT_ORDER.indexOf(cmd.unit);
+      if (bit < 0) return reject("Unità sconosciuta");
+      if (!(statsIn(state, t).unitSet & (1 << bit))) return reject(`${UNITS[cmd.unit].name}: serve un livello più alto`);
+      const slots = Math.min(KINGPIN_QUEUE, statsIn(state, t).queueSlots || 1);
+      if (t.queue.length >= slots) return reject(slots < KINGPIN_QUEUE ? `Coda piena: ${slots} ${slots === 1 ? "posto" : "posti"} a questo livello` : "La coda è piena");
+      t.queue.push(cmd.unit);
+      return;
+    }
+    case "unqueue": {
+      const t = mine(cmd.id);
+      if (!t) return;
+      if (t.kind !== "kingpin" || cmd.index < 0 || cmd.index >= t.queue.length) return;
+      t.queue.splice(cmd.index, 1);
+      if (t.queue.length) t.spawnN %= t.queue.length;
       return;
     }
     case "towerAbility": {
@@ -704,6 +737,14 @@ function applyCommand(state: GameState, cmd: Command, events: GameEvent[]): void
       if (t.kind === "capitano") {
         t.abilityLeft = s.abilityTicks;
         events.push({ e: "rally", x: t.x, y: t.y, radius: s.range });
+      } else if (t.kind === "kingpin") {
+        // Taglia: tutti i nemici in campo valgono di più per chi ha il Kingpin, finché dura.
+        for (const e of state.enemies) {
+          e.bounty = Math.max(e.bounty ?? 0, s.abilityTicks);
+          e.bountyOwner = t.owner;
+          e.bountyBp = s.abilityBp;
+        }
+        events.push({ e: "bounty", x: t.x, y: t.y });
       } else if (t.kind === "medico") {
         for (const o of state.towers) {
           o.stun = 0;
@@ -976,6 +1017,12 @@ function clearDead(state: GameState, events: GameEvent[]): void {
     }
     const bounty = def.bounty * (e.boss ? 15 : 1);
     payAll(state, bounty);
+    if ((e.bounty ?? 0) > 0) {
+      // Taglia: cash in più solo per chi l'ha messa.
+      const extra = Math.floor((bounty * ((e.bountyBp ?? 10000) - 10000)) / 10000);
+      addCash(state, e.bountyOwner ?? 0, extra);
+      events.push({ e: "kill", x: e.x, y: e.y - 300, bounty: extra, boss: false });
+    }
     state.kills += 1;
     if (e.boss) state.bossKills += 1;
     events.push({ e: "kill", x: e.x, y: e.y, bounty, boss: e.boss });
@@ -1135,6 +1182,7 @@ function enemyActs(state: GameState, events: GameEvent[]): void {
     const def = ENEMIES[e.kind];
     if (e.mark > 0) e.mark -= 1;
     if (e.mark === 0) e.markBp = 10000;
+    if ((e.bounty ?? 0) > 0) e.bounty! -= 1;
     const steps = def.phases ?? [5000];
     if (def.phaseShieldBp && e.phase < steps.length && e.hp * 10000 <= e.maxHp * steps[e.phase]) {
       e.phase += 1;
@@ -1205,9 +1253,13 @@ function kingpins(state: GameState, events: GameEvent[]): void {
     const s = statsIn(state, t);
     const alive = state.units.filter((u) => u.tower === t.id).length;
     if (alive >= s.spawnMax) continue;
-    const kinds = UNIT_ORDER.filter((_, i) => s.unitSet & (1 << i));
-    if (!kinds.length) continue;
-    const kind = kinds[t.spawnN % kinds.length];
+    if (!t.queue.length) continue;
+    const kind = t.queue[t.spawnN % t.queue.length];
+    if (!(s.unitSet & (1 << UNIT_ORDER.indexOf(kind)))) {
+      t.spawnN += 1;
+      continue;
+    }
+
     const lanes = level.map.lanes.map((_, i) => i).filter((i) => laneIsOpen(state, i));
     const lane = lanes[(t.id + t.spawnN) % lanes.length];
     const dist = geo.lengths[lane] - 300;
@@ -1248,7 +1300,7 @@ function kingpins(state: GameState, events: GameEvent[]): void {
     const gone = u.hp <= 0 || u.dist <= 0 || !tower;
     if (gone) {
       if (def.pay && tower) {
-        const pay = Math.floor((def.pay * u.power) / 10000);
+        const pay = Math.floor((def.pay * u.power * (tower.branch === "A" ? 2 : 1)) / 10000);
         addCash(state, u.owner, pay);
         events.push({ e: "kill", x: u.x, y: u.y, bounty: pay, boss: false });
       }
@@ -1519,6 +1571,7 @@ export function hashState(state: GameState): string {
     mix(e.fragileBp);
     mix(e.skillCd);
     mix(e.chargeLeft);
+    mix(e.bounty ?? 0);
   }
   for (const t of state.towers) {
     mix(t.id);
@@ -1538,6 +1591,7 @@ export function hashState(state: GameState): string {
     mix(t.rank);
     mix(t.spawnCd);
     mix(t.spawnN);
+    for (const q of t.queue ?? []) str(q);
   }
   for (const u of state.units) {
     mix(u.id);

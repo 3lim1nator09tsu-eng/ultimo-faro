@@ -1,5 +1,5 @@
 // Client del prototipo: disegna lo stato, raccoglie i tocchi, non decide mai le regole.
-import { ADMIN_ONLY, EVENT_TOWER, SURVIVAL_MAPS, UNITS, UNIT_ORDER, ABILITIES, APEX_RANK, AbilityId, ENEMIES, GameMode, HARDCORE_TOWERS, LEVELS, MODS, LOADOUT_SIZE, MAP_H, MAP_W, MAX_RANK, RANK_COSTS, RULES, STARTER_TOWERS, TICKS_PER_SECOND, TILE, TOWERS, TOWER_ORDER, TRACKS, TowerKind, Track, Branch, levelById } from "../sim-core/content";
+import { ADMIN_ONLY, EVENT_TOWER, KINGPIN_QUEUE, SURVIVAL_MAPS, UNITS, UNIT_ORDER, ABILITIES, APEX_RANK, AbilityId, ENEMIES, GameMode, HARDCORE_TOWERS, LEVELS, MODS, LOADOUT_SIZE, MAP_H, MAP_W, MAX_RANK, RANK_COSTS, RULES, STARTER_TOWERS, TICKS_PER_SECOND, TILE, TOWERS, TOWER_ORDER, TRACKS, TowerKind, Track, Branch, levelById } from "../sim-core/content";
 import { Command, GameEvent, GameOptions, GameState, modBit, abilityCdOf, allowedOf, cashOf, apexBlock, apexPrice, applyCommands, modsOf, perleFor, cellEmerged, createGame, effStats, hashState, isBuildable, laneIsOpen, levelOf, rankedStats, restore, rewardFor, sellValue, specPrice, statsIn, snapshot, starsFor, step, upgradePrice, waveCount, wavePreview } from "../sim-core/sim";
 import { playBot } from "../sim-core/bot";
 import { HARDCORE, ModeDef, NIGHTS, SURVIVAL, disgeloFor, modeDef } from "../sim-core/modes";
@@ -624,7 +624,7 @@ function statsLine(kind: TowerKind, level: number, branch: Branch | null, rank =
   if (kind === "medico") return `Libera le torri stordite, poi le protegge ${num(s.immune / TICKS_PER_SECOND)} s. Raggio ${range}.`;
   if (kind === "kingpin") {
     const who = UNIT_ORDER.filter((_, i) => s.unitSet & (1 << i)).map((u) => UNITS[u].name).join(", ");
-    return `Manda ${who}: uno ogni ${num(s.spawnEvery / TICKS_PER_SECOND)} s, fino a ${s.spawnMax} in campo, forza ${pct(s.unitBp)}. Vedono gli invisibili.${s.income ? ` Rende ${s.income} cash a fine ondata.` : ""}`;
+    return `Spara: danno ${s.damage}, ${num(TICKS_PER_SECOND / s.cooldown)} colpi/s, gittata ${range}${s.pierce ? ", ignora l'armatura" : ""}. Coda di ${s.queueSlots} ${s.queueSlots === 1 ? "posto" : "posti"} (${who}), uno ogni ${num(s.spawnEvery / TICKS_PER_SECOND)} s, fino a ${s.spawnMax} in campo, forza ${pct(s.unitBp)}.${s.abilityCooldown ? " Abilità Taglia." : ""} Tutti vedono gli invisibili.`;
   }
   if (kind === "campana") return `+${pct(s.auraBp)} danno, +${pct(s.hasteBp)} cadenza, +${pct(s.rangeBuffBp)} gittata, vista sugli invisibili e niente stordimenti. Raggio ${range}.`;
   if (s.pulseAll) return `Ogni secondo ${s.damage} danni a tutti i nemici nel raggio e toglie i modificatori${s.bossBp > 10000 ? `, x${s.bossBp / 10000} sui boss` : ""}. Raggio ${range}.`;
@@ -732,10 +732,11 @@ function updatePanel() {
   }
   if (t) {
     const def = TOWERS[t.kind];
-    setText($("dName"), t.level >= 5 ? def.apex : t.branch ? def.branches[t.branch].name : def.name);
+    const two = def.branches2 && t.branch ? def.branches2[t.branch] : null;
+    setText($("dName"), t.level >= 5 ? (two ? two.name : def.apex) : t.branch ? def.branches[t.branch].name : def.name);
     const rank = t.rank ?? 1;
     const foreign = t.owner !== myP;
-    setText($("dLevel"), `${t.level >= 5 ? "Apex" : `Livello ${t.level}`}${rank > 1 ? ` · Rango ${rank}` : ""}`);
+    setText($("dLevel"), `${t.level >= 5 && !two ? "Apex" : `Livello ${t.level}`}${rank > 1 ? ` · Rango ${rank}` : ""}`);
     setText($("dStats"), statsLine(t.kind, t.level, t.branch, rank));
     const up = $<HTMLButtonElement>("btnUp");
     const a = $<HTMLButtonElement>("btnA");
@@ -764,7 +765,8 @@ function updatePanel() {
     if (t.level === 4) {
       const block = apexBlock(state, t);
       const price = apexPrice(state, t);
-      setButton(apexBtn, `Apex: ${def.apex}`, block ? null : price, block ?? "Tutto più forte: danno x2,2, più gittata e area");
+      if (two) setButton(apexBtn, `Livello 5: ${two.name}`, price, two.summary);
+      else setButton(apexBtn, `Apex: ${def.apex}`, block ? null : price, block ?? "Tutto più forte: danno x2,2, più gittata e area");
       apexBtn.disabled = foreign || !!block || myCash() < price;
     }
     const dmg = t.damageDone;
@@ -784,11 +786,54 @@ function updatePanel() {
 function updateExtra(t: GameState["towers"][number]) {
   const host = $("dExtra");
   const def = TOWERS[t.kind];
-  const sig = `${t.id}:${t.kind}`;
+  const sig = t.kind === "kingpin" ? `${t.id}:${t.level}:${t.branch}:${t.queue.join(",")}:${t.owner === myP}:${statsIn(state, t).queueSlots}` : `${t.id}:${t.kind}`;
   if (host.dataset.sig !== sig) {
     host.dataset.sig = sig;
     host.innerHTML = "";
-    if (t.kind === "grammofono") {
+    if (t.kind === "kingpin") {
+      // Coda degli scagnozzi: si ripete in ordine. Tocca un posto per toglierlo, un'unità sotto per aggiungerla.
+      const s = statsIn(state, t);
+      const mineT = t.owner === myP;
+      const open = Math.min(KINGPIN_QUEUE, s.queueSlots || 1);
+      const head = document.createElement("small");
+      head.className = "kpHead";
+      head.textContent = `Coda ${t.queue.length}/${open}: gli scagnozzi partono in ordine, gratis. Tocca un posto per toglierlo.`;
+      const slots = document.createElement("div");
+      slots.className = "kpSlots";
+      for (let i = 0; i < KINGPIN_QUEUE; i++) {
+        const u = t.queue[i];
+        const locked = i >= open;
+        const b = document.createElement("button");
+        b.className = `kpSlot${u ? ` kp-${u}` : locked ? " locked" : " empty"}`;
+        b.dataset.slot = String(i);
+        b.textContent = u ? UNITS[u].name : locked ? `livello ${i + 1}` : "vuoto";
+        b.disabled = !u || !mineT;
+        if (u) b.addEventListener("click", () => send({ t: "unqueue", id: t.id, index: i }));
+        slots.append(b);
+      }
+      const add = document.createElement("div");
+      add.className = "kpAdd";
+      UNIT_ORDER.forEach((u, i) => {
+        const ok = (s.unitSet & (1 << i)) !== 0;
+        const b = document.createElement("button");
+        b.className = `kpUnit kp-${u}`;
+        b.dataset.unit = u;
+        const note = !ok ? (u === "sicario" ? "La Famiglia" : "livello più alto") : UNITS[u].pay ? `porta ${UNITS[u].pay} cash` : u === "buttafuori" ? "corpo a corpo" : u === "sicario" ? "da lontano" : "mitra";
+        b.innerHTML = `<b>${UNITS[u].name}</b><small>${note}</small>`;
+        b.disabled = !ok || !mineT || t.queue.length >= open;
+        b.addEventListener("click", () => send({ t: "queue", id: t.id, unit: u }));
+        add.append(b);
+      });
+      host.append(head, slots, add);
+      if (s.abilityCooldown) {
+        const ab = document.createElement("button");
+        ab.className = "ab towerAb";
+        ab.innerHTML = `Taglia<small></small>`;
+        ab.disabled = !mineT;
+        ab.addEventListener("click", () => send({ t: "towerAbility", id: t.id }));
+        host.append(ab);
+      }
+    } else if (t.kind === "grammofono") {
       for (const k of Object.keys(TRACKS) as Track[]) {
         const b = document.createElement("button");
         b.className = `track track-${k}`;
@@ -812,7 +857,8 @@ function updateExtra(t: GameState["towers"][number]) {
     const full = statsIn(state, t).abilityCooldown;
     ab.style.setProperty("--p", String(1 - t.abilityCd / full));
     ab.classList.toggle("ready", t.abilityCd === 0);
-    const note = t.abilityLeft > 0 ? `attiva, ${Math.ceil(t.abilityLeft / TICKS_PER_SECOND)} s` : t.abilityCd === 0 ? def.ability!.summary : `${Math.ceil(t.abilityCd / TICKS_PER_SECOND)} s`;
+    const summary = t.kind === "kingpin" ? `ogni nemico in campo vale x${statsIn(state, t).abilityBp / 10000} per te, ${statsIn(state, t).abilityTicks / TICKS_PER_SECOND} s` : def.ability?.summary ?? "";
+    const note = t.abilityLeft > 0 ? `attiva, ${Math.ceil(t.abilityLeft / TICKS_PER_SECOND)} s` : t.abilityCd === 0 ? summary : `${Math.ceil(t.abilityCd / TICKS_PER_SECOND)} s`;
     setText(ab.querySelector("small")!, note);
   }
 }
@@ -914,6 +960,11 @@ function handleEvents(events: GameEvent[]) {
       case "frost":
         fx.push({ kind: "ring", x: ev.x, y: ev.y, r: ev.radius, color: "#e9fbff", born: now, life: 600 });
         sfx.freeze();
+        break;
+      case "bounty":
+        fx.push({ kind: "ring", x: ev.x, y: ev.y, r: 9000, color: COLORS.brass, born: now, life: 700 });
+        toast("Taglia sui nemici: valgono di più per te");
+        sfx.coin();
         break;
       case "unit":
         fx.push({ kind: "ring", x: ev.x, y: ev.y, r: 600, color: COLORS.brass, born: now, life: 350 });
@@ -2355,7 +2406,7 @@ function render(now: number) {
     const lane = e.boss ? 0 : e.offset;
     const p = S(ux + lane * 0.5, uy + lane);
     drawEnemy(ctx, e, p.x, p.y, pxT, now, reducedMotion);
-    if (e.mods || e.shield || e.mark) enemyMarks(e, p.x, p.y, pxT, now);
+    if (e.mods || e.shield || e.mark || e.bounty) enemyMarks(e, p.x, p.y, pxT, now);
     drawnAt.set(e.id, p);
   }
   for (const u of state.units) drawUnit(u, pxT, now);
@@ -2848,6 +2899,16 @@ function enemyMarks(e: GameState["enemies"][number], x: number, y: number, T: nu
     ctx.arc(x, y, r + T * 0.1, 0, Math.PI * 2);
     ctx.stroke();
     ctx.setLineDash([]);
+  }
+  // Taglia del Kingpin: moneta d'oro sopra la testa.
+  if ((e.bounty ?? 0) > 0) {
+    ctx.fillStyle = COLORS.brass;
+    ctx.strokeStyle = "#5a3d0a";
+    ctx.lineWidth = Math.max(1, T * 0.02);
+    ctx.beginPath();
+    ctx.arc(x + r * 0.7, y - r * 0.9, T * 0.08, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
   }
   // Marchio dell'Arpione.
   if (e.mark > 0) {

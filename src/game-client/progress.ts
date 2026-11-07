@@ -129,6 +129,18 @@ export const MEDALS: Array<{ id: string; name: string; text: string; ok: (m: Med
 export const VERSION_NOTES: ChangeEntry[] = [
   {
     date: "2026-11-07",
+    title: "Versione 0.8.1: Kingpin rifatto",
+    kind: "versione",
+    items: [
+      "Kingpin: 800 per piazzarlo, spara con il suo mitra e vede gli invisibili; si pagano solo i miglioramenti",
+      "Gli scagnozzi sono gratis: la coda parte da 1 posto e cresce fino a 4 con i livelli, e decidi tu chi mandare",
+      "Due percorsi per gli ultimi due miglioramenti, la scelta al livello 4 resta per il livello 5",
+      "La Famiglia, poi La Cupola: scagnozzi molto più frequenti, arriva il Sicario, abilità Taglia (20 s di ricarica)",
+      "Il Boss, poi Il Don: il Kingpin spara molto più forte, gli scagnozzi valgono meno",
+    ],
+  },
+  {
+    date: "2026-11-07",
     title: "Versione 0.8: Kingpin, scheda dei nemici, Hardcore più duro",
     kind: "versione",
     items: [

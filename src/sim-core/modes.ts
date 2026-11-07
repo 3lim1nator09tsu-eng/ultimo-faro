@@ -197,7 +197,7 @@ export const HARDCORE: ModeDef = {
   bonusCash: RULES.hardcoreCash,
   curveA: 1300,
   curveB: 70,
-  hpBp: 13500,
+  hpBp: 14000,
   pool: [
     e("risacca", 1, 9, 80, 9), e("corridore", 2, 6, 60, 8), e("bruto", 4, 2, 35, 20), e("sabotatore", 6, 2, 20, 26),
     e("tizzone", 8, 5, 60, 8), e("magmatico", 12, 2, 25, 24), e("spettro", 16, 3, 45, 12), e("cavaliere", 20, 2, 25, 24),

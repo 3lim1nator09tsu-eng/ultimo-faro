@@ -129,6 +129,22 @@ export const MEDALS: Array<{ id: string; name: string; text: string; ok: (m: Med
 export const VERSION_NOTES: ChangeEntry[] = [
   {
     date: "2026-11-07",
+    title: "Versione 0.10: le tue scelte contano",
+    kind: "versione",
+    items: [
+      "Puntamento: per ogni torre scegli chi colpire, cioè il primo, l'ultimo, il più forte, il più vicino o uno a caso",
+      "Easy, il Mercante: ogni 5 ondate scegli un'offerta su tre",
+      "Medium, i Contratti: accetti un'ondata più dura e vieni pagato solo se nessuno arriva al Faro",
+      "Molten, le Bocche di lava: +40% danno, ma ogni 3 ondate le torri sopra si fermano",
+      "Fallen, le Reliquie: dopo ogni mini-boss un vantaggio con la sua maledizione",
+      "Frost, i Bracieri: nella bufera solo le torri vicine al fuoco sparano a pieno ritmo",
+      "Hardcore, Scegli il veleno: ogni 10 ondate decidi tu i modificatori del blocco (vita dei nemici +4%)",
+      "Campagna, gli Ordini del Capitano: Difesa, Assalto o Economia prima di ogni ondata",
+      "Notte 5, i momenti rapidi: ai mini-boss e a ogni quarto di vita di Krampus, tocca il simbolo giusto o spezza le catene",
+    ],
+  },
+  {
+    date: "2026-11-07",
     title: "Versione 0.9.1: pannello admin solo per l'admin",
     kind: "versione",
     items: [

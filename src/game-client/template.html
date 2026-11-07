@@ -249,6 +249,44 @@ input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--brass); 
 .adForm { display: grid; gap: 4px; }
 .adRow { display: grid; grid-template-columns: 1fr auto auto; gap: 6px; align-items: center; font-size: 14px; }
 .adList { margin: 0; padding-left: 18px; color: var(--muted); font-size: 13px; }
+/* ---------- scelte del giocatore (0.10) ---------- */
+#dAim { display: grid; grid-template-columns: repeat(5, 1fr); gap: 3px; }
+.portrait #dAim { grid-column: 1 / -1; }
+#dAim button { min-height: 30px; padding: 2px 2px; font-size: 12px; line-height: 1.1; }
+#dAim button[aria-pressed="true"] { border-color: var(--brass); color: var(--brass); font-weight: 700; background: rgba(224,179,84,.12); }
+#choice { position: absolute; left: 50%; top: 8px; transform: translateX(-50%); z-index: 3; width: min(560px, calc(100% - 16px)); box-sizing: border-box; background: rgba(11,23,29,.95); border: 1px solid var(--brass); padding: 8px; display: grid; gap: 6px; box-shadow: 0 6px 18px rgba(0,0,0,.45); }
+#choice header { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+#choice header b { font: 400 17px var(--display); color: var(--brass); }
+#choice header small { color: var(--muted); font-size: 12px; }
+#choice .opts { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 6px; }
+#choice .opt { text-align: left; display: grid; gap: 2px; padding: 6px 8px; min-height: 48px; font-size: 14px; }
+#choice .opt small { color: var(--muted); font-size: 12px; line-height: 1.25; }
+#choice .opt small.bad { color: var(--coral); }
+#choice .later { justify-self: end; min-height: 28px; font-size: 12px; padding: 2px 10px; }
+#choice.mini { width: auto; padding: 4px 8px; }
+#qte { position: absolute; inset: 0; z-index: 5; display: grid; place-items: center; pointer-events: none; }
+#qte .box { pointer-events: auto; background: rgba(28,8,10,.94); border: 2px solid #ff9a9a; padding: 12px 16px; display: grid; gap: 8px; text-align: center; width: min(360px, calc(100% - 24px)); box-sizing: border-box; box-shadow: 0 0 30px rgba(255,90,90,.35); }
+#qte h3 { margin: 0; font: 400 20px var(--display); color: #ffb3b3; }
+#qte .glyph { font-size: 44px; line-height: 1; }
+#qte .bar { height: 6px; background: rgba(255,255,255,.12); }
+#qte .bar i { display: block; height: 100%; width: calc(var(--p) * 100%); background: #ff9a9a; }
+#qte .syms { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+#qte .syms button { min-height: 64px; font-size: 30px; }
+#qte .mash { min-height: 84px; font-size: 22px; font-weight: 700; border-color: #ff9a9a; color: #ffd0d0; touch-action: manipulation; }
+#twist { display: grid; gap: 4px; font-size: 13px; }
+#twist .chips { display: flex; flex-wrap: wrap; gap: 4px; }
+#twist .chips span { border: 1px solid var(--line); padding: 1px 6px; color: var(--muted); }
+#twist .chips span.good { border-color: #7fd8a0; color: #a6e8bf; }
+#twist .chips span.bad { border-color: var(--coral); color: var(--coral); }
+#twbar { position: absolute; left: 6px; top: 6px; z-index: 3; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; max-width: calc(100% - 12px); background: rgba(11,23,29,.88); border: 1px solid var(--line); padding: 4px; }
+#twbar > small { color: var(--muted); font-size: 12px; padding-inline: 2px; }
+#twbar button { min-height: 32px; padding: 2px 8px; font-size: 13px; display: grid; text-align: left; line-height: 1.15; }
+#twbar button small { font-size: 11px; color: var(--muted); }
+#twbar button[aria-pressed="true"] { border-color: var(--brass); color: var(--brass); background: rgba(224,179,84,.12); }
+#twbar button.on { border-color: #ffb066; color: #ffb066; }
+.portrait #twbar > small, .portrait #twbar button small { display: none; }
+.portrait #twbar button { min-height: 30px; }
+
 #adminBody .adRow input[type="number"] { width: 96px; }
 #adminBody input[type="checkbox"] { width: 18px; min-height: 18px; padding: 0; }
 .adRow span { display: grid; }
@@ -344,6 +382,9 @@ button:not(:disabled):active { transform: translateY(1px); }
   <div id="stage">
     <canvas id="map" aria-label="Carta del canale con torri e nemici"></canvas>
     <div id="toast" role="status" hidden></div>
+    <div id="choice" hidden></div>
+    <div id="qte" hidden></div>
+    <div id="twbar" hidden></div>
     <div id="bossBar" hidden>
       <b id="bossName"></b>
       <span class="hp"><i id="bossHp"></i><i id="bossShield"></i></span>
@@ -377,10 +418,12 @@ button:not(:disabled):active { transform: translateY(1px); }
       <div class="stat"><span>Ondata</span><b id="wave">0/10</b></div>
     </div>
     <p id="next" aria-live="polite"></p>
+    <div id="twist" hidden></div>
     <div id="build"></div>
     <div id="detail" hidden>
       <h2><span id="dName"></span><small id="dLevel"></small></h2>
       <p id="dStats"></p>
+      <div id="dAim" hidden></div>
       <button id="btnUp"></button>
       <button id="btnA"></button>
       <button id="btnB"></button>

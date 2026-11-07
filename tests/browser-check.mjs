@@ -352,6 +352,85 @@ for (const vp of [{ width: 390, height: 700 }, { width: 844, height: 390 }]) {
   await context.close();
 }
 
+// ---------- scelte del giocatore ----------
+for (const vp of [{ width: 390, height: 760 }, { width: 844, height: 390 }]) {
+  const tag = `${vp.width}x${vp.height}`;
+  const { page, errors, context } = await open(vp);
+  while (await page.locator("#dialog").isVisible()) await page.locator("#dialog").tap();
+  // Puntamento dalla scheda della torre.
+  await page.evaluate(() => {
+    const f = window.__faro;
+    f.debug.restart(21, { mode: "campagna", level: "porto", allowed: ["balestra", "officina"] });
+    f.state.cash = 5000;
+    f.debug.send({ t: "build", kind: "balestra", cx: 5, cy: 3 });
+    f.debug.send({ t: "build", kind: "officina", cx: 7, cy: 3 });
+  });
+  await tapCell(page, 5, 3);
+  await page.waitForTimeout(120);
+  check(`${tag}: la torre mostra i cinque puntamenti`, (await page.locator("#dAim button").count()) === 5 && (await page.locator('#dAim button[aria-pressed="true"]').textContent()) === "Primo");
+  await page.locator('#dAim button[data-aim="strong"]').click();
+  await page.waitForTimeout(120);
+  check(`${tag}: il puntamento scelto vale sulla torre`, (await page.evaluate(() => window.__faro.state.towers[0].aim)) === "strong" && (await page.locator('#dAim button[aria-pressed="true"]').textContent()) === "Più forte");
+  await page.screenshot({ path: `${outDir}/60-aim-${tag}.png` });
+  await tapCell(page, 7, 3);
+  await page.waitForTimeout(120);
+  check(`${tag}: l'Officina non ha puntamento`, await page.locator("#dAim").isHidden());
+  // Campagna: ordini del Capitano.
+  await page.locator('#twbar button[data-order="difesa"]').click();
+  await page.waitForTimeout(80);
+  check(`${tag}: l'ordine Difesa si attiva`, (await page.evaluate(() => window.__faro.state.tw.order)) === "difesa" && (await page.locator('#twbar button[data-order="difesa"]').getAttribute("aria-pressed")) === "true");
+  await page.screenshot({ path: `${outDir}/61-orders-${tag}.png` });
+  // Easy: il Mercante.
+  await page.evaluate(() => {
+    const f = window.__faro;
+    f.debug.restart(22, { mode: "easy", level: "porto" });
+    f.state.tw.offer = { id: 9999, kind: "mercante", options: ["oro", "sconto", "vite"] };
+  });
+  await page.waitForTimeout(150);
+  check(`${tag}: l'offerta del Mercante compare sulla carta`, (await page.locator("#choice .opt").count()) === 3);
+  await page.screenshot({ path: `${outDir}/62-merchant-${tag}.png` });
+  const cash0 = await page.evaluate(() => window.__faro.state.cash);
+  await page.locator('#choice .opt[data-pick="0"]').click();
+  await page.waitForTimeout(150);
+  const cash1 = await page.evaluate(() => window.__faro.state.cash);
+  check(`${tag}: scegliere il Sacco d'oro dà cash e chiude l'offerta`, cash1 > cash0 && (await page.locator("#choice").isHidden()), `${cash0} → ${cash1}`);
+  // Frost: braciere.
+  await page.evaluate(() => window.__faro.debug.restart(23, { mode: "frost", level: "porto" }));
+  await page.waitForTimeout(100);
+  await page.locator("#brazierBtn").click();
+  await tapCell(page, 6, 4);
+  await page.waitForTimeout(120);
+  check(`${tag}: il braciere si piazza toccando la carta`, (await page.evaluate(() => window.__faro.state.tw.braziers.length)) === 1);
+  // Notte 5: momento rapido.
+  await page.evaluate(() => {
+    const f = window.__faro;
+    f.debug.restart(24, { mode: "natale", night: 5 });
+    f.debug.send({ t: "skip" });
+  });
+  await page.waitForTimeout(400);
+  await page.evaluate(() => {
+    const f = window.__faro;
+    const e = f.state.enemies[0];
+    f.state.tw.qte = { id: 8888, kind: "simbolo", symbols: [0, 3, 5], answer: 1, got: 0, until: f.state.tick + 400, target: e ? e.id : 0 };
+  });
+  await page.waitForTimeout(150);
+  check(`${tag}: il momento rapido mostra tre simboli`, (await page.locator("#qte .syms button").count()) === 3);
+  await page.screenshot({ path: `${outDir}/63-qte-${tag}.png` });
+  await page.locator('#qte button[data-sym="1"]').click();
+  await page.waitForTimeout(150);
+  check(`${tag}: toccare il simbolo giusto vince il momento rapido`, (await page.evaluate(() => window.__faro.state.tw.qteWins)) === 1 && (await page.locator("#qte").isHidden()));
+  await page.evaluate(() => {
+    const f = window.__faro;
+    f.state.tw.qte = { id: 8889, kind: "raffica", symbols: [0, 1, 2], answer: 0, got: 0, until: f.state.tick + 400, target: 0 };
+  });
+  await page.waitForTimeout(150);
+  for (let i = 0; i < 12; i++) await page.locator("#qte .mash").click();
+  await page.waitForTimeout(200);
+  check(`${tag}: la raffica di tocchi spezza le catene`, (await page.evaluate(() => window.__faro.state.tw.qteWins)) === 2, String(await page.evaluate(() => window.__faro.state.tw.qte?.got)));
+  check(`${tag}: nessun errore di pagina nelle scelte`, errors.length === 0, errors.join(" | "));
+  await context.close();
+}
+
 // ---------- Hardcore e Apex ----------
 {
   const { page, errors, context } = await open({ width: 844, height: 390 });

@@ -1,7 +1,8 @@
 // Client del prototipo: disegna lo stato, raccoglie i tocchi, non decide mai le regole.
 import { ADMIN_ONLY, EVENT_TOWER, KINGPIN_QUEUE, SURVIVAL_MAPS, UNITS, UNIT_ORDER, ABILITIES, APEX_RANK, AbilityId, ENEMIES, GameMode, HARDCORE_TOWERS, LEVELS, MODS, LOADOUT_SIZE, MAP_H, MAP_W, MAX_RANK, RANK_COSTS, RULES, STARTER_TOWERS, TICKS_PER_SECOND, TILE, TOWERS, TOWER_ORDER, TRACKS, TowerKind, Track, Branch, levelById } from "../sim-core/content";
-import { Command, GameEvent, GameOptions, GameState, modBit, abilityCdOf, allowedOf, cashOf, apexBlock, apexPrice, applyCommands, modsOf, perleFor, cellEmerged, createGame, effStats, hashState, isBuildable, laneIsOpen, levelOf, rankedStats, restore, rewardFor, sellValue, specPrice, statsIn, snapshot, starsFor, step, upgradePrice, waveCount, wavePreview } from "../sim-core/sim";
+import { Command, GameEvent, GameOptions, GameState, modBit, playerCount, abilityCdOf, allowedOf, cashOf, apexBlock, apexPrice, applyCommands, modsOf, perleFor, cellEmerged, createGame, effStats, hashState, isBuildable, laneIsOpen, levelOf, rankedStats, restore, rewardFor, sellValue, specPrice, statsIn, snapshot, starsFor, step, upgradePrice, waveCount, wavePreview } from "../sim-core/sim";
 import { playBot } from "../sim-core/bot";
+import { drawTwist, qteKey, renderAim, renderChoice, renderQte, renderTwist, twistToast } from "./twist-ui";
 import { HARDCORE, ModeDef, NIGHTS, SURVIVAL, disgeloFor, modeDef } from "../sim-core/modes";
 import { GrantPayload, LocalTransport, Net, RealtimeTransport, Transport, roomCode } from "./net";
 import { NetMatch, Player, Setup } from "./netplay";
@@ -101,6 +102,14 @@ let below = false; // plancia sotto la carta
 let bgKey = "";
 let inMenu = true;
 let aiming = false;
+let brazierMode = false; // Frost: il prossimo tocco sulla carta sposta un braciere
+function toggleBrazier() {
+  brazierMode = !brazierMode;
+  if (brazierMode) {
+    setPlacing(null);
+    selectTower(null);
+  }
+}
 let aimPoint: { x: number; y: number } | null = null;
 let iceFlash = 0;
 let lastReward = 0;
@@ -799,6 +808,10 @@ function updatePanel() {
     setHtml(next, "");
     go.hidden = true;
   }
+  renderChoice($("choice"), state, send, playerCount(state) > 1);
+  renderQte($("qte"), state, send);
+  if (brazierMode && state.phase !== "prep") brazierMode = false;
+  renderTwist($("twist"), $("twbar"), state, send, brazierMode, toggleBrazier);
   $("abilities").hidden = state.phase !== "wave";
   for (const [id, el] of [["fascio", $("abFascio")], ["gelata", $("abGelata")]] as Array<[AbilityId, HTMLElement]>) {
     const cd = abilityCdOf(state, myP)[id];
@@ -835,6 +848,7 @@ function updatePanel() {
     const foreign = t.owner !== myP;
     setText($("dLevel"), `${t.level >= 5 && !two ? "Apex" : `Livello ${t.level}`}${rank > 1 ? ` · Rango ${rank}` : ""}`);
     setText($("dStats"), statsLine(t.kind, t.level, t.branch, rank));
+    renderAim($("dAim"), state, t, !foreign, send);
     const up = $<HTMLButtonElement>("btnUp");
     const a = $<HTMLButtonElement>("btnA");
     const bb = $<HTMLButtonElement>("btnB");
@@ -1078,6 +1092,25 @@ function handleEvents(events: GameEvent[]) {
         break;
       case "split":
         fx.push({ kind: "blast", x: ev.x, y: ev.y, r: 900, born: now, life: 300 });
+        break;
+      case "offer":
+      case "chosen":
+      case "contract":
+      case "eruption":
+      case "blizzard":
+      case "qteEnd": {
+        const text = twistToast(ev, state);
+        if (text) toast(text);
+        if (ev.e === "offer" || ev.e === "chosen") sfx.coin();
+        else if (ev.e === "eruption") sfx.blast();
+        else if (ev.e === "blizzard" && ev.on) sfx.freeze();
+        else if (ev.e === "contract") (ev.ok ? sfx.coin : sfx.deny)();
+        else if (ev.e === "qteEnd") (ev.ok ? sfx.apex : sfx.roar)();
+        if (ev.e === "qteEnd" && ev.x) fx.push({ kind: "float", x: ev.x, y: ev.y - 500, text: ev.ok ? "Spezzate!" : "Rinforzi!", color: ev.ok ? COLORS.brass : COLORS.coral, born: now, life: 1200 });
+        break;
+      }
+      case "qte":
+        sfx.horn();
         break;
       case "steal":
         if (ev.amount > 0) {
@@ -2245,6 +2278,12 @@ function bindPointer() {
       setAiming(false);
       return;
     }
+    if (brazierMode) {
+      const c = pointerCell(ev, false);
+      send({ t: "brazier", cx: c.cx, cy: c.cy });
+      brazierMode = false;
+      return;
+    }
     if (placing) {
       ghost = pointerCell(ev, false);
       return;
@@ -2404,6 +2443,11 @@ function bindButtons() {
     renderNews();
   });
   window.addEventListener("keydown", (ev) => {
+    if (!inMenu && qteKey(state, ev.key, send)) {
+      ev.preventDefault();
+      return;
+    }
+    if (ev.key === "Escape") brazierMode = false;
     if (ev.key === "Escape") {
       setPlacing(null);
       selectTower(null);
@@ -2427,6 +2471,7 @@ function render(now: number) {
   drawTide(ctx, pxT, now, reducedMotion || light(), level.map, level.map.lanes.map((_, i) => laneIsOpen(state, i) || (state.phase === "prep" && state.wave + 1 >= (level.map.laneOpen[i] ?? 1))));
   for (const e of level.map.emerge) for (const [cx, cy] of e.cells) drawShoal(ctx, pxT, cx, cy, cellEmerged(state, cx, cy), reducedMotion ? 0 : now);
   ctx.setTransform(1, 0, 0, 1, 0, 0);
+  drawTwist({ ctx, cellRect, S, px: (u) => toPx(u, pxT), now, calm: reducedMotion || light() }, state, brazierMode);
 
   if (placing) {
     ctx.save();

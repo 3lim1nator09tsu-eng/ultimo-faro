@@ -1,6 +1,7 @@
 // Sim.Core del prototipo: stessa partita su ogni dispositivo a parità di seed e comandi.
 // Regole: solo numeri interi nello stato, nessun Math.random, nessun orologio, nessuna funzione
 // trigonometrica. Le divisioni tra interi passano sempre da Math.floor.
+import { AIMS, Aim, BLIZZARD, CONTRACTS, CONTRACT_IDS, LAVA, MERCHANT_IDS, ORDER_IDS, Order, POISONS, QTE, QTE_SYMBOLS, RELIC_IDS, OfferKind, Twist, contractReward, merchantGold, newTwist } from "./twists";
 import {
   ABILITIES,
   APEX_COST_BP,
@@ -99,6 +100,7 @@ export interface Tower {
   spawnCd: number; // Kingpin: tick alla prossima evocazione
   spawnN: number; // Kingpin: unità evocate finora
   queue: UnitKind[]; // Kingpin: la coda che si ripete, fino a 4 posti
+  aim?: Aim; // bersaglio scelto dal giocatore; se manca vale quello della torre
 }
 
 /** Unità del Kingpin: camminano dal Faro verso il mare e combattono i nemici che incontrano. */
@@ -175,6 +177,7 @@ export interface GameState {
   shells: Shell[];
   spawns: Spawn[];
   units: Unit[];
+  tw: Twist; // scelte della modalità: offerte, contratti, reliquie, bracieri, momenti rapidi
 }
 
 export interface PlayerPurse {
@@ -210,6 +213,11 @@ type CommandBody =
   | { t: "apex"; id: number }
   | { t: "queue"; id: number; unit: UnitKind }
   | { t: "unqueue"; id: number; index: number }
+  | { t: "aim"; id: number; aim: Aim }
+  | { t: "choose"; offer: number; pick: number }
+  | { t: "order"; order: Order | "" }
+  | { t: "brazier"; cx: number; cy: number }
+  | { t: "qte"; id: number; pick: number }
   | { t: "adminCash"; amount: number; to?: number }
   | { t: "adminSpawn"; enemy: EnemyKind; count: number; lane?: number; mods?: Mod[]; boss?: boolean; hpMulBp?: number }
   | { t: "adminLives"; lives: number }
@@ -250,6 +258,13 @@ export type GameEvent =
   | { e: "upgraded"; id: number }
   | { e: "sold"; refund: number }
   | { e: "reject"; reason: string; p?: number }
+  | { e: "offer"; kind: string }
+  | { e: "chosen"; kind: string; pick: string }
+  | { e: "contract"; ok: boolean; amount: number }
+  | { e: "eruption" }
+  | { e: "blizzard"; on: boolean }
+  | { e: "qte"; id: number }
+  | { e: "qteEnd"; ok: boolean; x: number; y: number }
   | { e: "end"; phase: "won" | "lost" };
 
 // ---------- geometria delle mappe ----------
@@ -398,9 +413,9 @@ export function towerStats(t: Pick<Tower, "kind" | "level" | "branch">): TowerSt
 export function apexPrice(state: GameState, t: Tower): number {
   if (!t.branch) return 0;
   const two = TOWERS[t.kind].branches2;
-  if (two) return discounted(two[t.branch].cost, discountAt(state, t.x, t.y, t.id));
+  if (two) return priced(state, discounted(two[t.branch].cost, discountAt(state, t.x, t.y, t.id)));
   const base = Math.floor((TOWERS[t.kind].branches[t.branch].cost * APEX_COST_BP) / 100000) * 10;
-  return discounted(base, discountAt(state, t.x, t.y, t.id));
+  return priced(state, discounted(base, discountAt(state, t.x, t.y, t.id)));
 }
 
 /** Motivo per cui l'Apex non si può costruire, oppure null se si può. */
@@ -437,13 +452,35 @@ export function statsIn(state: GameState, t: Tower): TowerStats {
 /** Valori in partita: rango più i bonus delle torri di supporto vicine. */
 export function effStats(state: GameState, t: Tower): TowerStats {
   const s = statsIn(state, t);
-  if (!t.bufDamage && !t.bufRange && !t.bufHaste && !t.bufDetect) return s;
+  // Scelte della modalità: reliquie, ordini, lava e bufera.
+  const tw = state.tw;
+  let dmg = t.bufDamage;
+  let rng = t.bufRange;
+  let haste = t.bufHaste;
+  let detect = t.bufDetect > 0;
+  let coldBp = 10000;
+  if (tw) {
+    if (tw.relics.length) {
+      if (hasRelic(state, "lama")) dmg += 2000;
+      if (hasRelic(state, "furia")) haste += 2000;
+      if (hasRelic(state, "occhio")) {
+        detect = true;
+        rng -= 1500;
+      }
+    }
+    if (tw.order === "difesa") rng += 1500;
+    else if (tw.order === "assalto") haste += 1500;
+    else if (tw.order === "economia") dmg -= 1000;
+    if (tw.lava.length && onLava(state, t)) dmg += LAVA.damageBp - 10000;
+    if (tw.blizzard && cold(state, t)) coldBp = BLIZZARD.slowBp;
+  }
+  if (!dmg && !rng && !haste && !detect && coldBp === 10000) return s;
   return {
     ...s,
-    detect: s.detect || t.bufDetect > 0,
-    damage: Math.floor((s.damage * (10000 + t.bufDamage)) / 10000),
-    range: Math.floor((s.range * (10000 + t.bufRange)) / 10000),
-    cooldown: s.cooldown > 0 ? Math.max(1, Math.floor((s.cooldown * 10000) / (10000 + t.bufHaste))) : 0,
+    detect: s.detect || detect,
+    damage: Math.floor((s.damage * (10000 + dmg)) / 10000),
+    range: Math.floor((s.range * (10000 + rng)) / 10000),
+    cooldown: s.cooldown > 0 ? Math.max(1, Math.floor((Math.floor((s.cooldown * 10000) / (10000 + haste)) * coldBp) / 10000)) : 0,
   };
 }
 
@@ -461,7 +498,7 @@ export function discountAt(state: GameState, x: number, y: number, except = -1):
 const discounted = (cost: number, bp: number) => Math.floor((cost * (10000 - bp)) / 10000);
 
 export function buildCost(state: GameState, kind: TowerKind, cx: number, cy: number): number {
-  return discounted(TOWERS[kind].levels[0].cost, discountAt(state, centre(cx), centre(cy)));
+  return priced(state, discounted(TOWERS[kind].levels[0].cost, discountAt(state, centre(cx), centre(cy))));
 }
 
 export function upgradeCost(t: Pick<Tower, "kind" | "level">): number | null {
@@ -471,11 +508,11 @@ export function upgradeCost(t: Pick<Tower, "kind" | "level">): number | null {
 
 export function upgradePrice(state: GameState, t: Tower): number | null {
   const c = upgradeCost(t);
-  return c === null ? null : discounted(c, discountAt(state, t.x, t.y, t.id));
+  return c === null ? null : priced(state, discounted(c, discountAt(state, t.x, t.y, t.id)));
 }
 
 export function specPrice(state: GameState, t: Tower, branch: Branch): number {
-  return discounted(TOWERS[t.kind].branches[branch].cost, discountAt(state, t.x, t.y, t.id));
+  return priced(state, discounted(TOWERS[t.kind].branches[branch].cost, discountAt(state, t.x, t.y, t.id)));
 }
 
 export function sellValue(state: GameState, t: Tower): number {
@@ -497,7 +534,7 @@ export function hpForWave(hp: number, wave: number, hpMulBp: number): number {
 }
 
 export function wavePreview(state: GameState, waveIndex: number): Array<{ enemy: EnemyKind; count: number; boss: boolean; mods: Mod[] }> {
-  return waveFor(state.mode, levelOf(state), waveIndex, state.night).map((g) => ({ enemy: g.enemy, count: g.count, boss: !!g.boss, mods: g.mods ?? [] }));
+  return twistGroups(state, waveIndex, waveFor(state.mode, levelOf(state), waveIndex, state.night)).map((g) => ({ enemy: g.enemy, count: g.count, boss: !!g.boss, mods: g.mods ?? [] }));
 }
 
 export function waveCount(state: GameState): number {
@@ -541,7 +578,7 @@ export function createGame(seed: number, opts: GameOptions = {}): GameState {
   const level = levelById(levelId ?? "porto");
   const startCash = opts.sandbox ? 100000 : level.startCash + (m ? m.bonusCash : 0);
   const others: PlayerPurse[] = (team ?? []).slice(1, 4).map((pl) => ({ cash: startCash, abilityCd: { fascio: 0, gelata: 0 }, allowed: pick(pl.allowed), ranks: cleanRanks(pl.ranks) }));
-  return {
+  const state: GameState = {
     seed: clean,
     rng: clean,
     mode,
@@ -576,8 +613,165 @@ export function createGame(seed: number, opts: GameOptions = {}): GameState {
     shells: [],
     spawns: [],
     units: [],
+    tw: newTwist(),
   };
+  if (mode === "molten" && !opts.sandbox) placeLava(state);
+  return state;
 }
+
+/** Molten: bocche di lava sulle caselle costruibili accanto al percorso, scelte col seed. */
+function placeLava(state: GameState) {
+  const geo = geometry(levelOf(state));
+  const cand: number[] = [];
+  for (let cy = 0; cy < MAP_H; cy++)
+    for (let cx = 0; cx < MAP_W; cx++) {
+      if (!isBuildable(state, cx, cy)) continue;
+      let near = false;
+      for (let dy = -1; dy <= 1 && !near; dy++) for (let dx = -1; dx <= 1 && !near; dx++) if (geo.blocked.has(cellKey(cx + dx, cy + dy)) && cx + dx >= 0 && cx + dx < MAP_W) near = true;
+      if (near) cand.push(cellKey(cx, cy));
+    }
+  for (let i = 0; i < LAVA.cells && cand.length; i++) state.tw.lava.push(cand.splice(randomInt(state, cand.length), 1)[0]);
+  state.tw.lava.sort((a, b) => a - b);
+}
+
+// ---------- scelte della modalità ----------
+
+const isNight5 = (s: GameState) => s.mode === "natale" && s.night === 5;
+const hasRelic = (s: GameState, r: string) => s.tw.relics.includes(r);
+
+/** Prezzi con Mercante e Clessidra. */
+function priced(state: GameState, v: number): number {
+  let bp = 10000;
+  if (state.tw.discountWaves > 0) bp -= 2500;
+  if (hasRelic(state, "clessidra")) bp += 2000;
+  return bp === 10000 ? v : Math.floor((v * bp) / 10000);
+}
+
+/** Gruppi dell'ondata con veleno (Hardcore) e contratto (Medium) applicati. */
+function twistGroups(state: GameState, waveIndex: number, groups: WaveGroup[]): WaveGroup[] {
+  const tw = state.tw;
+  const poison = state.mode === "hardcore" && tw.poison >= 0 && waveIndex >= 10 ? POISONS[tw.poison] : null;
+  const c = tw.contract && waveIndex === state.wave ? CONTRACTS[tw.contract] : null;
+  if (!poison && !c) return groups;
+  return groups.map((g) => {
+    if (g.boss) return g;
+    let mods = g.mods;
+    // Il veleno scelto va su tutti i nemici del blocco, non solo su quelli che avevano già modificatori.
+    if (poison) mods = poison;
+    if (c?.mods) mods = [...new Set([...(mods ?? []), ...c.mods])];
+    return { ...g, mods, count: c?.countBp ? Math.ceil((g.count * c.countBp) / 10000) : g.count };
+  });
+}
+
+/** Sceglie n voci diverse da un elenco, col seed della partita. */
+function draw(state: GameState, list: string[], n: number): string[] {
+  const pool = [...list];
+  const out: string[] = [];
+  while (out.length < n && pool.length) out.push(pool.splice(randomInt(state, pool.length), 1)[0]);
+  return out;
+}
+
+function makeOffer(state: GameState, kind: OfferKind, options: string[], events: GameEvent[]) {
+  if (!options.length) return;
+  state.tw.offer = { id: state.nextId++, kind, options };
+  events.push({ e: "offer", kind });
+}
+
+/** Offerte che si aprono a fine ondata, per la preparazione successiva. */
+function offersAfterWave(state: GameState, events: GameEvent[]) {
+  const total = waveCount(state);
+  const c = state.cleared;
+  if (c >= total || state.sandbox) return;
+  if (state.mode === "easy" && c % 5 === 0) makeOffer(state, "mercante", draw(state, MERCHANT_IDS, 3), events);
+  else if (state.mode === "medium" && c >= 2 && c + 1 < total) makeOffer(state, "contratto", draw(state, CONTRACT_IDS, 2), events);
+  else if (state.mode === "hardcore" && c % 10 === 0) makeOffer(state, "veleno", draw(state, POISONS.map((_, i) => String(i)), 2), events);
+}
+
+function chooseOffer(state: GameState, pick: number, events: GameEvent[]) {
+  const o = state.tw.offer!;
+  const id = o.options[pick];
+  const tw = state.tw;
+  if (o.kind === "mercante") {
+    if (id === "oro") payAll(state, merchantGold(state.cleared));
+    if (id === "sconto") tw.discountWaves = 2;
+    if (id === "vite") state.lives = Math.min(40, state.lives + 3);
+    if (id === "taglie") tw.bountyWaves = 2;
+  } else if (o.kind === "contratto") tw.contract = id;
+  else if (o.kind === "reliquia") {
+    tw.relics.push(id);
+    if (id === "vigore") state.lives = Math.min(40, state.lives + 6);
+  } else if (o.kind === "veleno") tw.poison = Number(id);
+  tw.offer = null;
+  events.push({ e: "chosen", kind: o.kind, pick: id });
+}
+
+/** Notte 5: apre un momento rapido legato a un nemico. */
+function openQte(state: GameState, target: Enemy, events: GameEvent[]) {
+  const tw = state.tw;
+  const syms = draw(state, QTE_SYMBOLS.map((_, i) => String(i)), 3).map(Number);
+  tw.qte = { id: state.nextId++, kind: (tw.qteWins + tw.qteFails) % 2 === 0 ? "simbolo" : "raffica", symbols: syms, answer: randomInt(state, 3), got: 0, until: state.tick + QTE.window, target: target.id };
+  events.push({ e: "qte", id: tw.qte.id });
+}
+
+function closeQte(state: GameState, ok: boolean, events: GameEvent[]) {
+  const q = state.tw.qte!;
+  state.tw.qte = null;
+  const t = state.enemies.find((e) => e.id === q.target && e.hp > 0);
+  if (ok) {
+    state.tw.qteWins += 1;
+    for (const e of state.enemies) e.stun = Math.max(e.stun, e.boss ? Math.floor(QTE.stun / 2) : QTE.stun);
+    if (t) {
+      const cut = Math.floor((t.maxHp * (t.kind === "krampus" ? QTE.bossHitBp : QTE.miniHitBp)) / 10000);
+      t.hp = Math.max(1, t.hp - cut);
+    }
+  } else {
+    state.tw.qteFails += 1;
+    if (t) {
+      for (let i = 0; i < QTE.failSummon; i++) state.enemies.push(newEnemy(state, "elfo", t.lane, Math.max(0, t.dist - 250 * (i + 1)), minionHp(state, "elfo"), 0, ((i * 113) % 361) - 180));
+      t.chargeLeft = Math.max(t.chargeLeft, QTE.failHaste);
+    }
+  }
+  events.push({ e: "qteEnd", ok, x: t?.x ?? 0, y: t?.y ?? 0 });
+}
+
+/** Notte 5: soglie di Krampus e scadenza del momento rapido. */
+function qteTick(state: GameState, events: GameEvent[]) {
+  const tw = state.tw;
+  if (tw.qte && state.tick >= tw.qte.until) closeQte(state, false, events);
+  if (tw.qte) return;
+  for (const e of state.enemies) {
+    if (e.kind !== "krampus" || !e.boss || e.hp <= 0) continue;
+    for (let i = 0; i < 3; i++) {
+      const mark = 1 << i;
+      if (tw.qteMarks & mark) continue;
+      if (e.hp * 4 <= e.maxHp * (3 - i)) {
+        tw.qteMarks |= mark;
+        openQte(state, e, events);
+        return;
+      }
+    }
+  }
+}
+
+/** Frost: durante la bufera le torri lontane dai bracieri sparano più piano. */
+function cold(state: GameState, t: Tower): boolean {
+  if (!state.tw.blizzard) return false;
+  for (const k of state.tw.braziers) {
+    const bx = centre(k % MAP_W);
+    const by = centre(Math.floor(k / MAP_W));
+    if (inRange(bx, by, t.x, t.y, BLIZZARD.radius)) return false;
+  }
+  return true;
+}
+export const isCold = cold;
+export const onLava = (state: GameState, t: Pick<Tower, "cx" | "cy">) => state.tw.lava.includes(cellKey(t.cx, t.cy));
+export const brazierMax = (state: GameState) => BLIZZARD.braziers + (state.cleared >= BLIZZARD.extraFrom ? 1 : 0);
+export const blizzardNext = (state: GameState) => state.mode === "frost" && (state.wave + 1) % BLIZZARD.every === 0;
+export const eruptionNext = (state: GameState) => state.mode === "molten" && (state.wave + 1) % LAVA.every === 0;
+export const hasAttack = (t: Pick<Tower, "kind" | "level" | "branch">) => {
+  const s = towerStats(t);
+  return s.damage > 0 && s.cooldown > 0 && !s.pulseAll;
+};
 
 // ---------- comandi ----------
 
@@ -761,6 +955,7 @@ function applyCommand(state: GameState, cmd: Command, events: GameEvent[]): void
       if (state.phase !== "wave") return reject("Usala durante un'ondata");
       const cds = abilityCdOf(state, p);
       if (cds[cmd.id] > 0) return reject(`${ABILITIES[cmd.id].name} non è ancora pronto`);
+      if (state.tw.contract && CONTRACTS[state.tw.contract].noAbility) return reject("Contratto Silenzio: niente abilità in questa ondata");
       cds[cmd.id] = ABILITIES[cmd.id].cooldown;
       state.abilitiesUsed += 1;
       if (cmd.id === "gelata") {
@@ -774,6 +969,53 @@ function applyCommand(state: GameState, cmd: Command, events: GameEvent[]): void
         if (e.hp > 0 && inRange(cmd.x, cmd.y, e.x, e.y, radius)) applyDamage(e, enemyDamage(e, dmg, "nessuno", true, 10000));
       }
       events.push({ e: "beam", x: cmd.x, y: cmd.y, radius });
+      return;
+    }
+    case "aim": {
+      const t = mine(cmd.id);
+      if (!t) return;
+      if (!AIMS.includes(cmd.aim)) return reject("Bersaglio sconosciuto");
+      if (!hasAttack(t)) return reject("Questa torre non sceglie bersagli");
+      t.aim = cmd.aim;
+      return;
+    }
+    case "choose": {
+      const o = state.tw.offer;
+      if (!o || o.id !== cmd.offer) return reject("Offerta scaduta");
+      if (!(cmd.pick >= 0 && cmd.pick < o.options.length)) return reject("Scelta non valida");
+      chooseOffer(state, cmd.pick | 0, events);
+      return;
+    }
+    case "order": {
+      if (state.mode !== "campagna") return reject("Gli ordini valgono solo in Campagna");
+      if (state.phase !== "prep") return reject("Gli ordini si cambiano tra un'ondata e l'altra");
+      if (cmd.order !== "" && !ORDER_IDS.includes(cmd.order)) return reject("Ordine sconosciuto");
+      state.tw.order = cmd.order;
+      return;
+    }
+    case "brazier": {
+      if (state.mode !== "frost") return reject("I bracieri servono solo in Frost");
+      if (state.phase !== "prep") return reject("I bracieri si spostano tra un'ondata e l'altra");
+      if (cmd.cx < 0 || cmd.cy < 0 || cmd.cx >= MAP_W || cmd.cy >= MAP_H) return reject("Fuori dalla mappa");
+      const key = cellKey(cmd.cx | 0, cmd.cy | 0);
+      const list = state.tw.braziers;
+      if (list.includes(key)) {
+        state.tw.braziers = list.filter((k) => k !== key);
+        return;
+      }
+      if (geometry(levelOf(state)).blocked.has(key)) return reject("Non sul percorso");
+      list.push(key);
+      while (list.length > brazierMax(state)) list.shift();
+      return;
+    }
+    case "qte": {
+      const q = state.tw.qte;
+      if (!q || q.id !== cmd.id) return;
+      if (q.kind === "simbolo") closeQte(state, cmd.pick === q.answer, events);
+      else if (cmd.pick === -1) {
+        q.got += 1;
+        if (q.got >= QTE.mash) closeQte(state, true, events);
+      }
       return;
     }
     case "adminCash": {
@@ -842,8 +1084,23 @@ function applyCommand(state: GameState, cmd: Command, events: GameEvent[]): void
 
 function startWave(state: GameState, events: GameEvent[]): void {
   const level = levelOf(state);
-  const groups: WaveGroup[] = waveFor(state.mode, level, state.wave, state.night);
+  const tw = state.tw;
+  // Offerte non scelte: il veleno ne prende uno comunque, le altre scadono.
+  if (tw.offer) {
+    if (tw.offer.kind === "veleno") chooseOffer(state, 0, events);
+    else tw.offer = null;
+  }
+  const groups: WaveGroup[] = twistGroups(state, state.wave, waveFor(state.mode, level, state.wave, state.night));
   state.wave += 1;
+  tw.contractLeaks = state.leaks;
+  if (state.mode === "frost" && state.wave % BLIZZARD.every === 0) {
+    tw.blizzard = true;
+    events.push({ e: "blizzard", on: true });
+  }
+  if (tw.lava.length && state.wave % LAVA.every === 0) {
+    for (const t of state.towers) if (onLava(state, t)) t.stun = Math.max(t.stun, LAVA.stun);
+    events.push({ e: "eruption" });
+  }
   level.map.laneOpen.forEach((w, lane) => {
     if (w === state.wave && w > 1) events.push({ e: "laneOpen", lane });
   });
@@ -867,7 +1124,7 @@ function startWave(state: GameState, events: GameEvent[]): void {
   events.push({ e: "wave", wave: state.wave });
 }
 
-function spawnDue(state: GameState): void {
+function spawnDue(state: GameState, events: GameEvent[]): void {
   const level = levelOf(state);
   let n = 0;
   while (n < state.spawns.length && state.spawns[n].tick <= state.tick) n++;
@@ -876,6 +1133,10 @@ function spawnDue(state: GameState): void {
     let hp = hpForWave(def.hp, Math.max(1, state.wave), s.hpMulBp);
     if (state.hpScaleBp !== 10000) hp = Math.floor((hp * state.hpScaleBp) / 10000);
     if (s.mods & modBit("gonfio")) hp *= 2;
+    if (state.tw.relics.length) {
+      if (hasRelic(state, "lama")) hp = Math.floor((hp * 11500) / 10000);
+      if (s.boss && hasRelic(state, "furia")) hp = Math.floor((hp * 12500) / 10000);
+    }
     const p = lanePoint(level, s.lane, 0);
     state.enemies.push({
       id: state.nextId++,
@@ -904,6 +1165,8 @@ function spawnDue(state: GameState): void {
       skillCd: def.steal ? def.steal.every : def.charge ? def.charge.every : 0,
       chargeLeft: 0,
     });
+    // Notte 5: ogni mini-boss apre un momento rapido.
+    if (s.boss && isNight5(state) && s.enemy !== "krampus" && !state.tw.qte) openQte(state, state.enemies[state.enemies.length - 1], events);
   }
   if (n > 0) state.spawns.splice(0, n);
 }
@@ -1018,7 +1281,8 @@ function clearDead(state: GameState, events: GameEvent[]): void {
       stunTowersNear(state, e.x, e.y, def.deathFreeze.range, def.deathFreeze.stun);
       events.push({ e: "frost", x: e.x, y: e.y, radius: def.deathFreeze.range });
     }
-    const bounty = def.bounty * (e.boss ? 15 : 1);
+    let bounty = def.bounty * (e.boss ? 15 : 1);
+    if (state.tw.bountyWaves > 0) bounty = Math.floor((bounty * 3) / 2);
     payAll(state, bounty);
     if ((e.bounty ?? 0) > 0) {
       // Taglia: cash in più solo per chi l'ha messa.
@@ -1027,7 +1291,15 @@ function clearDead(state: GameState, events: GameEvent[]): void {
       events.push({ e: "kill", x: e.x, y: e.y - 300, bounty: extra, boss: false });
     }
     state.kills += 1;
-    if (e.boss) state.bossKills += 1;
+    if (e.boss) {
+      state.bossKills += 1;
+      // Fallen: ogni mini-boss abbattuto lascia una reliquia da scegliere.
+      if (state.mode === "fallen" && !state.sandbox && state.wave < waveCount(state) && !state.tw.offer) {
+        const free = RELIC_IDS.filter((r) => !state.tw.relics.includes(r));
+        makeOffer(state, "reliquia", draw(state, free, 2), events);
+      }
+      if (state.tw.qte?.target === e.id) closeQte(state, true, events);
+    }
     events.push({ e: "kill", x: e.x, y: e.y, bounty, boss: e.boss });
   }
   state.enemies = born.length ? alive.concat(born) : alive;
@@ -1045,18 +1317,34 @@ function pickTarget(state: GameState, t: Tower, s: TowerStats): Enemy | null {
     if (!taunt || e.dist > taunt.dist || (e.dist === taunt.dist && e.id < taunt.id)) taunt = e;
   }
   if (taunt) return taunt;
-  const strong = TOWERS[t.kind].target === "strong";
+  const aim: Aim = t.aim ?? (TOWERS[t.kind].target === "strong" ? "strong" : "first");
+  if (aim === "random") {
+    const list = state.enemies.filter((e) => e.hp > 0 && canSee(e, s) && inRange(t.x, t.y, e.x, e.y, s.range));
+    return list.length ? list[randomInt(state, list.length)] : null;
+  }
   let target: Enemy | null = null;
+  let targetD = 0;
   for (const e of state.enemies) {
     if (e.hp <= 0 || !canSee(e, s) || !inRange(t.x, t.y, e.x, e.y, s.range)) continue;
+    const dx = e.x - t.x;
+    const dy = e.y - t.y;
+    const d = dx * dx + dy * dy;
     if (!target) {
       target = e;
+      targetD = d;
       continue;
     }
-    const better = strong
-      ? e.hp > target.hp || (e.hp === target.hp && (e.dist > target.dist || (e.dist === target.dist && e.id < target.id)))
-      : e.dist > target.dist || (e.dist === target.dist && e.id < target.id);
-    if (better) target = e;
+    // A parità vince il più avanti, poi l'id più basso: stessa scelta su ogni dispositivo.
+    const ahead = e.dist > target.dist || (e.dist === target.dist && e.id < target.id);
+    const better =
+      aim === "strong" ? e.hp > target.hp || (e.hp === target.hp && ahead)
+      : aim === "last" ? e.dist < target.dist || (e.dist === target.dist && e.id < target.id)
+      : aim === "close" ? d < targetD || (d === targetD && ahead)
+      : ahead;
+    if (better) {
+      target = e;
+      targetD = d;
+    }
   }
   return target;
 }
@@ -1344,8 +1632,9 @@ export function step(state: GameState, commands: Command[] = []): GameEvent[] {
 
   state.tick += 1;
   for (const cd of state.others.length ? [state.abilityCd, ...state.others.map((o) => o.abilityCd)] : [state.abilityCd]) {
-    if (cd.fascio > 0) cd.fascio -= 1;
-    if (cd.gelata > 0) cd.gelata -= 1;
+    const n = hasRelic(state, "clessidra") ? 2 : 1;
+    if (cd.fascio > 0) cd.fascio = Math.max(0, cd.fascio - n);
+    if (cd.gelata > 0) cd.gelata = Math.max(0, cd.gelata - n);
   }
 
   if (state.phase === "prep") {
@@ -1353,7 +1642,8 @@ export function step(state: GameState, commands: Command[] = []): GameEvent[] {
     if (state.prepLeft <= 0) startWave(state, events);
   }
 
-  spawnDue(state);
+  spawnDue(state, events);
+  if (isNight5(state)) qteTick(state, events);
   updateSupport(state, events);
   sabotage(state, events);
   enemyActs(state, events);
@@ -1388,7 +1678,8 @@ export function step(state: GameState, commands: Command[] = []): GameEvent[] {
       e.stun -= 1;
     } else {
       let speed = e.mods & modBit("agile") ? Math.floor((ENEMIES[e.kind].speed * MOD_RULES.speedBp) / 10000) : ENEMIES[e.kind].speed;
-      if (e.chargeLeft > 0) speed = Math.floor((speed * ENEMIES[e.kind].charge!.speedBp) / 10000);
+      if (e.chargeLeft > 0) speed = Math.floor((speed * (ENEMIES[e.kind].charge?.speedBp ?? 15000)) / 10000);
+      if (state.tw.relics.length && hasRelic(state, "vigore")) speed = Math.floor((speed * 11000) / 10000);
       e.dist += Math.floor((speed * e.speedBp) / 10000);
     }
     if (e.dist >= geo.lengths[e.lane]) {
@@ -1499,8 +1790,26 @@ export function step(state: GameState, commands: Command[] = []): GameEvent[] {
   }
   if (state.phase === "wave" && state.enemies.length === 0 && state.spawns.length === 0) {
     state.cleared = state.wave;
-    payAll(state, Math.floor(((RULES.waveBonusBase + RULES.waveBonusStep * state.wave) * level.waveBonusBp) / 10000));
+    const tw = state.tw;
+    let bonusBp = level.waveBonusBp;
+    if (tw.order === "economia") bonusBp = Math.floor((bonusBp * 15000) / 10000);
+    if (hasRelic(state, "avidita")) bonusBp = Math.floor((bonusBp * 14000) / 10000);
+    payAll(state, Math.floor(((RULES.waveBonusBase + RULES.waveBonusStep * state.wave) * bonusBp) / 10000));
     waveIncome(state, events);
+    if (hasRelic(state, "avidita") && !state.god) state.lives = Math.max(1, state.lives - 1);
+    if (tw.contract) {
+      const ok = state.leaks === tw.contractLeaks;
+      const amount = ok ? contractReward(state.wave, CONTRACTS[tw.contract].rewardBp) : 0;
+      if (ok) payAll(state, amount);
+      events.push({ e: "contract", ok, amount });
+      tw.contract = "";
+    }
+    if (tw.discountWaves > 0) tw.discountWaves -= 1;
+    if (tw.bountyWaves > 0) tw.bountyWaves -= 1;
+    if (tw.blizzard) {
+      tw.blizzard = false;
+      events.push({ e: "blizzard", on: false });
+    }
     if (state.mode !== "infinita" && state.wave >= waveCount(state)) {
       state.phase = "won";
       events.push({ e: "end", phase: "won" });
@@ -1509,6 +1818,7 @@ export function step(state: GameState, commands: Command[] = []): GameEvent[] {
     state.phase = "prep";
     state.prepCount += 1;
     state.prepLeft = RULES.prepTicks;
+    if (!state.tw.offer) offersAfterWave(state, events);
   }
   return events;
 }
@@ -1532,6 +1842,32 @@ export function hashState(state: GameState): string {
   };
   mix(state.rng);
   str(state.mode);
+  const tw = state.tw;
+  if (tw) {
+    mix(tw.offer?.id ?? 0);
+    for (const o of tw.offer?.options ?? []) str(o);
+    str(tw.contract);
+    mix(tw.contractLeaks);
+    for (const r of tw.relics) str(r);
+    mix(tw.poison);
+    str(tw.order);
+    mix(tw.discountWaves);
+    mix(tw.bountyWaves);
+    for (const k of tw.lava) mix(k);
+    for (const k of tw.braziers) mix(k);
+    mix(tw.blizzard ? 1 : 0);
+    if (tw.qte) {
+      mix(tw.qte.id);
+      mix(tw.qte.answer);
+      mix(tw.qte.got);
+      mix(tw.qte.until);
+      mix(tw.qte.target);
+      for (const x of tw.qte.symbols) mix(x);
+    }
+    mix(tw.qteMarks);
+    mix(tw.qteWins);
+    mix(tw.qteFails);
+  }
   str(state.levelId);
   mix(state.tick);
   str(state.phase);
@@ -1598,6 +1934,7 @@ export function hashState(state: GameState): string {
     mix(t.stun);
     mix(t.immune);
     str(t.track);
+    str(t.aim ?? "-");
     mix(t.abilityCd);
     mix(t.abilityLeft);
     mix(t.owner);
@@ -1634,7 +1971,10 @@ export function snapshot(state: GameState): string {
 }
 
 export function restore(data: string): GameState {
-  return JSON.parse(data) as GameState;
+  const s = JSON.parse(data) as GameState;
+  // Salvataggi di prima delle scelte di modalità: si parte senza scelte.
+  if (!s.tw) s.tw = newTwist();
+  return s;
 }
 
 /** Controllo di sicurezza usato dai test: lo stato non deve mai contenere numeri non interi. */

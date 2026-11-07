@@ -64,6 +64,11 @@ await A.waitForTimeout(6000);
 const towersA = await A.evaluate(() => window.__faro.state.towers.map((t) => t.kind).join(","));
 const towersB = await B.evaluate(() => window.__faro.state.towers.map((t) => t.kind).join(","));
 ok(towersA === "balestra,mortaio" && towersB === towersA, `torri uguali: ${towersA} / ${towersB}`);
+// Chi partecipa sceglie il puntamento della sua torre: arriva a tutti.
+await B.evaluate(() => window.__faro.debug.send({ t: "aim", id: window.__faro.state.towers.find((t) => t.kind === "mortaio").id, aim: "strong" }));
+await A.waitForTimeout(700);
+const aimA = await A.evaluate(() => window.__faro.state.towers.find((t) => t.kind === "mortaio").aim);
+ok(aimA === "strong", `il puntamento di chi partecipa arriva a chi ospita (${aimA})`);
 await A.evaluate(() => window.__faro.debug.send({ t: "adminCash", amount: 777, to: 1 }));
 await A.waitForTimeout(600);
 // Ognuno il suo cash e le sue torri.

@@ -1,7 +1,8 @@
 // Bot di collaudo: giocano la partita usando gli stessi comandi di una persona.
 import { ABILITIES, ENEMIES, LevelDef, MAP_H, MAP_W, TILE, TOWERS, TowerKind, Branch } from "./content";
 import { enemiesIn } from "./modes";
-import { Command, GameOptions, apexBlock, apexPrice, GameState, createGame, geometry, hashState, isBuildable, lanePoint, levelOf, rewardFor, starsFor, statsIn, step, towerStats, upgradePrice } from "./sim";
+import { QTE } from "./twists";
+import { Command, GameOptions, brazierMax, apexBlock, apexPrice, GameState, createGame, geometry, hashState, isBuildable, lanePoint, levelOf, rewardFor, starsFor, statsIn, step, towerStats, upgradePrice } from "./sim";
 
 export type BotPolicy = "idle" | "balestreBase" | "soloSoffio" | "mirato";
 
@@ -118,6 +119,9 @@ export function decide(state: GameState, policy: BotPolicy): Command[] {
     return c ? [c] : [];
   }
 
+  // "mirato": giocatore attento. Risponde alle scelte della modalità, usa le abilità, mescola torri.
+  const twist = twistMoves(state);
+  if (twist.length) return twist;
   // "mirato": giocatore attento. Usa le abilità, mescola torri e sale di livello quando conviene.
   const ability = useAbilities(state);
   if (ability) return [ability];
@@ -203,6 +207,49 @@ export interface BotResult {
   ticks: number;
   reward: number;
   hash: string;
+}
+
+/** Scelte della modalità per il bot: risponde ai momenti rapidi dopo un secondo, sceglie offerte prudenti. */
+function twistMoves(state: GameState): Command[] {
+  const tw = state.tw;
+  if (tw.qte && state.tick >= tw.qte.until - QTE.window + 10) {
+    const q = tw.qte;
+    return q.kind === "simbolo" ? [{ t: "qte", id: q.id, pick: q.answer }] : [0, 1, 2].map(() => ({ t: "qte", id: q.id, pick: -1 }) as Command);
+  }
+  const o = tw.offer;
+  if (o && o.kind !== "contratto") {
+    const pref = o.kind === "mercante" ? ["oro", "sconto", "vite", "taglie"] : o.kind === "reliquia" ? ["lama", "furia", "occhio", "vigore", "clessidra", "avidita"] : [];
+    let pick = 0;
+    for (const id of pref) {
+      const i = o.options.indexOf(id);
+      if (i >= 0) {
+        pick = i;
+        break;
+      }
+    }
+    return [{ t: "choose", offer: o.id, pick }];
+  }
+  if (state.mode === "frost" && state.phase === "prep" && tw.braziers.length < brazierMax(state) && state.towers.length) {
+    // Braciere vicino al centro delle torri non ancora scaldate.
+    const geo = geometry(levelOf(state));
+    const far = state.towers.filter((t) => !tw.braziers.some((k) => Math.abs((k % MAP_W) - t.cx) <= 3 && Math.abs(Math.floor(k / MAP_W) - t.cy) <= 3));
+    if (!far.length) return [];
+    const cx = Math.round(far.reduce((a, t) => a + t.cx, 0) / far.length);
+    const cy = Math.round(far.reduce((a, t) => a + t.cy, 0) / far.length);
+    let best: { cx: number; cy: number } | null = null;
+    let bestD = 1e9;
+    for (let y = 0; y < MAP_H; y++)
+      for (let x = 0; x < MAP_W; x++) {
+        if (geo.blocked.has(y * MAP_W + x) || tw.braziers.includes(y * MAP_W + x)) continue;
+        const d = (x - cx) ** 2 + (y - cy) ** 2;
+        if (d < bestD) {
+          bestD = d;
+          best = { cx: x, cy: y };
+        }
+      }
+    return best ? [{ t: "brazier", cx: best.cx, cy: best.cy }] : [];
+  }
+  return [];
 }
 
 export function playBot(policy: BotPolicy, seed: number, maxTicks = 80000, log?: Array<[number, Command[]]>, opts: GameOptions = {}): BotResult {

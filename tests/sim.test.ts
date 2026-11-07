@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { CAMPAIGN_LENGTH, ENEMIES, LEVELS, RULES, STARTER_TOWERS, TOWERS, levelById, waveAt } from "../src/sim-core/content";
-import { Command, allIntegers, buildCost, createGame, damageAgainst, effStats, hashState, hpForWave, isBuildable, laneIsOpen, rankedStats, restore, rewardFor, sellValue, snapshot, step, towerStats } from "../src/sim-core/sim";
+import { POISONS } from "../src/sim-core/twists";
+import { Command, GameEvent, lanePoint, wavePreview, allIntegers, buildCost, createGame, damageAgainst, effStats, hashState, hpForWave, isBuildable, laneIsOpen, rankedStats, restore, rewardFor, sellValue, snapshot, step, towerStats } from "../src/sim-core/sim";
 import { playBot } from "../src/sim-core/bot";
 
 const toWave = (s: ReturnType<typeof createGame>) => {
@@ -795,4 +796,244 @@ test("Bilanciamento: i dati sporchi vengono scartati e i livelli si uniscono", a
   const pruned = B.pruneBalance({ towers: [{ kind: "balestra", lvl: "1", field: "damage", value: TOWERS.balestra.levels[0].damage }], modes: [{ mode: "easy", field: "hpBp", value: 8000 }], maps: [] });
   assert.equal(B.balanceSize(pruned), 0);
   assert.equal(B.balanceSig(merged), B.balanceSig(B.mergeBalance(merged)));
+});
+
+// ---------- scelte del giocatore ----------
+
+const runTo = (s: ReturnType<typeof createGame>, until: (s: ReturnType<typeof createGame>) => boolean, max = 20000) => {
+  for (let i = 0; i < max && !until(s) && s.phase !== "lost" && s.phase !== "won"; i++) step(s, []);
+};
+const clearWave = (s: ReturnType<typeof createGame>) => {
+  // Finisce l'ondata in corso togliendo i nemici: per provare le offerte senza giocare.
+  runTo(s, (x) => x.phase === "wave");
+  // Chi si divide lascia altri nemici: si ripete finché l'ondata non è finita.
+  for (let i = 0; i < 20 && s.phase === "wave"; i++) {
+    s.spawns = [];
+    for (const e of s.enemies) e.hp = -1e9; // sotto zero anche per chi rigenera
+    step(s, []);
+  }
+};
+
+test("Puntamento: primo, ultimo, più forte, più vicino e a caso", () => {
+  const s = createGame(3, { mode: "campagna", level: "porto", allowed: ["balestra"] });
+  s.cash = 5000;
+  step(s, [{ t: "build", kind: "balestra", cx: 5, cy: 3 }]);
+  const t = s.towers[0];
+  const before = hashState(s);
+  step(s, [{ t: "aim", id: t.id, aim: "last" }]);
+  assert.equal(t.aim, "last");
+  assert.notEqual(before, hashState(s));
+  const bad: GameEvent[] = step(s, [{ t: "aim", id: t.id, aim: "nessuno" as never }]);
+  assert.ok(bad.some((e) => e.e === "reject"));
+  // Tre nemici nel raggio a distanze diverse: ogni puntamento prende quello giusto.
+  toWave(s);
+  s.spawns = [];
+  s.enemies = [];
+  const near = (dist: number, hp: number) => {
+    const e = { ...newTestEnemy(s), dist, hp, maxHp: hp, id: s.nextId++ };
+    const p = lanePoint(levelById("porto"), 0, dist);
+    e.x = p.x;
+    e.y = p.y;
+    s.enemies.push(e);
+    return e;
+  };
+  const inR = (d: number) => {
+    const p = lanePoint(levelById("porto"), 0, d);
+    return (p.x - t.x) ** 2 + (p.y - t.y) ** 2 <= towerStats(t).range ** 2;
+  };
+  const ds: number[] = [];
+  for (let d = 0; d < 40000 && ds.length < 3; d += 300) if (inR(d) && (!ds.length || d - ds[ds.length - 1] > 1200)) ds.push(d);
+  assert.equal(ds.length, 3);
+  const a = near(ds[0], 50);
+  const b = near(ds[1], 900);
+  const c = near(ds[2], 100);
+  const pick = (aim: string) => {
+    t.aim = aim as never;
+    t.cooldown = 0;
+    const hp = s.enemies.map((e) => e.hp);
+    step(s, []);
+    const hitIdx = s.enemies.findIndex((e, i) => e.hp < hp[i]);
+    s.enemies.forEach((e, i) => (e.hp = hp[i]));
+    return s.enemies[hitIdx]?.id;
+  };
+  assert.equal(pick("first"), c.id);
+  assert.equal(pick("last"), a.id);
+  assert.equal(pick("strong"), b.id);
+  const closest = [a, b, c].sort((x, y) => (x.x - t.x) ** 2 + (x.y - t.y) ** 2 - ((y.x - t.x) ** 2 + (y.y - t.y) ** 2))[0];
+  assert.equal(pick("close"), closest.id);
+  const seen = new Set<number>();
+  for (let i = 0; i < 30; i++) seen.add(pick("random")!);
+  assert.ok(seen.size >= 2, "a caso colpisce nemici diversi");
+});
+
+function newTestEnemy(s: ReturnType<typeof createGame>) {
+  return { id: 0, kind: "risacca" as const, hp: 1, maxHp: 1, lane: 0, dist: 0, x: 0, y: 0, offset: 0, stun: 99999, speedBp: 10000, fragileBp: 10000, lifeDamage: 1, boss: false, act: 0, mods: 0, shield: 0, mark: 0, markBp: 10000, sacred: 0, summonCd: 0, songCd: 0, phase: 0, skillCd: 0, chargeLeft: 0, _s: s.tick };
+}
+
+test("Easy: il Mercante offre tre scelte ogni 5 ondate", () => {
+  const s = createGame(8, { mode: "easy", level: "porto" });
+  for (let w = 0; w < 5; w++) clearWave(s);
+  assert.equal(s.cleared, 5);
+  const o = s.tw.offer!;
+  assert.equal(o.kind, "mercante");
+  assert.equal(o.options.length, 3);
+  const cash = s.cash;
+  const lives = s.lives;
+  const i = o.options.indexOf("oro") >= 0 ? o.options.indexOf("oro") : o.options.indexOf("vite");
+  step(s, [{ t: "choose", offer: o.id, pick: i }]);
+  assert.equal(s.tw.offer, null);
+  assert.ok(s.cash > cash || s.lives > lives);
+  // Un'offerta già scelta non si riscuote due volte.
+  assert.ok(step(s, [{ t: "choose", offer: o.id, pick: i }]).some((e) => e.e === "reject"));
+});
+
+test("Medium: il contratto paga solo se nessuno arriva al Faro, e cambia l'ondata", () => {
+  const s = createGame(9, { mode: "medium", level: "porto" });
+  clearWave(s);
+  clearWave(s);
+  const o = s.tw.offer!;
+  assert.equal(o.kind, "contratto");
+  const k = o.options.indexOf("orda") >= 0 ? o.options.indexOf("orda") : 0;
+  const plain = wavePreview(s, s.wave).reduce((a, g) => a + g.count, 0);
+  step(s, [{ t: "choose", offer: o.id, pick: k }]);
+  const id = s.tw.contract;
+  const after = wavePreview(s, s.wave);
+  if (id === "orda") assert.ok(after.reduce((a, g) => a + g.count, 0) > plain);
+  else assert.ok(after.every((g) => g.boss || g.mods.length > 0));
+  const cash = s.cash;
+  runTo(s, (x) => x.phase === "wave");
+  s.spawns = [];
+  for (const e of s.enemies) e.hp = 0;
+  const ev = step(s, []);
+  const c = ev.find((e) => e.e === "contract") as { ok: boolean; amount: number } | undefined;
+  assert.ok(c?.ok && c.amount > 0 && s.cash > cash);
+  assert.equal(s.tw.contract, "");
+  // Con una fuga il contratto non paga.
+  const o2 = s.tw.offer!;
+  step(s, [{ t: "choose", offer: o2.id, pick: 0 }]);
+  runTo(s, (x) => x.phase === "wave");
+  s.leaks += 1;
+  s.spawns = [];
+  for (const e of s.enemies) e.hp = 0;
+  const ev2 = step(s, []);
+  assert.equal((ev2.find((e) => e.e === "contract") as { ok: boolean }).ok, false);
+});
+
+test("Molten: bocche di lava danno danno in più e si fermano nell'eruzione", () => {
+  const s = createGame(10, { mode: "molten", level: "porto", allowed: ["balestra"] });
+  assert.equal(s.tw.lava.length, 6);
+  assert.deepEqual(createGame(10, { mode: "molten", level: "porto" }).tw.lava, s.tw.lava);
+  const k = s.tw.lava[0];
+  s.cash = 5000;
+  step(s, [{ t: "build", kind: "balestra", cx: k % 16, cy: Math.floor(k / 16) }]);
+  const t = s.towers[0];
+  assert.equal(effStats(s, t).damage, Math.floor((towerStats(t).damage * 14000) / 10000));
+  clearWave(s);
+  clearWave(s);
+  runTo(s, (x) => x.phase === "wave");
+  assert.equal(s.wave, 3);
+  assert.ok(t.stun > 40, `eruzione: ${t.stun}`);
+});
+
+test("Fallen: dopo un mini-boss si sceglie una reliquia con vantaggio e costo", () => {
+  const s = createGame(11, { mode: "fallen", level: "porto", allowed: ["balestra"] });
+  s.cash = 5000;
+  step(s, [{ t: "build", kind: "balestra", cx: 5, cy: 3 }]);
+  toWave(s);
+  const boss = s.enemies[0] ?? (runTo(s, (x) => x.enemies.length > 0), s.enemies[0]);
+  boss.boss = true;
+  boss.hp = 0;
+  const ev = step(s, []);
+  assert.ok(ev.some((e) => e.e === "offer"));
+  const o = s.tw.offer!;
+  assert.equal(o.kind, "reliquia");
+  const t = s.towers[0];
+  const dmg = effStats(s, t).damage;
+  const ci = o.options.indexOf("lama");
+  step(s, [{ t: "choose", offer: o.id, pick: ci >= 0 ? ci : 0 }]);
+  if (ci >= 0) assert.equal(effStats(s, t).damage, Math.floor((dmg * 12000) / 10000));
+  assert.equal(s.tw.relics.length, 1);
+});
+
+test("Frost: nella bufera le torri lontane dai bracieri sparano più piano", () => {
+  const s = createGame(12, { mode: "frost", level: "porto", allowed: ["balestra"] });
+  s.cash = 5000;
+  step(s, [{ t: "build", kind: "balestra", cx: 5, cy: 3 }]);
+  let far: [number, number] = [0, 0];
+  for (let cy = 0; cy < 9; cy++) for (let cx = 0; cx < 16; cx++) if (isBuildable(s, cx, cy) && Math.abs(cx - 5) + Math.abs(cy - 3) > far[0] + far[1] - 0 && (cx - 5) ** 2 + (cy - 3) ** 2 > 60) far = [cx, cy];
+  step(s, [{ t: "build", kind: "balestra", cx: far[0], cy: far[1] }]);
+  const [a, b] = s.towers;
+  assert.ok(b, "seconda torre lontana");
+  step(s, [{ t: "brazier", cx: 5, cy: 4 }]);
+  assert.equal(s.tw.braziers.length, 1);
+  for (let w = 0; w < 3; w++) clearWave(s);
+  assert.ok(step(s, [{ t: "brazier", cx: 6, cy: 4 }]).every((e) => e.e !== "reject"));
+  assert.ok(step(s, [{ t: "brazier", cx: 7, cy: 4 }]).every((e) => e.e !== "reject"));
+  assert.equal(s.tw.braziers.length, 2, "al massimo 2: il più vecchio si sposta");
+  runTo(s, (x) => x.phase === "wave");
+  assert.equal(s.wave, 4);
+  assert.ok(s.tw.blizzard);
+  assert.equal(effStats(s, a).cooldown, towerStats(a).cooldown);
+  assert.ok(effStats(s, b).cooldown > towerStats(b).cooldown);
+  assert.ok(step(s, [{ t: "brazier", cx: 1, cy: 1 }]).some((e) => e.e === "reject"), "durante l'ondata non si spostano");
+});
+
+test("Hardcore: ogni 10 ondate si sceglie il veleno del blocco", () => {
+  const s = createGame(13, { mode: "hardcore", level: "porto" });
+  for (let w = 0; w < 10; w++) clearWave(s);
+  const o = s.tw.offer!;
+  assert.equal(o.kind, "veleno");
+  step(s, [{ t: "choose", offer: o.id, pick: 1 }]);
+  const set = POISONS[Number(o.options[1])];
+  for (const g of wavePreview(s, s.wave)) if (!g.boss) assert.deepEqual(g.mods, set);
+  // Se non si sceglie, all'avvio dell'ondata ne vale comunque uno.
+  const s2 = createGame(13, { mode: "hardcore", level: "porto" });
+  for (let w = 0; w < 10; w++) clearWave(s2);
+  runTo(s2, (x) => x.phase === "wave");
+  assert.ok(s2.tw.poison >= 0 && s2.tw.offer === null);
+});
+
+test("Campagna: gli ordini cambiano le torri e si danno solo in preparazione", () => {
+  const s = createGame(14, { mode: "campagna", level: "porto", allowed: ["balestra"] });
+  s.cash = 5000;
+  step(s, [{ t: "build", kind: "balestra", cx: 5, cy: 3 }]);
+  const t = s.towers[0];
+  const r0 = effStats(s, t).range;
+  step(s, [{ t: "order", order: "difesa" }]);
+  assert.equal(effStats(s, t).range, Math.floor((r0 * 11500) / 10000));
+  step(s, [{ t: "order", order: "assalto" }]);
+  assert.ok(effStats(s, t).cooldown < towerStats(t).cooldown);
+  toWave(s);
+  assert.ok(step(s, [{ t: "order", order: "economia" }]).some((e) => e.e === "reject"));
+});
+
+test("Notte 5: i momenti rapidi premiano chi risponde e puniscono chi sbaglia", () => {
+  const s = createGame(15, { mode: "natale", night: 5 });
+  toWave(s);
+  runTo(s, (x) => x.enemies.length > 0);
+  const k = s.enemies[0];
+  k.kind = "krampus";
+  k.boss = true;
+  k.hp = Math.floor(k.maxHp * 0.7);
+  step(s, []);
+  const q = s.tw.qte!;
+  assert.ok(q, "sotto il 75% si apre un momento rapido");
+  assert.equal(q.kind, "simbolo");
+  const hp = k.hp;
+  const ev = step(s, [{ t: "qte", id: q.id, pick: q.answer }]);
+  assert.ok(ev.some((e) => e.e === "qteEnd" && e.ok));
+  assert.ok(k.hp < hp && k.stun > 0);
+  // Il secondo è una raffica: senza tocchi scade e Krampus chiama rinforzi.
+  k.hp = Math.floor(k.maxHp * 0.45);
+  step(s, []);
+  const q2 = s.tw.qte!;
+  assert.equal(q2.kind, "raffica");
+  const n = s.enemies.length;
+  runTo(s, (x) => x.tw.qte === null, 200);
+  assert.equal(s.tw.qteFails, 1);
+  assert.ok(s.enemies.length > n);
+  // Determinismo: stessi comandi, stessa partita.
+  const a = playBot("mirato", 4, 30000, undefined, { mode: "natale", night: 5, eventBp: 6000 });
+  const b = playBot("mirato", 4, 30000, undefined, { mode: "natale", night: 5, eventBp: 6000 });
+  assert.equal(a.hash, b.hash);
 });

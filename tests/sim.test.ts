@@ -553,11 +553,36 @@ test("Crocevia: quattro corsie unite all'inizio e alla fine, separate in mezzo",
   assert.equal(lvl.map.lanes.length, 4);
   const starts = new Set(lvl.map.lanes.map((l) => JSON.stringify(l.slice(0, 2))));
   const ends = new Set(lvl.map.lanes.map((l) => JSON.stringify(l.slice(-2))));
-  const middles = new Set(lvl.map.lanes.map((l) => JSON.stringify(l[3])));
+  const middles = new Set(lvl.map.lanes.map((l) => JSON.stringify(l[2])));
   assert.equal(starts.size, 1, "stessa entrata");
   assert.equal(ends.size, 1, "stesso tratto finale");
   assert.equal(middles.size, 4, "in mezzo quattro strade diverse");
   const waves = modeWaves(NIGHTS[4], lvl);
   const lanes = new Set(waves.flat().map((x) => x.lane));
   assert.equal(lanes.size, 4, "i nemici arrivano da tutte e quattro");
+});
+
+test("mappe con anelli: il percorso passa due volte dalla stessa casella", () => {
+  const cellsOf = (lane: ReadonlyArray<readonly [number, number]>) => {
+    const out: string[] = [];
+    for (let i = 0; i + 1 < lane.length; i++) {
+      const [x0, y0] = lane[i];
+      const [x1, y1] = lane[i + 1];
+      const dx = Math.sign(x1 - x0);
+      const dy = Math.sign(y1 - y0);
+      for (let x = x0, y = y0; x !== x1 || y !== y1; x += dx, y += dy) out.push(`${x},${y}`);
+    }
+    return out;
+  };
+  for (const id of ["vigilia", "anelli", "gemelle"]) {
+    const lane = levelById(id).map.lanes[0];
+    const c = cellsOf(lane);
+    assert.ok(new Set(c).size < c.length, `${id}: c'è un incrocio`);
+  }
+  const lungo = levelById("lungomare");
+  const len = lungo.map.lanes[0].slice(1).reduce((a, p, i) => a + Math.abs(p[0] - lungo.map.lanes[0][i][0]) + Math.abs(p[1] - lungo.map.lanes[0][i][1]), 0);
+  assert.ok(len >= 60, `il Lungomare è lungo (${len})`);
+  assert.deepEqual(NIGHTS.map((n) => n.map), ["vigilia", "anelli", "spirale", "gemelle", "crocevia"]);
+  const e = createGame(1, { mode: "easy", level: "lungomare" });
+  assert.equal(e.levelId, "lungomare");
 });

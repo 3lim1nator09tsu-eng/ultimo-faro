@@ -180,7 +180,8 @@ table.board { width: 100%; border-collapse: collapse; font-variant-numeric: tabu
 .modeCard { border-left: 3px solid var(--accent, var(--line)); }
 .modeCard .levelHead b { color: var(--accent, var(--ink)); }
 .modeStatus { color: var(--muted); font-size: 13px; white-space: nowrap; }
-.mapRow { display: grid; grid-template-columns: 1fr 1fr 1fr 1.2fr; gap: 6px; margin-top: 4px; }
+.mapRow { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 4px; }
+.mapRow .mode { grid-column: 1 / -1; }
 .mapRow .mode { min-height: 42px; font-size: 16px; text-align: center; padding-inline: 8px; }
 .mapPick { min-height: 42px; font-size: 13px; padding: 4px; background: var(--plate); }
 .mapPick[aria-pressed="true"] { border-color: var(--brass); color: var(--brass); box-shadow: inset 0 0 0 1px var(--brass); }

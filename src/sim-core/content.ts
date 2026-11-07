@@ -643,6 +643,7 @@ export interface LevelDef {
   startCash: number;
   waveBonusBp: number; // premio di fine ondata rispetto al Porto
   waves: WaveGroup[][];
+  survivalHpBp?: number; // nelle modalità di sopravvivenza: nemici più duri sulle mappe che aiutano le torri
 }
 
 const g = (enemy: EnemyKind, count: number, interval: number, delay = 0, lane = 0): WaveGroup => ({ enemy, count, interval, delay, lane });
@@ -839,48 +840,95 @@ export const LEVELS: LevelDef[] = [
   },
 ];
 
-// Mappa finale dell'evento: quattro correnti unite all'ingresso, separate in mezzo, di nuovo unite prima del Faro.
-const CROCEVIA: MapDef = {
-  name: "Il Crocevia",
-  lanes: [0, 1, 2, 3].map((i): Cell[] => {
-    const row = [1, 3, 5, 7][i];
-    return [
-      [-1, 4],
-      [2, 4],
-      [2, row],
-      [12, row],
-      [12, 4],
-      [15, 4],
-    ];
-  }),
-  laneOpen: [1, 1, 1, 1],
-  faro: [15, 4],
-  rocks: [
-    [0, 1],
-    [0, 7],
-    [8, 0],
-    [14, 0],
-    [15, 8],
-  ],
+// ---------- mappe dell'evento e mappa lunga ----------
+
+const simpleMap = (name: string, lanes: Cell[][], faro: Cell, rocks: Cell[], labels: MapDef["labels"], compass: Cell): MapDef => ({
+  name,
+  lanes,
+  laneOpen: lanes.map(() => 1),
+  faro,
+  rocks,
   emerge: [],
-  labels: [
-    { x: 7, y: 0.45, text: "Il Crocevia" },
-    { x: 7, y: 8.55, text: "Quattro correnti" },
+  labels,
+  compass,
+});
+
+// Notte 1: un anello. Il percorso torna indietro e incrocia sé stesso: una torre nell'isola lo copre due volte.
+const VIGILIA = simpleMap(
+  "La Vigilia",
+  [[[-1, 4], [10, 4], [10, 1], [6, 1], [6, 7], [13, 7], [13, 4], [15, 4]]],
+  [15, 4],
+  [[0, 1], [1, 7], [12, 2], [15, 0], [9, 8]],
+  [{ x: 8, y: 0.45, text: "La Vigilia" }, { x: 3, y: 6.2, text: "Neve sul porto" }],
+  [2.6, 1.9],
+);
+// Notte 2: due anelli in fila.
+const ANELLI = simpleMap(
+  "I Due Anelli",
+  [[[-1, 2], [5, 2], [5, 6], [2, 6], [2, 4], [9, 4], [9, 1], [12, 1], [12, 6], [15, 6]]],
+  [15, 6],
+  [[0, 7], [7, 7], [14, 2], [10, 7], [7, 0]],
+  [{ x: 3.5, y: 0.6, text: "Zoccoli sul ghiaccio" }, { x: 10.5, y: 8.4, text: "I Due Anelli" }],
+  [14.3, 3.4],
+);
+// Notte 3: una spirale verso il Faro, al centro della carta.
+const SPIRALE = simpleMap(
+  "La Spirale",
+  [[[-1, 1], [14, 1], [14, 7], [1, 7], [1, 3], [12, 3], [12, 5], [4, 5], [4, 4], [8, 4]]],
+  [8, 4],
+  [[0, 8], [15, 8], [15, 0]],
+  [{ x: 7.5, y: 0.45, text: "Neve che cammina" }, { x: 7.5, y: 8.45, text: "La Spirale" }],
+  [2.6, 5.1],
+);
+// Notte 4: due corsie, ognuna con il suo anello, che si incrociano prima di unirsi.
+const GEMELLE = simpleMap(
+  "Le Gemelle",
+  [
+    [[3, -1], [3, 3], [1, 3], [1, 1], [7, 1], [7, 4], [15, 4]],
+    [[3, 9], [3, 5], [1, 5], [1, 7], [11, 7], [11, 2], [13, 2], [13, 4], [15, 4]],
   ],
-  compass: [14.3, 6.6],
-};
+  [15, 4],
+  [[9, 2], [9, 6], [15, 1], [15, 7], [5, 4]],
+  [{ x: 10, y: 0.5, text: "Scope nel buio" }, { x: 6.5, y: 8.5, text: "Le Gemelle" }],
+  [14.3, 6.3],
+);
+// Notte 5: il Crocevia. Quattro correnti entrano unite dall'alto, si separano una alla volta,
+// le due interne si incrociano, e tutte si ricongiungono davanti al Faro.
+const CROCEVIA = simpleMap(
+  "Il Crocevia",
+  [
+    [[7, -1], [7, 1], [1, 1], [1, 7], [7, 7], [7, 8]],
+    [[7, -1], [7, 1], [4, 1], [4, 3], [11, 3], [11, 6], [8, 6], [8, 7], [7, 7], [7, 8]],
+    [[7, -1], [7, 1], [10, 1], [10, 5], [4, 5], [4, 6], [6, 6], [6, 7], [7, 7], [7, 8]],
+    [[7, -1], [7, 1], [14, 1], [14, 7], [7, 7], [7, 8]],
+  ],
+  [7, 8],
+  [[0, 0], [15, 0], [0, 8], [15, 8]],
+  [{ x: 3.6, y: 0.4, text: "Il Crocevia" }, { x: 11.6, y: 0.4, text: "Quattro correnti" }],
+  [12.6, 4.6],
+);
+// Il Lungomare: la mappa lunga, per tutte le modalità di sopravvivenza.
+const LUNGOMARE = simpleMap(
+  "Il Lungomare",
+  [[[-1, 1], [14, 1], [14, 3], [1, 3], [1, 5], [14, 5], [14, 7], [0, 7]]],
+  [0, 7],
+  [[15, 0], [0, 4], [15, 8], [7, 8]],
+  [{ x: 7.5, y: 0.45, text: "Il Lungomare" }, { x: 7.5, y: 4.05, text: "Sessanta caselle di costa" }],
+  [15.1, 4.0],
+);
+
+const eventLevel = (id: string, map: MapDef, sub: string): LevelDef => ({ id, name: map.name, sub, map, startCash: 450, waveBonusBp: 15000, waves: LEVELS[2].waves });
 
 export const EVENT_LEVELS: LevelDef[] = [
-  {
-    id: "crocevia",
-    name: "Il Crocevia",
-    sub: "Quattro corsie unite che si separano e si ricongiungono davanti al Faro.",
-    map: CROCEVIA,
-    startCash: 600,
-    waveBonusBp: 20000,
-    waves: LEVELS[2].waves,
-  },
+  eventLevel("vigilia", VIGILIA, "Un anello: il percorso torna su sé stesso."),
+  eventLevel("anelli", ANELLI, "Due anelli in fila."),
+  eventLevel("spirale", SPIRALE, "Una spirale verso il Faro, al centro."),
+  eventLevel("gemelle", GEMELLE, "Due corsie con un anello ciascuna."),
+  eventLevel("crocevia", CROCEVIA, "Quattro corsie unite che si separano e si ricongiungono."),
+  { id: "lungomare", name: "Il Lungomare", sub: "Sessanta caselle di costa, per le modalità di sopravvivenza.", map: LUNGOMARE, startCash: 320, waveBonusBp: 9000, waves: LEVELS[0].waves, survivalHpBp: 14000 },
 ];
+/** Mappe giocabili nelle modalità di sopravvivenza e in Hardcore. */
+export const SURVIVAL_MAPS = ["porto", "foce", "marea", "lungomare"];
 
 export function levelById(id: string): LevelDef {
   return LEVELS.find((l) => l.id === id) ?? EVENT_LEVELS.find((l) => l.id === id) ?? LEVELS[0];

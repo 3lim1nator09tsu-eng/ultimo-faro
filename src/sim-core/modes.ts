@@ -1,6 +1,6 @@
 // Modalità di sopravvivenza, Hardcore e Notti di Natale: le ondate sono generate da una ricetta
 // fissa, quindi ogni dispositivo ottiene le stesse ondate senza scaricarle.
-import { ENEMIES, EnemyKind, GameMode, LEVELS, LevelDef, Mod, RULES, WaveGroup, hardcoreWaves, levelById, waveAt } from "./content";
+import { ENEMIES, EnemyKind, GameMode, LevelDef, Mod, RULES, SURVIVAL_MAPS, WaveGroup, hardcoreWaves, levelById, waveAt } from "./content";
 
 export interface PoolEntry {
   kind: EnemyKind;
@@ -47,7 +47,7 @@ export interface NightDef extends ModeDef {
 }
 
 const e = (kind: EnemyKind, from: number, count: number, step: number, interval: number): PoolEntry => ({ kind, from, count, step, interval });
-const ALL_MAPS = LEVELS.map((l) => l.id);
+const ALL_MAPS = SURVIVAL_MAPS;
 const NO_PERLE = { perWave: 0, win: 0, boss: 0 };
 
 const MODS_MILD: Mod[][] = [["agile"], ["corazzato"], ["gonfio"], ["schermato"]];
@@ -221,7 +221,8 @@ const NIGHT_POOL: PoolEntry[] = [
   e("elfo", 1, 6, 70, 7), e("pupazzetto", 1, 3, 45, 16), e("brinato", 3, 3, 45, 14), e("corridore", 4, 6, 60, 7),
   e("orso", 6, 1, 25, 28), e("spettro", 8, 3, 45, 11), e("cavaliere", 10, 2, 25, 22), e("sabotatore", 12, 2, 20, 24),
 ];
-const night = (n: number, map: string, waves: number, boss: BossStep, minis: BossStep[], name: string, sub: string): NightDef => ({
+// hpBp tarato con i bot sulla mappa di ogni Notte: gli anelli aiutano le torri, quindi lì i nemici sono più duri.
+const night = (n: number, map: string, waves: number, boss: BossStep, minis: BossStep[], name: string, sub: string, hpBp: number): NightDef => ({
   id: "natale",
   night: n,
   map,
@@ -233,7 +234,7 @@ const night = (n: number, map: string, waves: number, boss: BossStep, minis: Bos
   bonusCash: 250,
   curveA: 800 + 40 * n,
   curveB: 70 + 8 * n,
-  hpBp: 10500 + 300 * n,
+  hpBp,
   pool: NIGHT_POOL,
   maxGroups: 3 + (n >= 4 ? 1 : 0),
   modsFrom: 3,
@@ -248,16 +249,16 @@ const night = (n: number, map: string, waves: number, boss: BossStep, minis: Bos
 });
 
 export const NIGHTS: NightDef[] = [
-  night(1, "porto", 20, { wave: 20, kind: "folletto", hpBp: 150000 }, [{ wave: 10, kind: "pupazzetto", hpBp: 50000 }], "Notte 1 · La Vigilia Rubata", "Il Folletto Ladro ruba il cash mentre avanza."),
-  night(2, "foce", 25, { wave: 25, kind: "renna", hpBp: 65000 }, [{ wave: 12, kind: "folletto", hpBp: 60000 }], "Notte 2 · Zoccoli sul Ghiaccio", "La Renna Nera scatta all'improvviso."),
-  night(3, "marea", 30, { wave: 30, kind: "pupazzo", hpBp: 480000 }, [{ wave: 15, kind: "renna", hpBp: 70000 }], "Notte 3 · Neve che Cammina", "Il Pupazzo Colossale si spezza in sei."),
-  night(4, "foce", 35, { wave: 35, kind: "befana", hpBp: 620000 }, [{ wave: 17, kind: "pupazzo", hpBp: 70000 }, { wave: 28, kind: "folletto", hpBp: 90000 }], "Notte 4 · Scope nel Buio", "La Befana vola invisibile: serve chi la vede."),
-  night(5, "crocevia", 40, { wave: 40, kind: "krampus", hpBp: 600000 }, [
+  night(1, "vigilia", 20, { wave: 20, kind: "folletto", hpBp: 150000 }, [{ wave: 10, kind: "pupazzetto", hpBp: 50000 }], "Notte 1 · La Vigilia Rubata", "Il Folletto Ladro ruba il cash mentre avanza.", 16500),
+  night(2, "anelli", 25, { wave: 25, kind: "renna", hpBp: 65000 }, [{ wave: 12, kind: "folletto", hpBp: 60000 }], "Notte 2 · Zoccoli sul Ghiaccio", "La Renna Nera scatta all'improvviso.", 15000),
+  night(3, "spirale", 30, { wave: 30, kind: "pupazzo", hpBp: 480000 }, [{ wave: 15, kind: "renna", hpBp: 70000 }], "Notte 3 · Neve che Cammina", "Il Pupazzo Colossale si spezza in sei.", 14500),
+  night(4, "gemelle", 35, { wave: 35, kind: "befana", hpBp: 620000 }, [{ wave: 17, kind: "pupazzo", hpBp: 70000 }, { wave: 28, kind: "folletto", hpBp: 90000 }], "Notte 4 · Scope nel Buio", "La Befana vola invisibile: serve chi la vede.", 12900),
+  night(5, "crocevia", 40, { wave: 40, kind: "krampus", hpBp: 500000 }, [
     { wave: 10, kind: "folletto", hpBp: 80000 },
     { wave: 20, kind: "renna", hpBp: 90000 },
     { wave: 28, kind: "pupazzo", hpBp: 90000 },
     { wave: 34, kind: "befana", hpBp: 100000 },
-  ], "Notte 5 · Il Gran Finale", "Krampus, e tutti quelli che lo hanno preceduto."),
+  ], "Notte 5 · Il Gran Finale", "Krampus, e tutti quelli che lo hanno preceduto.", 12000),
 ];
 
 export const SURVIVAL_IDS: GameMode[] = SURVIVAL.map((m) => m.id);
@@ -323,7 +324,7 @@ export function modeWaves(m: ModeDef, level: LevelDef): WaveGroup[][] {
       interval: p.interval,
       delay: j * 40,
       lane: (w + j) % lanes,
-      hpMulBp: hpMulFor(m, w, 10000),
+      hpMulBp: hpMulFor(m, w, level.survivalHpBp ?? 10000),
     }));
     if (m.modsFrom && w >= m.modsFrom) {
       const i = (w - m.modsFrom) % m.modList.length;
@@ -341,7 +342,7 @@ export function modeWaves(m: ModeDef, level: LevelDef): WaveGroup[][] {
         interval: 1,
         delay: 160 + 60 * groups.filter((x) => x.boss).length,
         lane: w % lanes,
-        hpMulBp: hpMulFor(m, w, b.hpBp),
+        hpMulBp: hpMulFor(m, w, Math.floor((b.hpBp * (level.survivalHpBp ?? 10000)) / 10000)),
         lifeDamage: b === m.boss ? Math.max(ENEMIES[b.kind].lifeDamage, 20) : Math.min(ENEMIES[b.kind].lifeDamage, 6),
         boss: true,
         mods: b.mods,

@@ -1,7 +1,7 @@
 // Pannello admin locale: prova delle torri, comandi in partita, progressi e bilanciamento.
 // Vive solo su questo dispositivo; la versione online passerà dal server con ruoli e registro.
 import { NIGHTS, SURVIVAL } from "../sim-core/modes";
-import { Branch, ENEMIES, EnemyKind, GameMode, LEVELS, MOD_ORDER, MODS, Mod, TOWERS, TOWER_ORDER, TowerKind, TowerStats } from "../sim-core/content";
+import { EVENT_LEVELS, levelById, Branch, ENEMIES, EnemyKind, GameMode, LEVELS, MOD_ORDER, MODS, Mod, TOWERS, TOWER_ORDER, TowerKind, TowerStats } from "../sim-core/content";
 import { Command, GameState } from "../sim-core/sim";
 
 export type LevelKey = "1" | "2" | "3" | Branch;
@@ -116,7 +116,7 @@ export function renderAdminPanel(host: HTMLElement, api: AdminApi, close: () => 
 }
 
 function sandboxTab(body: HTMLElement, api: AdminApi) {
-  const level = el("select", { id: "adLevel" }, ...LEVELS.map((l) => el("option", { value: l.id, text: l.name })));
+  const level = el("select", { id: "adLevel" }, ...[...LEVELS, ...EVENT_LEVELS].map((l) => el("option", { value: l.id, text: l.name })));
   const options: Array<[string, string]> = [
     ["campagna", "Campagna"],
     ["infinita", "Infinita"],
@@ -235,7 +235,7 @@ export function renderAdminDrawer(host: HTMLElement, api: AdminApi, remote = fal
   const btn = (text: string, onclick: () => void, extra: Record<string, unknown> = {}) => el("button", { text, onclick, ...extra });
   const enemy = el("select", { id: "adEnemy" }, ...(Object.keys(ENEMIES) as EnemyKind[]).map((k) => el("option", { value: k, text: ENEMIES[k].name })));
   const count = el("input", { id: "adCount", type: "number", value: "5", min: "1", max: "200" }) as HTMLInputElement;
-  const lanes = LEVELS.find((l) => l.id === s.levelId)!.map.lanes.length;
+  const lanes = levelById(s.levelId).map.lanes.length;
   const lane = el("select", { id: "adLane" }, el("option", { value: "-1", text: "Tutte le corsie" }), ...Array.from({ length: lanes }, (_, i) => el("option", { value: String(i), text: `Corsia ${i + 1}` })));
   const hp = el("select", { id: "adHp" }, ...[1, 2, 5, 10].map((m) => el("option", { value: String(m * 10000), text: `Vita x${m}` })));
   const boss = el("input", { type: "checkbox", id: "adBoss" }) as HTMLInputElement;

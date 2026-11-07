@@ -1,5 +1,5 @@
 // Client del prototipo: disegna lo stato, raccoglie i tocchi, non decide mai le regole.
-import { ADMIN_ONLY, EVENT_TOWER, ABILITIES, APEX_RANK, AbilityId, ENEMIES, GameMode, HARDCORE_TOWERS, LEVELS, MODS, LOADOUT_SIZE, MAP_H, MAP_W, MAX_RANK, RANK_COSTS, RULES, STARTER_TOWERS, TICKS_PER_SECOND, TILE, TOWERS, TOWER_ORDER, TRACKS, TowerKind, Track, Branch, levelById } from "../sim-core/content";
+import { ADMIN_ONLY, EVENT_TOWER, SURVIVAL_MAPS, ABILITIES, APEX_RANK, AbilityId, ENEMIES, GameMode, HARDCORE_TOWERS, LEVELS, MODS, LOADOUT_SIZE, MAP_H, MAP_W, MAX_RANK, RANK_COSTS, RULES, STARTER_TOWERS, TICKS_PER_SECOND, TILE, TOWERS, TOWER_ORDER, TRACKS, TowerKind, Track, Branch, levelById } from "../sim-core/content";
 import { Command, GameEvent, GameOptions, GameState, abilityCdOf, allowedOf, cashOf, apexBlock, apexPrice, applyCommands, modsOf, perleFor, cellEmerged, createGame, effStats, hashState, isBuildable, laneIsOpen, levelOf, rankedStats, restore, rewardFor, sellValue, specPrice, statsIn, snapshot, starsFor, step, upgradePrice, waveCount, wavePreview } from "../sim-core/sim";
 import { playBot } from "../sim-core/bot";
 import { HARDCORE, ModeDef, NIGHTS, SURVIVAL, disgeloFor, modeDef } from "../sim-core/modes";
@@ -291,7 +291,7 @@ function loadMeta(raw: string | null = store.get("faro.meta.v1")): Meta {
     m.modeBest = keyed(d.modeBest, modeKeys);
     m.nightWins = keyed(d.nightWins, nightKeys);
     m.nightBest = keyed(d.nightBest, nightKeys);
-    if (typeof d.mapPick === "string" && LEVELS.some((l) => l.id === d.mapPick)) m.mapPick = d.mapPick;
+    if (typeof d.mapPick === "string" && SURVIVAL_MAPS.includes(d.mapPick)) m.mapPick = d.mapPick;
     if (typeof d.account === "string") m.account = d.account;
     m.rev = n(d.rev, 0, 1e9, 0);
   } catch {
@@ -1395,10 +1395,10 @@ function modeCard(m: ModeDef, host: HTMLElement) {
   sub.textContent = open ? m.sub : `Si apre vincendo ${modeName(m.unlock!)}`;
   const row = document.createElement("div");
   row.className = "mapRow";
-  for (const l of LEVELS) {
+  for (const l of SURVIVAL_MAPS.map((id) => levelById(id))) {
     const b = document.createElement("button");
     b.className = "mapPick";
-    b.textContent = l.name.replace(/^La |^Il /, "");
+    b.textContent = l.name.replace(/^La |^Il |^Lo /, "");
     b.setAttribute("aria-pressed", String(meta.mapPick === l.id));
     b.disabled = !open;
     b.addEventListener("click", () => {

@@ -129,6 +129,18 @@ export const MEDALS: Array<{ id: string; name: string; text: string; ok: (m: Med
 export const VERSION_NOTES: ChangeEntry[] = [
   {
     date: "2026-11-07",
+    title: "Versione 0.7.1: mappe nuove",
+    kind: "versione",
+    items: [
+      "Notti 1–4 su mappe nuove con anelli: il percorso torna su sé stesso",
+      "Notte 1 La Vigilia, Notte 2 I Due Anelli, Notte 3 La Spirale (Faro al centro), Notte 4 Le Gemelle",
+      "Il Crocevia rifatto: quattro corsie entrano unite, si separano, le interne si incrociano, si riuniscono davanti al Faro",
+      "Il Lungomare: la mappa lunga (61 caselle) per tutte le modalità da Easy a Hardcore, con nemici più resistenti del 40%",
+      "Notti ritarate: ognuna si sblocca con il suo Disgelo",
+    ],
+  },
+  {
+    date: "2026-11-07",
     title: "Versione 0.7: multigiocatore per giocatore e Crocevia",
     kind: "versione",
     items: [

@@ -1,5 +1,5 @@
 // Interfaccia online: accesso, salvataggio, classifica, stanze e sala d'attesa.
-import { GameMode } from "../sim-core/content";
+import { GameMode, SURVIVAL_MAPS, levelById } from "../sim-core/content";
 import { NIGHTS, SURVIVAL } from "../sim-core/modes";
 import { LeaderRow, Net } from "./net";
 import { NetMatch } from "./netplay";
@@ -126,7 +126,7 @@ export function renderOnline(host: HTMLElement, api: OnlineApi) {
   );
   // Stanze.
   const modeSel = el("select", { id: "olMode" }, ...MATCH_MODES.map(([v, t]) => el("option", { value: v, text: t })));
-  const mapSel = el("select", { id: "olMap" }, ...["porto", "foce", "marea"].map((v) => el("option", { value: v, text: v === "porto" ? "Il Porto" : v === "foce" ? "La Doppia Foce" : "La Bassa Marea", selected: v === api.mapPick })));
+  const mapSel = el("select", { id: "olMap" }, ...SURVIVAL_MAPS.map((v) => el("option", { value: v, text: levelById(v).name, selected: v === api.mapPick })));
   const sync = () => (mapSel.disabled = modeSel.value.startsWith("natale"));
   modeSel.addEventListener("change", sync);
   sync();

@@ -497,7 +497,7 @@ test("divisione, gelo alla morte, furto e immunità al rallentamento", () => {
 
 test("sandbox e comandi admin: tutte le torri, nessun premio, vite infinite, salto d'ondata", () => {
   const s = createGame(1, { sandbox: true, allowed: ["balestra"] });
-  assert.equal(s.allowed.length, 15);
+  assert.equal(s.allowed.length, 16);
   assert.ok(s.cash >= 100000);
   step(s, [{ t: "adminGod", on: true }, { t: "adminSpawn", enemy: "corridore", count: 5, mods: ["agile"] }]);
   for (let i = 0; i < 600; i++) step(s, []);
@@ -585,4 +585,35 @@ test("mappe con anelli: il percorso passa due volte dalla stessa casella", () =>
   assert.deepEqual(NIGHTS.map((n) => n.map), ["vigilia", "anelli", "spirale", "gemelle", "crocevia"]);
   const e = createGame(1, { mode: "easy", level: "lungomare" });
   assert.equal(e.levelId, "lungomare");
+});
+
+test("Kingpin: evoca unità che camminano, combattono e portano cash", () => {
+  const s = createGame(21, { mode: "easy", allowed: ["kingpin"] });
+  s.cash = 5000;
+  step(s, [{ t: "build", kind: "kingpin", cx: 2, cy: 2 }]);
+  const k = s.towers[0];
+  step(s, [{ t: "upgrade", id: k.id }]); // livello 2: arrivano i Portavalori
+  step(s, [{ t: "skip" }]);
+  let units = 0;
+  let paid = 0;
+  for (let i = 0; i < 1500 && s.phase !== "lost"; i++) {
+    const cash = s.cash;
+    const ev = step(s, []);
+    units = Math.max(units, s.units.length);
+    if (ev.some((x) => x.e === "kill" && s.units.every(() => true)) && s.cash > cash) paid++;
+  }
+  assert.ok(units >= 2, `in campo fino a ${units} unità`);
+  assert.ok(k.damageDone > 0, "gli scagnozzi fanno danno");
+  assert.ok(s.units.every((u) => u.owner === 0 && u.tower === k.id));
+  assert.ok(allIntegers(s));
+  const a = createGame(5, { mode: "easy", allowed: ["kingpin"] });
+  const b = createGame(5, { mode: "easy", allowed: ["kingpin"] });
+  for (const g of [a, b]) {
+    g.cash = 5000;
+    step(g, [{ t: "build", kind: "kingpin", cx: 2, cy: 2 }]);
+    step(g, [{ t: "skip" }]);
+    for (let i = 0; i < 800; i++) step(g, []);
+  }
+  assert.equal(hashState(a), hashState(b), "le unità sono deterministiche");
+  void paid;
 });

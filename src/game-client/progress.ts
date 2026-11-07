@@ -129,6 +129,19 @@ export const MEDALS: Array<{ id: string; name: string; text: string; ok: (m: Med
 export const VERSION_NOTES: ChangeEntry[] = [
   {
     date: "2026-11-07",
+    title: "Versione 0.8: Kingpin, scheda dei nemici, Hardcore più duro",
+    kind: "versione",
+    items: [
+      "Kingpin: manda Scagnozzi, Portavalori, Buttafuori e Sicari sul percorso; rami Racket (cash) e La Famiglia (combattimento)",
+      "Tocca un nemico, o passaci sopra col mouse, per vederne vita, scudo, armatura, modificatori e tratti",
+      "Hardcore più duro: più vita, crescita più ripida, mappe facili corrette",
+      "Due modificatori nuovi in Hardcore: Spettrale (invisibile) e Scisso (si divide in due quando cade)",
+      "Ogni modificatore ha il suo segno sul nemico: aureola, mirino, piastre, scie, crepa",
+      "Ombre, barre della vita a colori, basamenti delle torri e interfaccia rifiniti; anello del proprietario in multigiocatore",
+    ],
+  },
+  {
+    date: "2026-11-07",
     title: "Versione 0.7.1: mappe nuove",
     kind: "versione",
     items: [

@@ -34,6 +34,9 @@ import {
   Track,
   WaveGroup,
   levelById,
+  UNITS,
+  UNIT_ORDER,
+  UnitKind,
 } from "./content";
 import { hpMulFor, modeDef, waveFor, waveTotal } from "./modes";
 
@@ -89,6 +92,24 @@ export interface Tower {
   bufDetect: number; // 1 se un Capitano vicino gli fa vedere gli invisibili
   owner: number; // giocatore che l'ha costruita (0 in solitaria)
   rank: number; // rango permanente del proprietario per questa torre
+  spawnCd: number; // Kingpin: tick alla prossima evocazione
+  spawnN: number; // Kingpin: unità evocate finora
+}
+
+/** Unità del Kingpin: camminano dal Faro verso il mare e combattono i nemici che incontrano. */
+export interface Unit {
+  id: number;
+  owner: number;
+  tower: number;
+  kind: UnitKind;
+  lane: number;
+  dist: number;
+  x: number;
+  y: number;
+  hp: number;
+  maxHp: number;
+  cd: number;
+  power: number; // forza in punti base, decisa all'evocazione
 }
 
 export interface Shell {
@@ -148,6 +169,7 @@ export interface GameState {
   towers: Tower[];
   shells: Shell[];
   spawns: Spawn[];
+  units: Unit[];
 }
 
 export interface PlayerPurse {
@@ -208,6 +230,7 @@ export type GameEvent =
   | { e: "steal"; x: number; y: number; amount: number }
   | { e: "charge"; x: number; y: number }
   | { e: "split"; x: number; y: number }
+  | { e: "unit"; x: number; y: number; kind: UnitKind }
   | { e: "kill"; x: number; y: number; bounty: number; boss: boolean }
   | { e: "leak"; damage: number }
   | { e: "income"; amount: number; lives: number; amounts?: number[] }
@@ -391,6 +414,7 @@ export function rankedStats(t: Pick<Tower, "kind" | "level" | "branch">, rank: n
     income: scale(s.income),
     auraBp: scale(s.auraBp),
     hasteBp: scale(s.hasteBp),
+    unitBp: s.unitSet ? scale(s.unitBp) : s.unitBp,
   };
 }
 
@@ -539,6 +563,7 @@ export function createGame(seed: number, opts: GameOptions = {}): GameState {
     towers: [],
     shells: [],
     spawns: [],
+    units: [],
   };
 }
 
@@ -595,6 +620,8 @@ function applyCommand(state: GameState, cmd: Command, events: GameEvent[]): void
         bufDetect: 0,
         owner: p,
         rank: ranksOf(state, p)[cmd.kind] ?? 1,
+        spawnCd: 20,
+        spawnN: 0,
       });
       events.push({ e: "built", id, kind: cmd.kind });
       return;
@@ -931,6 +958,18 @@ function clearDead(state: GameState, events: GameEvent[]): void {
       }
       events.push({ e: "split", x: e.x, y: e.y });
     }
+    if (e.mods & modBit("scisso")) {
+      // Scisso: due copie con un terzo della vita, senza il modificatore (non si dividono all'infinito).
+      const mods = e.mods & ~modBit("scisso");
+      const hp = Math.max(1, Math.floor(e.maxHp / 3));
+      for (let i = 0; i < 2; i++) {
+        const c = newEnemy(state, e.kind, e.lane, Math.max(0, e.dist - 220 * (i + 1)), hp, mods, ((i * 131) % 361) - 180);
+        c.boss = false;
+        c.lifeDamage = e.boss ? Math.max(1, Math.floor(e.lifeDamage / 2)) : e.lifeDamage;
+        born.push(c);
+      }
+      events.push({ e: "split", x: e.x, y: e.y });
+    }
     if (def.deathFreeze) {
       stunTowersNear(state, e.x, e.y, def.deathFreeze.range, def.deathFreeze.stun);
       events.push({ e: "frost", x: e.x, y: e.y, radius: def.deathFreeze.range });
@@ -945,7 +984,8 @@ function clearDead(state: GameState, events: GameEvent[]): void {
 }
 
 /** Una torre vede il nemico? Gli invisibili si vedono solo con il rilevamento. */
-export const canSee = (e: Enemy, s: TowerStats) => s.detect || !ENEMIES[e.kind].hidden;
+export const isHidden = (e: Enemy) => !!ENEMIES[e.kind].hidden || (e.mods & modBit("spettrale")) !== 0;
+export const canSee = (e: Enemy, s: TowerStats) => s.detect || !isHidden(e);
 
 function pickTarget(state: GameState, t: Tower, s: TowerStats): Enemy | null {
   // Un Provocatore nel raggio obbliga la torre a colpire lui.
@@ -1149,6 +1189,79 @@ function enemyActs(state: GameState, events: GameEvent[]): void {
   if (born.length) state.enemies.push(...born);
 }
 
+// ---------- unità del Kingpin ----------
+
+function kingpins(state: GameState, events: GameEvent[]): void {
+  const level = levelOf(state);
+  const geo = geometry(level);
+  // Evocazioni.
+  for (const t of state.towers) {
+    if (t.kind !== "kingpin") continue;
+    if (t.spawnCd > 0) {
+      t.spawnCd -= 1;
+      continue;
+    }
+    if (t.stun > 0 || state.phase !== "wave") continue;
+    const s = statsIn(state, t);
+    const alive = state.units.filter((u) => u.tower === t.id).length;
+    if (alive >= s.spawnMax) continue;
+    const kinds = UNIT_ORDER.filter((_, i) => s.unitSet & (1 << i));
+    if (!kinds.length) continue;
+    const kind = kinds[t.spawnN % kinds.length];
+    const lanes = level.map.lanes.map((_, i) => i).filter((i) => laneIsOpen(state, i));
+    const lane = lanes[(t.id + t.spawnN) % lanes.length];
+    const dist = geo.lengths[lane] - 300;
+    const p = lanePoint(level, lane, dist);
+    const hp = hpForWave(UNITS[kind].hp, Math.max(1, state.wave), s.unitBp);
+    state.units.push({ id: state.nextId++, owner: t.owner, tower: t.id, kind, lane, dist, x: p.x, y: p.y, hp, maxHp: hp, cd: 0, power: s.unitBp });
+    t.spawnN += 1;
+    t.spawnCd = s.spawnEvery;
+    events.push({ e: "unit", x: p.x, y: p.y, kind });
+  }
+  if (!state.units.length) return;
+  const kept: Unit[] = [];
+  for (const u of state.units) {
+    const def = UNITS[u.kind];
+    const tower = state.towers.find((t) => t.id === u.tower);
+    // Chi si trova a contatto con un nemico perde vita: l'1% della vita del nemico a ogni tick.
+    for (const e of state.enemies) {
+      if (e.hp > 0 && inRange(u.x, u.y, e.x, e.y, 450)) u.hp -= Math.max(1, Math.floor(e.hp / 100));
+    }
+    let target: Enemy | null = null;
+    if (def.range > 0) {
+      for (const e of state.enemies) {
+        if (e.hp <= 0 || !inRange(u.x, u.y, e.x, e.y, def.range)) continue;
+        if (!target) target = e;
+        else if (def.strong ? e.hp > target.hp || (e.hp === target.hp && e.id < target.id) : e.dist > target.dist || (e.dist === target.dist && e.id < target.id)) target = e;
+      }
+    }
+    if (u.cd > 0) u.cd -= 1;
+    if (target && u.cd === 0) {
+      const amount = Math.floor((def.damage * u.power) / 10000);
+      const dmg = applyDamage(target, enemyDamage(target, amount, "cinetico", def.strong === true, 10000));
+      if (tower) tower.damageDone += dmg;
+      u.cd = def.cooldown;
+      events.push({ e: "shot", from: -u.id, to: target.id, x: u.x, y: u.y, tx: target.x, ty: target.y });
+    }
+    // Si ferma per combattere, altrimenti avanza verso il mare.
+    if (!target) u.dist -= def.speed;
+    const gone = u.hp <= 0 || u.dist <= 0 || !tower;
+    if (gone) {
+      if (def.pay && tower) {
+        const pay = Math.floor((def.pay * u.power) / 10000);
+        addCash(state, u.owner, pay);
+        events.push({ e: "kill", x: u.x, y: u.y, bounty: pay, boss: false });
+      }
+      continue;
+    }
+    const p = lanePoint(level, u.lane, u.dist);
+    u.x = p.x;
+    u.y = p.y;
+    kept.push(u);
+  }
+  state.units = kept;
+}
+
 /** Applica comandi senza avanzare il tempo: equivale a passarli al prossimo step. */
 export function applyCommands(state: GameState, commands: Command[]): GameEvent[] {
   const events: GameEvent[] = [];
@@ -1291,6 +1404,8 @@ export function step(state: GameState, commands: Command[] = []): GameEvent[] {
     }
   }
 
+  kingpins(state, events);
+
   // Atterraggio dei colpi di mortaio.
   const flying: Shell[] = [];
   for (const shell of state.shells) {
@@ -1421,6 +1536,16 @@ export function hashState(state: GameState): string {
     mix(t.abilityLeft);
     mix(t.owner);
     mix(t.rank);
+    mix(t.spawnCd);
+    mix(t.spawnN);
+  }
+  for (const u of state.units) {
+    mix(u.id);
+    str(u.kind);
+    mix(u.lane);
+    mix(u.dist);
+    mix(u.hp);
+    mix(u.cd);
   }
   for (const s of state.shells) {
     mix(s.id);

@@ -124,7 +124,7 @@ export function decide(state: GameState, policy: BotPolicy): Command[] {
   const count = (k: TowerKind) => state.towers.filter((t) => t.kind === k).length;
   const kinds = enemiesIn(state.mode, levelOf(state), state.night);
   const saboteurs = kinds.has("sabotatore") || [...kinds].some((k) => ENEMIES[k].song || ENEMIES[k].deathFreeze);
-  const hidden = [...kinds].some((k) => ENEMIES[k].hidden);
+  const hidden = [...kinds].some((k) => ENEMIES[k].hidden) || state.mode === "hardcore";
   const w = state.wave;
   const upto = (cap: number, v: number) => Math.min(cap, v);
   const wants: Array<[TowerKind, number]> = [
@@ -146,7 +146,7 @@ export function decide(state: GameState, policy: BotPolicy): Command[] {
   // Nelle partite lunghe, prima di aggiungere torri si migliorano quelle che ci sono.
   const unfinished = state.towers.filter((t) => TOWERS[t.kind].family === "attacco" && t.level < 3).length;
   const growFirst = w >= 10 && unfinished >= 3;
-  const pick: Record<TowerKind, Branch> = { balestra: "B", mortaio: "A", soffio: "B", cecchino: "B", bobina: "A", officina: "A", grammofono: "A", capitano: "B", medico: "B", arpione: "B", mitragliera: "B", purificatore: "A", cometa: "A", custode: "A", campana: "A" };
+  const pick: Record<TowerKind, Branch> = { balestra: "B", mortaio: "A", soffio: "B", cecchino: "B", bobina: "A", officina: "A", grammofono: "A", capitano: "B", medico: "B", arpione: "B", mitragliera: "B", purificatore: "A", cometa: "A", custode: "A", campana: "A", kingpin: "B" };
   const ordered = [...state.towers].sort((a, b) => a.level - b.level || a.id - b.id);
   // Prima porta ogni torre almeno al livello 2: meglio poche torri forti che tante deboli.
   if (state.towers.length >= 3) {

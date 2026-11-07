@@ -14,13 +14,13 @@ export type EnemyKind =
   | "elfo" | "pupazzetto" | "folletto" | "renna" | "pupazzo" | "befana" | "krampus";
 export type TowerKind =
   | "balestra" | "mortaio" | "soffio" | "cecchino" | "bobina" | "officina" | "grammofono" | "capitano" | "medico" | "arpione" | "mitragliera" | "purificatore"
-  | "custode" | "campana" | "cometa";
+  | "custode" | "campana" | "cometa" | "kingpin";
 export type Branch = "A" | "B";
 export type EnemyClass = "carne" | "corazza" | "meccanico";
 export type DamageType = "cinetico" | "gelo" | "elettrico" | "nessuno";
 export type AbilityId = "fascio" | "gelata";
 export type GameMode = "campagna" | "infinita" | "hardcore" | "easy" | "medium" | "molten" | "fallen" | "frost" | "natale";
-export type Mod = "benedetto" | "gonfio" | "agile" | "provocatore" | "corazzato" | "schermato";
+export type Mod = "benedetto" | "gonfio" | "agile" | "provocatore" | "corazzato" | "schermato" | "spettrale" | "scisso";
 export type Track = "danno" | "gittata" | "sconto";
 export type Cell = readonly [number, number];
 
@@ -56,8 +56,10 @@ export const MODS: Record<Mod, { name: string; summary: string; color: string }>
   provocatore: { name: "Provocatore", summary: "Le torri vicine devono colpire lui", color: "#e2714f" },
   corazzato: { name: "Corazzato", summary: "+40 armatura", color: "#b9a88a" },
   schermato: { name: "Schermato", summary: "Scudo pari al 40% della vita", color: "#c9b8ff" },
+  spettrale: { name: "Spettrale", summary: "Invisibile: lo colpisce solo chi rileva", color: "#d9d2ff" },
+  scisso: { name: "Scisso", summary: "Quando cade si divide in due copie più deboli", color: "#ff9a9a" },
 };
-export const MOD_ORDER: Mod[] = ["benedetto", "gonfio", "agile", "provocatore", "corazzato", "schermato"];
+export const MOD_ORDER: Mod[] = ["benedetto", "gonfio", "agile", "provocatore", "corazzato", "schermato", "spettrale", "scisso"];
 export const MOD_RULES = { regenBp: 30, armor: 40, speedBp: 13500, shieldBp: 4000 };
 
 export const ENEMIES: Record<EnemyKind, EnemyDef> = {
@@ -207,6 +209,11 @@ export interface TowerStats {
   sacred: boolean; // blocca la rigenerazione
   bossBp: number; // danno contro i boss
   detect: boolean; // vede i nemici invisibili (Spettri, Elfi, la Befana)
+  // Kingpin: unità evocate che camminano sul percorso
+  spawnEvery: number; // tick tra un'evocazione e l'altra
+  spawnMax: number; // unità in campo al massimo
+  unitSet: number; // quali unità: un bit per voce di UNIT_ORDER
+  unitBp: number; // forza delle unità
 }
 
 export interface TowerLevel extends TowerStats {
@@ -267,6 +274,10 @@ const base: TowerStats = {
   sacred: false,
   bossBp: 10000,
   detect: false,
+  spawnEvery: 0,
+  spawnMax: 0,
+  unitSet: 0,
+  unitBp: 10000,
 };
 
 export const TOWERS = {
@@ -552,6 +563,45 @@ TOWERS.cometa = {
     B: { ...base, name: "Coda di ghiaccio", summary: "Spesso congela chi colpisce", cost: 650, damage: 360, cooldown: 16, range: 6200, radius: 1700, stunTicks: 15, stunChanceBp: 6000 },
   },
 };
+// Kingpin: non spara, manda i suoi uomini sul percorso.
+TOWERS.kingpin = {
+  apex: "Il Padrino",
+  name: "Kingpin",
+  role: "Manda scagnozzi sul percorso: combattono, i Portavalori portano cash",
+  family: "attacco",
+  damageType: "cinetico",
+  target: "first",
+  unlock: 600,
+  levels: [
+    { ...base, cost: 450, range: 2500, spawnEvery: 120, spawnMax: 2, unitSet: 1, unitBp: 10000 },
+    { ...base, cost: 350, range: 2500, spawnEvery: 110, spawnMax: 3, unitSet: 3, unitBp: 12000 },
+    { ...base, cost: 550, range: 2500, spawnEvery: 100, spawnMax: 4, unitSet: 3, unitBp: 14500, income: 20 },
+  ],
+  branches: {
+    A: { ...base, name: "Racket", summary: "Tanti Portavalori e una rendita a fine ondata", cost: 900, range: 2500, spawnEvery: 70, spawnMax: 5, unitSet: 3, unitBp: 16000, income: 60 },
+    B: { ...base, name: "La Famiglia", summary: "Arrivano il Buttafuori e il Sicario", cost: 1000, range: 2500, spawnEvery: 90, spawnMax: 5, unitSet: 13, unitBp: 19000 },
+  },
+};
+
+export type UnitKind = "scagnozzo" | "portavalori" | "buttafuori" | "sicario";
+export const UNIT_ORDER: UnitKind[] = ["scagnozzo", "portavalori", "buttafuori", "sicario"];
+export interface UnitDef {
+  name: string;
+  hp: number;
+  speed: number; // unità per tick, verso il mare
+  range: number;
+  damage: number;
+  cooldown: number;
+  strong?: boolean; // mira al nemico più forte
+  pay?: number; // cash al proprietario quando esce di scena
+}
+export const UNITS: Record<UnitKind, UnitDef> = {
+  scagnozzo: { name: "Scagnozzo", hp: 120, speed: 40, range: 2200, damage: 14, cooldown: 4 },
+  portavalori: { name: "Portavalori", hp: 80, speed: 55, range: 0, damage: 0, cooldown: 0, pay: 30 },
+  buttafuori: { name: "Buttafuori", hp: 420, speed: 34, range: 700, damage: 75, cooldown: 8 },
+  sicario: { name: "Sicario", hp: 150, speed: 30, range: 6000, damage: 190, cooldown: 25, strong: true },
+};
+
 export const ADMIN_ONLY: TowerKind[] = ["custode", "campana"];
 export const EVENT_TOWER: TowerKind = "cometa";
 
@@ -562,7 +612,7 @@ for (const k of DETECTORS) {
   TOWERS[k].branches = { A: { ...TOWERS[k].branches.A, detect: true }, B: { ...TOWERS[k].branches.B, detect: true } };
 }
 
-export const TOWER_ORDER: TowerKind[] = ["balestra", "mortaio", "soffio", "cecchino", "bobina", "officina", "grammofono", "capitano", "medico", "arpione", "mitragliera", "purificatore", "cometa", "custode", "campana"];
+export const TOWER_ORDER: TowerKind[] = ["balestra", "mortaio", "soffio", "cecchino", "bobina", "officina", "grammofono", "capitano", "medico", "kingpin", "arpione", "mitragliera", "purificatore", "cometa", "custode", "campana"];
 export const HARDCORE_TOWERS: TowerKind[] = TOWER_ORDER.filter((k) => TOWERS[k].perle);
 
 // Apex: il livello 6 della torre, uno per tipo e per partita, con il rango permanente almeno 3.
@@ -584,6 +634,10 @@ export function apexStats(s: TowerStats): TowerStats {
     pulse: s.pulse ? Math.max(5, up(s.pulse, 5000)) : 0,
     immune: up(s.immune, 15000),
     markBp: s.markBp > 10000 ? s.markBp + 1000 : s.markBp,
+    spawnEvery: s.spawnEvery ? Math.max(20, up(s.spawnEvery, 8000)) : 0,
+    spawnMax: s.spawnMax ? s.spawnMax + 2 : 0,
+    unitSet: s.unitSet ? s.unitSet | 1 : 0,
+    unitBp: s.unitSet ? up(s.unitBp, 22000) : s.unitBp,
   };
 }
 export const STARTER_TOWERS: TowerKind[] = TOWER_ORDER.filter((k) => TOWERS[k].unlock === 0 && !TOWERS[k].perle && !TOWERS[k].exclusive);

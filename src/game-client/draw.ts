@@ -1,6 +1,6 @@
 // Disegno su canvas. Tutto è in coordinate della mappa: T è il lato di una casella in pixel.
 import { Branch, ENEMIES, MAP_H, MAP_W, MapDef, TILE, TowerKind, Track } from "../sim-core/content";
-import { Enemy } from "../sim-core/sim";
+import { Enemy, isHidden } from "../sim-core/sim";
 
 export const COLORS = {
   brass: "#e0b354",
@@ -389,13 +389,22 @@ export function drawTowerShape(ctx: CanvasRenderingContext2D, kind: TowerKind, x
   ctx.translate(x, y);
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
-  // Basamento comune: pietra scura, per staccare la torre dalla terra.
+  // Basamento comune: ombra, pietra scura con un bordo chiaro e un anello interno, per staccare la torre dalla terra.
+  ctx.fillStyle = "rgba(0,0,0,.35)";
+  ctx.beginPath();
+  ctx.ellipse(T * 0.05, T * 0.08, T * 0.42, T * 0.38, 0, 0, Math.PI * 2);
+  ctx.fill();
   ctx.fillStyle = "#1a2124";
-  ctx.strokeStyle = "rgba(238,228,203,.55)";
-  ctx.lineWidth = Math.max(1, T * 0.03);
+  ctx.strokeStyle = level >= 5 ? COLORS.brass : "rgba(238,228,203,.55)";
+  ctx.lineWidth = Math.max(1, T * (level >= 5 ? 0.05 : 0.03));
   ctx.beginPath();
   ctx.arc(0, 0, T * 0.4, 0, Math.PI * 2);
   ctx.fill();
+  ctx.stroke();
+  ctx.strokeStyle = "rgba(255,255,255,.07)";
+  ctx.lineWidth = Math.max(1, T * 0.04);
+  ctx.beginPath();
+  ctx.arc(0, 0, T * 0.33, Math.PI * 1.05, Math.PI * 1.75);
   ctx.stroke();
 
   if (kind === "balestra") {
@@ -576,6 +585,30 @@ export function drawTowerShape(ctx: CanvasRenderingContext2D, kind: TowerKind, x
     ctx.beginPath();
     ctx.arc(0, 0, T * 0.1, 0, Math.PI * 2);
     ctx.fill();
+  } else if (kind === "kingpin") {
+    // Kingpin: cilindro e fascia d'oro, gessato scuro.
+    ctx.fillStyle = "#14181b";
+    ctx.strokeStyle = branch === "A" ? "#9fd28b" : branch === "B" ? COLORS.coral : COLORS.brass;
+    ctx.lineWidth = T * 0.035;
+    ctx.beginPath();
+    ctx.ellipse(0, T * 0.12, T * 0.3, T * 0.1, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.rect(-T * 0.18, -T * 0.28, T * 0.36, T * 0.4);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = branch === "A" ? "#9fd28b" : branch === "B" ? COLORS.coral : COLORS.brass;
+    ctx.fillRect(-T * 0.18, T * 0.02, T * 0.36, T * 0.07);
+    // Gessato.
+    ctx.strokeStyle = "rgba(238,228,203,.25)";
+    ctx.lineWidth = Math.max(1, T * 0.012);
+    ctx.beginPath();
+    for (const dx of [-0.09, 0, 0.09]) {
+      ctx.moveTo(T * dx, -T * 0.26);
+      ctx.lineTo(T * dx, T * 0.0);
+    }
+    ctx.stroke();
   } else if (kind === "custode") {
     // Lanterna del Custode: un occhio d'oro dentro una lanterna bianca.
     ctx.rotate(angle);
@@ -973,8 +1006,14 @@ export function drawEnemy(ctx: CanvasRenderingContext2D, e: Enemy, x: number, y:
   const phase = e.id * 1.7;
   ctx.save();
   ctx.translate(x, y);
+  // Ombra sul fondale: stacca il nemico dall'acqua nera.
+  const sr = T * enemySize(e);
+  ctx.fillStyle = "rgba(0,0,0,.4)";
+  ctx.beginPath();
+  ctx.ellipse(sr * 0.12, sr * 0.75, sr * 0.95, sr * 0.32, 0, 0, Math.PI * 2);
+  ctx.fill();
   // Gli invisibili si vedono appena: il giocatore sa che ci sono, le torri senza rilevamento no.
-  if (def.hidden) ctx.globalAlpha = 0.5;
+  if (isHidden(e)) ctx.globalAlpha = 0.5;
   if (e.kind === "risacca") {
     const r = T * 0.2;
     ctx.beginPath();
@@ -1149,11 +1188,19 @@ export function drawEnemy(ctx: CanvasRenderingContext2D, e: Enemy, x: number, y:
 
   if (e.hp < e.maxHp) {
     const w = T * (e.boss ? 1.1 : def.hp > 100 ? 0.6 : 0.42);
-    const h = Math.max(3, T * 0.07);
-    const top = y - T * (enemySize(e) + 0.1);
-    ctx.fillStyle = "rgba(0,0,0,.75)";
-    ctx.fillRect(x - w / 2 - 1, top - 1, w + 2, h + 2);
-    ctx.fillStyle = e.hp / e.maxHp > 0.4 ? "#9fd28b" : COLORS.coral;
-    ctx.fillRect(x - w / 2, top, (w * Math.max(0, e.hp)) / e.maxHp, h);
+    const h = Math.max(3, T * (e.boss ? 0.09 : 0.07));
+    const top = y - T * (enemySize(e) + 0.12);
+    const f = Math.max(0, e.hp) / e.maxHp;
+    ctx.fillStyle = "rgba(0,0,0,.8)";
+    ctx.fillRect(x - w / 2 - 1.5, top - 1.5, w + 3, h + 3);
+    ctx.fillStyle = "#3a1d16";
+    ctx.fillRect(x - w / 2, top, w, h);
+    // Dal verde al giallo al rosso man mano che scende.
+    ctx.fillStyle = f > 0.6 ? "#9fd28b" : f > 0.3 ? "#e8c35a" : COLORS.coral;
+    ctx.fillRect(x - w / 2, top, w * f, h);
+    if (e.shield > 0) {
+      ctx.fillStyle = "rgba(201,184,255,.9)";
+      ctx.fillRect(x - w / 2, top, Math.min(w, (w * e.shield) / e.maxHp), Math.max(1.5, h * 0.4));
+    }
   }
 }

@@ -1,6 +1,6 @@
 // Client del prototipo: disegna lo stato, raccoglie i tocchi, non decide mai le regole.
-import { ADMIN_ONLY, EVENT_TOWER, SURVIVAL_MAPS, ABILITIES, APEX_RANK, AbilityId, ENEMIES, GameMode, HARDCORE_TOWERS, LEVELS, MODS, LOADOUT_SIZE, MAP_H, MAP_W, MAX_RANK, RANK_COSTS, RULES, STARTER_TOWERS, TICKS_PER_SECOND, TILE, TOWERS, TOWER_ORDER, TRACKS, TowerKind, Track, Branch, levelById } from "../sim-core/content";
-import { Command, GameEvent, GameOptions, GameState, abilityCdOf, allowedOf, cashOf, apexBlock, apexPrice, applyCommands, modsOf, perleFor, cellEmerged, createGame, effStats, hashState, isBuildable, laneIsOpen, levelOf, rankedStats, restore, rewardFor, sellValue, specPrice, statsIn, snapshot, starsFor, step, upgradePrice, waveCount, wavePreview } from "../sim-core/sim";
+import { ADMIN_ONLY, EVENT_TOWER, SURVIVAL_MAPS, UNITS, UNIT_ORDER, ABILITIES, APEX_RANK, AbilityId, ENEMIES, GameMode, HARDCORE_TOWERS, LEVELS, MODS, LOADOUT_SIZE, MAP_H, MAP_W, MAX_RANK, RANK_COSTS, RULES, STARTER_TOWERS, TICKS_PER_SECOND, TILE, TOWERS, TOWER_ORDER, TRACKS, TowerKind, Track, Branch, levelById } from "../sim-core/content";
+import { Command, GameEvent, GameOptions, GameState, modBit, abilityCdOf, allowedOf, cashOf, apexBlock, apexPrice, applyCommands, modsOf, perleFor, cellEmerged, createGame, effStats, hashState, isBuildable, laneIsOpen, levelOf, rankedStats, restore, rewardFor, sellValue, specPrice, statsIn, snapshot, starsFor, step, upgradePrice, waveCount, wavePreview } from "../sim-core/sim";
 import { playBot } from "../sim-core/bot";
 import { HARDCORE, ModeDef, NIGHTS, SURVIVAL, disgeloFor, modeDef } from "../sim-core/modes";
 import { LocalTransport, Net, RealtimeTransport, Transport, roomCode } from "./net";
@@ -8,7 +8,7 @@ import { NetMatch, Player, Setup } from "./netplay";
 import { renderLobby, renderOnline } from "./online-ui";
 import { AdminApi, Override, levelRef, renderAdminDrawer, renderAdminPanel } from "./admin";
 import { ChangeEntry, MEDALS, MISSIONS, MissionSlot, Totals, VERSION_NOTES, emptyTotals, levelFromXp, levelReward, missionProgress, missionTarget, missionText, newSlot } from "./progress";
-import { COLORS, applyMap, drawEnemy, drawFaro, drawShoal, drawTide, drawTowerShape, mapToScreen, renderBackground, toPx } from "./draw";
+import { COLORS, enemySize, applyMap, drawEnemy, drawFaro, drawShoal, drawTide, drawTowerShape, mapToScreen, renderBackground, toPx } from "./draw";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const fmt = (n: number) => n.toLocaleString("it-IT");
@@ -113,6 +113,10 @@ function towerDps(t: { id: number; damageDone: number }): number {
   return t.damageDone / secs;
 }
 const prevPos = new Map<number, { x: number; y: number }>();
+// Scheda del nemico: si apre toccandolo o passandoci sopra con il mouse.
+let inspectId: number | null = null;
+let hoverId: number | null = null;
+const drawnAt = new Map<number, { x: number; y: number }>();
 const aim = new Map<number, number>();
 
 interface Fx {
@@ -618,6 +622,11 @@ function statsLine(kind: TowerKind, level: number, branch: Branch | null, rank =
   if (kind === "grammofono") return `Il disco scelto dà +${pct(s.auraBp)} alle torri vicine. Raggio ${range}.`;
   if (kind === "capitano") return `+${pct(s.hasteBp)} di cadenza alle torri vicine${s.rangeBuffBp ? `, +${pct(s.rangeBuffBp)} gittata` : ""}. Raggio ${range}.`;
   if (kind === "medico") return `Libera le torri stordite, poi le protegge ${num(s.immune / TICKS_PER_SECOND)} s. Raggio ${range}.`;
+  if (kind === "kingpin") {
+    const who = UNIT_ORDER.filter((_, i) => s.unitSet & (1 << i)).map((u) => UNITS[u].name).join(", ");
+    return `Manda ${who}: uno ogni ${num(s.spawnEvery / TICKS_PER_SECOND)} s, fino a ${s.spawnMax} in campo, forza ${pct(s.unitBp)}. Vedono gli invisibili.${s.income ? ` Rende ${s.income} cash a fine ondata.` : ""}`;
+  }
+  if (kind === "campana") return `+${pct(s.auraBp)} danno, +${pct(s.hasteBp)} cadenza, +${pct(s.rangeBuffBp)} gittata, vista sugli invisibili e niente stordimenti. Raggio ${range}.`;
   if (s.pulseAll) return `Ogni secondo ${s.damage} danni a tutti i nemici nel raggio e toglie i modificatori${s.bossBp > 10000 ? `, x${s.bossBp / 10000} sui boss` : ""}. Raggio ${range}.`;
   if (s.markTicks) return `Danno ${s.damage} ogni ${num(s.cooldown / TICKS_PER_SECOND)} s, ignora l'armatura e marchia: +${pct(s.markBp - 10000)} di danno subito. Gittata ${range}.`;
   if (s.income > 0) {
@@ -905,6 +914,9 @@ function handleEvents(events: GameEvent[]) {
       case "frost":
         fx.push({ kind: "ring", x: ev.x, y: ev.y, r: ev.radius, color: "#e9fbff", born: now, life: 600 });
         sfx.freeze();
+        break;
+      case "unit":
+        fx.push({ kind: "ring", x: ev.x, y: ev.y, r: 600, color: COLORS.brass, born: now, life: 350 });
         break;
       case "split":
         fx.push({ kind: "blast", x: ev.x, y: ev.y, r: 900, born: now, life: 300 });
@@ -2042,6 +2054,27 @@ function pointerUnits(ev: PointerEvent): { x: number; y: number } {
   return { x: Math.round((mx / T) * TILE), y: Math.round((my / T) * TILE) };
 }
 
+/** Il nemico sotto il puntatore, con un margine comodo per le dita. */
+function enemyAtClient(ev: PointerEvent): number | null {
+  const r = canvas.getBoundingClientRect();
+  const px = (ev.clientX - r.left) * dpr;
+  const py = (ev.clientY - r.top) * dpr;
+  const touch = ev.pointerType !== "mouse";
+  let best: number | null = null;
+  let bd = Infinity;
+  for (const e of state.enemies) {
+    const p = drawnAt.get(e.id);
+    if (!p) continue;
+    const rad = (enemySize(e) + (touch ? 0.35 : 0.15)) * T * dpr;
+    const d = (p.x - px) ** 2 + (p.y - py) ** 2;
+    if (d <= rad * rad && d < bd) {
+      bd = d;
+      best = e.id;
+    }
+  }
+  return best;
+}
+
 function insideMap(ev: PointerEvent): boolean {
   const r = canvas.getBoundingClientRect();
   return ev.clientX >= r.left && ev.clientX < r.right && ev.clientY >= r.top && ev.clientY < r.bottom;
@@ -2074,12 +2107,24 @@ function bindPointer() {
       ghost = pointerCell(ev, false);
       return;
     }
+    const eid = enemyAtClient(ev);
+    if (eid !== null) {
+      inspectId = eid;
+      selectTower(null);
+      return;
+    }
+    inspectId = null;
     const c = pointerCell(ev, false);
     const hit = state.towers.find((t) => t.cx === c.cx && t.cy === c.cy);
     selectTower(hit ? hit.id : null);
   });
   window.addEventListener("pointermove", (ev) => {
     if (aiming) aimPoint = insideMap(ev) ? pointerUnits(ev) : null;
+    if (!placing && !aiming) {
+      if (ev.pointerType === "mouse" && !ev.buttons) hoverId = insideMap(ev) ? enemyAtClient(ev) : null;
+      // Con il dito premuto la scheda segue il nemico sotto il dito.
+      else if (ev.buttons && inspectId !== null && insideMap(ev)) inspectId = enemyAtClient(ev) ?? inspectId;
+    }
     if (!placing) return;
     if (dragFromCard) {
       if (insideMap(ev)) {
@@ -2311,7 +2356,9 @@ function render(now: number) {
     const p = S(ux + lane * 0.5, uy + lane);
     drawEnemy(ctx, e, p.x, p.y, pxT, now, reducedMotion);
     if (e.mods || e.shield || e.mark) enemyMarks(e, p.x, p.y, pxT, now);
+    drawnAt.set(e.id, p);
   }
+  for (const u of state.units) drawUnit(u, pxT, now);
 
   const faro = S(level.map.faro[0] * TILE + TILE / 2, level.map.faro[1] * TILE + TILE / 2);
   drawFaro(ctx, pxT, now, state.lives, reducedMotion, faro.x, faro.y);
@@ -2450,6 +2497,7 @@ function render(now: number) {
     }
   }
 
+  drawInspect();
   if (state.mode === "natale" && !reducedMotion && !light()) {
     // Neve che cade sulle Notti di Natale.
     ctx.fillStyle = "rgba(245,250,255,.7)";
@@ -2491,6 +2539,16 @@ function render(now: number) {
 // Stato della torre: stordita, protetta, potenziata dal supporto.
 function towerStatus(t: GameState["towers"][number], x: number, y: number, T: number, now: number) {
   ctx.save();
+  // In multigiocatore un anello del colore del proprietario: le tue torri si riconoscono subito.
+  if (state.others.length) {
+    ctx.strokeStyle = OWNER_COLORS[(t.owner ?? 0) % 4];
+    ctx.globalAlpha = t.owner === myP ? 0.95 : 0.55;
+    ctx.lineWidth = Math.max(1.5, T * 0.045);
+    ctx.beginPath();
+    ctx.arc(x, y, T * 0.46, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
   if (t.stun > 0) {
     ctx.fillStyle = "rgba(20,14,40,.55)";
     ctx.beginPath();
@@ -2555,32 +2613,243 @@ function towerStatus(t: GameState["towers"][number], x: number, y: number, T: nu
   ctx.restore();
 }
 
+const UNIT_COLORS: Record<string, string> = { scagnozzo: "#e0b354", portavalori: "#9fd28b", buttafuori: "#e2714f", sicario: "#c9b8ff" };
+const OWNER_COLORS = ["#e0b354", "#a5e4ec", "#9fd28b", "#c9b8ff"];
+
+/** Scagnozzi del Kingpin: un omino col cappello, colore per ruolo, anello del proprietario. */
+function drawUnit(u: GameState["units"][number], T: number, now: number) {
+  const p = S(u.x, u.y);
+  const r = T * (u.kind === "buttafuori" ? 0.2 : 0.16);
+  const bob = reducedMotion ? 0 : Math.sin(now * 0.02 + u.id) * T * 0.015;
+  ctx.save();
+  ctx.translate(p.x, p.y + bob);
+  ctx.fillStyle = "rgba(0,0,0,.35)";
+  ctx.beginPath();
+  ctx.ellipse(0, r * 0.9, r * 0.9, r * 0.35, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#1b1f22";
+  ctx.strokeStyle = OWNER_COLORS[u.owner % 4];
+  ctx.lineWidth = Math.max(1, T * 0.025);
+  ctx.beginPath();
+  ctx.arc(0, 0, r, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  // Cappello a falda.
+  ctx.fillStyle = UNIT_COLORS[u.kind];
+  ctx.fillRect(-r * 0.95, -r * 0.55, r * 1.9, r * 0.22);
+  ctx.fillRect(-r * 0.55, -r * 1.05, r * 1.1, r * 0.55);
+  if (u.kind === "portavalori") {
+    ctx.fillStyle = "#e0b354";
+    ctx.fillRect(r * 0.4, r * 0.1, r * 0.6, r * 0.45);
+  }
+  ctx.restore();
+  if (u.hp < u.maxHp) {
+    const w = T * 0.36;
+    ctx.fillStyle = "rgba(0,0,0,.75)";
+    ctx.fillRect(p.x - w / 2 - 1, p.y - r - T * 0.16 - 1, w + 2, Math.max(3, T * 0.05) + 2);
+    ctx.fillStyle = "#a5e4ec";
+    ctx.fillRect(p.x - w / 2, p.y - r - T * 0.16, (w * Math.max(0, u.hp)) / u.maxHp, Math.max(3, T * 0.05));
+  }
+}
+
+function enemyTraits(e: GameState["enemies"][number]): string[] {
+  const d = ENEMIES[e.kind];
+  const out: string[] = [];
+  if (d.hidden) out.push("Invisibile");
+  if (d.slowImmune) out.push("Non si rallenta");
+  if (d.regenBp) out.push("Si rigenera");
+  if (d.summon) out.push(`Evoca ${ENEMIES[d.summon.kind].plural}`);
+  if (d.song) out.push("Canto che stordisce");
+  if (d.sabotage) out.push("Sabota le torri");
+  if (d.split) out.push(`Si spezza in ${d.split.count}`);
+  if (d.deathFreeze) out.push("Morendo congela le torri");
+  if (d.steal) out.push("Ruba cash");
+  if (d.charge) out.push("Scatta");
+  if (d.phaseShieldBp) out.push(`${(d.phases ?? [5000]).length} scudi a fasi`);
+  return out;
+}
+
+/** Scheda del nemico toccato o sotto il mouse: vita, scudo, armatura, modificatori e tratti. */
+function drawInspect() {
+  if (inspectId !== null && !state.enemies.some((e) => e.id === inspectId)) inspectId = null;
+  if (hoverId !== null && !state.enemies.some((e) => e.id === hoverId)) hoverId = null;
+  const id = hoverId ?? inspectId;
+  const e = id === null ? null : state.enemies.find((x) => x.id === id);
+  const p = e ? drawnAt.get(e.id) : null;
+  if (!e || !p) return;
+  const d = ENEMIES[e.kind];
+  const k = dpr;
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  // Anello sul nemico scelto.
+  ctx.strokeStyle = COLORS.cream;
+  ctx.lineWidth = 2 * k;
+  ctx.setLineDash([5 * k, 4 * k]);
+  ctx.beginPath();
+  ctx.arc(p.x, p.y, (enemySize(e) + 0.12) * T * k, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  const mods = modsOf(e.mods);
+  const traits = enemyTraits(e);
+  const armor = d.armor + (e.mods & modBit("corazzato") ? 40 : 0);
+  const status: string[] = [];
+  if (armor) status.push(`Armatura ${armor}`);
+  if (e.stun > 0) status.push("Stordito");
+  else if (e.speedBp < 10000) status.push(`Rallentato al ${Math.round(e.speedBp / 100)}%`);
+  if (e.mark > 0) status.push("Marchiato");
+  const name = (e.kind === "bruto" && e.boss ? "Grande Bruto" : d.name) + (e.boss ? " · Boss" : "");
+  const lines = 3 + (mods.length ? 1 : 0) + (traits.length ? Math.ceil(traits.length / 2) : 0);
+  const W = 210 * k;
+  const H = (30 + lines * 17) * k;
+  let x = p.x + (enemySize(e) + 0.3) * T * k;
+  let y = p.y - H / 2;
+  if (x + W > canvas.width - 4 * k) x = p.x - (enemySize(e) + 0.3) * T * k - W;
+  x = Math.max(4 * k, Math.min(canvas.width - W - 4 * k, x));
+  y = Math.max(4 * k, Math.min(canvas.height - H - 4 * k, y));
+  ctx.fillStyle = "rgba(11,23,29,.94)";
+  ctx.strokeStyle = e.boss ? COLORS.coral : "rgba(238,228,203,.35)";
+  ctx.lineWidth = 1 * k;
+  ctx.fillRect(x, y, W, H);
+  ctx.strokeRect(x + 0.5 * k, y + 0.5 * k, W - k, H - k);
+  ctx.textBaseline = "top";
+  ctx.textAlign = "left";
+  let ty = y + 8 * k;
+  const pad = x + 10 * k;
+  ctx.font = `600 ${14 * k}px "Barlow Semi Condensed", "Arial Narrow", sans-serif`;
+  ctx.fillStyle = e.boss ? "#ffb59c" : COLORS.cream;
+  ctx.fillText(name, pad, ty);
+  ty += 19 * k;
+  // Vita e scudo.
+  const bw = W - 20 * k;
+  ctx.fillStyle = "#2a1712";
+  ctx.fillRect(pad, ty, bw, 8 * k);
+  ctx.fillStyle = e.hp / e.maxHp > 0.4 ? "#9fd28b" : COLORS.coral;
+  ctx.fillRect(pad, ty, (bw * Math.max(0, e.hp)) / e.maxHp, 8 * k);
+  if (e.shield > 0) {
+    ctx.fillStyle = "rgba(201,184,255,.85)";
+    ctx.fillRect(pad, ty + 5 * k, Math.min(bw, (bw * e.shield) / e.maxHp), 3 * k);
+  }
+  ty += 12 * k;
+  ctx.font = `500 ${12.5 * k}px "Barlow Semi Condensed", "Arial Narrow", sans-serif`;
+  ctx.fillStyle = COLORS.cream;
+  ctx.fillText(`Vita ${fmt(Math.max(0, e.hp))} / ${fmt(e.maxHp)}${e.shield > 0 ? ` · scudo ${fmt(e.shield)}` : ""}`, pad, ty);
+  ty += 17 * k;
+  ctx.fillStyle = "rgba(238,228,203,.7)";
+  ctx.fillText(status.join(" · ") || `Toglie ${e.lifeDamage} ${e.lifeDamage === 1 ? "vita" : "vite"} se arriva al Faro`, pad, ty);
+  ty += 17 * k;
+  if (mods.length) {
+    let mx = pad;
+    for (const m of mods) {
+      const label = MODS[m].name;
+      const w = ctx.measureText(label).width + 10 * k;
+      ctx.fillStyle = MODS[m].color;
+      ctx.globalAlpha = 0.2;
+      ctx.fillRect(mx, ty - 1 * k, w, 15 * k);
+      ctx.globalAlpha = 1;
+      ctx.fillText(label, mx + 5 * k, ty);
+      mx += w + 4 * k;
+    }
+    ty += 17 * k;
+  }
+  ctx.fillStyle = "rgba(238,228,203,.6)";
+  for (let i = 0; i < traits.length; i += 2) {
+    ctx.fillText(traits.slice(i, i + 2).join(" · "), pad, ty);
+    ty += 17 * k;
+  }
+  ctx.restore();
+}
+
 function enemyMarks(e: GameState["enemies"][number], x: number, y: number, T: number, now: number) {
   ctx.save();
-  const r = T * (e.boss ? 0.62 : e.kind === "bruto" ? 0.42 : 0.3);
+  const r = T * (enemySize(e) + 0.04);
+  const pulse = reducedMotion ? 0.5 : 0.5 + 0.5 * Math.sin(now * 0.008 + e.id);
+  const has = (m: Parameters<typeof modBit>[0]) => (e.mods & modBit(m)) !== 0;
+  // Scudo: anello viola, spesso quanto lo scudo che resta.
   if (e.shield > 0) {
     ctx.strokeStyle = "rgba(201,184,255,.9)";
-    ctx.lineWidth = Math.max(1.5, T * 0.05);
+    ctx.lineWidth = Math.max(1.5, T * (0.03 + Math.min(0.06, (0.08 * e.shield) / e.maxHp)));
     ctx.beginPath();
     ctx.arc(x, y, r, 0, Math.PI * 2);
     ctx.stroke();
   }
-  // Un puntino colorato per modificatore, sotto il nemico.
-  const list = modsOf(e.mods);
-  list.forEach((m, i) => {
-    ctx.fillStyle = MODS[m].color;
+  // Benedetto: aureola dorata sopra la testa.
+  if (has("benedetto")) {
+    ctx.strokeStyle = `rgba(255,241,176,${0.6 + 0.4 * pulse})`;
+    ctx.lineWidth = Math.max(1.5, T * 0.04);
     ctx.beginPath();
-    ctx.arc(x + (i - (list.length - 1) / 2) * T * 0.14, y + r + T * 0.08, T * 0.055, 0, Math.PI * 2);
-    ctx.fill();
-  });
-  if (e.mods & 1) {
-    // Benedetto: alone dorato che pulsa.
-    ctx.strokeStyle = `rgba(255,241,176,${0.4 + 0.3 * Math.sin(now * 0.008)})`;
-    ctx.lineWidth = Math.max(1, T * 0.03);
-    ctx.beginPath();
-    ctx.arc(x, y, r + T * 0.08, 0, Math.PI * 2);
+    ctx.ellipse(x, y - r - T * 0.06, r * 0.55, r * 0.18, 0, 0, Math.PI * 2);
     ctx.stroke();
   }
+  // Gonfio: contorno verde tratteggiato, più largo.
+  if (has("gonfio")) {
+    ctx.strokeStyle = "rgba(159,210,139,.85)";
+    ctx.lineWidth = Math.max(1, T * 0.03);
+    ctx.setLineDash([T * 0.08, T * 0.06]);
+    ctx.beginPath();
+    ctx.arc(x, y, r + T * 0.07, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+  // Agile: scie di velocità.
+  if (has("agile")) {
+    ctx.strokeStyle = "rgba(165,228,236,.8)";
+    ctx.lineWidth = Math.max(1, T * 0.03);
+    for (let i = -1; i <= 1; i++) {
+      ctx.beginPath();
+      ctx.moveTo(x - r - T * 0.05, y + i * r * 0.45);
+      ctx.lineTo(x - r - T * (0.22 + 0.06 * pulse), y + i * r * 0.45);
+      ctx.stroke();
+    }
+  }
+  // Provocatore: mirino rosso che pulsa.
+  if (has("provocatore")) {
+    ctx.strokeStyle = `rgba(226,113,79,${0.5 + 0.5 * pulse})`;
+    ctx.lineWidth = Math.max(1.5, T * 0.035);
+    ctx.beginPath();
+    ctx.arc(x, y, r + T * 0.12, 0, Math.PI * 2);
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      ctx.moveTo(x + dx * (r + T * 0.06), y + dy * (r + T * 0.06));
+      ctx.lineTo(x + dx * (r + T * 0.2), y + dy * (r + T * 0.2));
+    }
+    ctx.stroke();
+  }
+  // Corazzato: piastre d'acciaio ai quattro lati.
+  if (has("corazzato")) {
+    ctx.fillStyle = "#b9a88a";
+    ctx.strokeStyle = "#1a2124";
+    ctx.lineWidth = Math.max(1, T * 0.02);
+    for (let i = 0; i < 4; i++) {
+      const a = Math.PI / 4 + (i * Math.PI) / 2;
+      const px = x + Math.cos(a) * r * 0.95;
+      const py = y + Math.sin(a) * r * 0.95;
+      ctx.beginPath();
+      ctx.rect(px - T * 0.05, py - T * 0.05, T * 0.1, T * 0.1);
+      ctx.fill();
+      ctx.stroke();
+    }
+  }
+  // Scisso: una crepa rosa che lo attraversa.
+  if (has("scisso")) {
+    ctx.strokeStyle = "rgba(255,154,154,.9)";
+    ctx.lineWidth = Math.max(1, T * 0.03);
+    ctx.beginPath();
+    ctx.moveTo(x, y - r);
+    ctx.lineTo(x - r * 0.2, y - r * 0.3);
+    ctx.lineTo(x + r * 0.15, y + r * 0.1);
+    ctx.lineTo(x, y + r);
+    ctx.stroke();
+  }
+  // Spettrale: alone lilla che va e viene.
+  if (has("spettrale")) {
+    ctx.strokeStyle = `rgba(217,210,255,${0.25 + 0.45 * pulse})`;
+    ctx.lineWidth = Math.max(1, T * 0.025);
+    ctx.setLineDash([T * 0.03, T * 0.05]);
+    ctx.beginPath();
+    ctx.arc(x, y, r + T * 0.1, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+  // Marchio dell'Arpione.
   if (e.mark > 0) {
     ctx.strokeStyle = COLORS.coral;
     ctx.lineWidth = Math.max(1, T * 0.03);

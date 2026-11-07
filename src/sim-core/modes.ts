@@ -39,6 +39,7 @@ export interface ModeDef {
   perle: { perWave: number; win: number; boss: number };
   unlock: GameMode | null; // modalità da vincere prima
   maps: string[];
+  mapHpBp?: Record<string, number>; // correzione in più per mappa, solo in questa modalità
 }
 
 export interface NightDef extends ModeDef {
@@ -51,6 +52,8 @@ const ALL_MAPS = SURVIVAL_MAPS;
 const NO_PERLE = { perWave: 0, win: 0, boss: 0 };
 
 const MODS_MILD: Mod[][] = [["agile"], ["corazzato"], ["gonfio"], ["schermato"]];
+// Solo in Hardcore: in più Spettrale e Scisso.
+const MODS_HC: Mod[][] = [["agile"], ["gonfio"], ["spettrale"], ["corazzato"], ["benedetto"], ["scisso"], ["provocatore"], ["schermato"], ["agile", "gonfio"], ["benedetto", "corazzato"], ["spettrale", "agile"], ["provocatore", "schermato"], ["scisso", "gonfio"]];
 const MODS_HARD: Mod[][] = [["agile"], ["gonfio"], ["corazzato"], ["benedetto"], ["provocatore"], ["schermato"], ["agile", "gonfio"], ["benedetto", "corazzato"], ["provocatore", "schermato"]];
 
 export const SURVIVAL: ModeDef[] = [
@@ -192,8 +195,8 @@ export const HARDCORE: ModeDef = {
   lives: RULES.hardcoreLives,
   bonusCash: RULES.hardcoreCash,
   curveA: 1300,
-  curveB: 55,
-  hpBp: 11500,
+  curveB: 70,
+  hpBp: 13500,
   pool: [
     e("risacca", 1, 9, 80, 9), e("corridore", 2, 6, 60, 8), e("bruto", 4, 2, 35, 20), e("sabotatore", 6, 2, 20, 26),
     e("tizzone", 8, 5, 60, 8), e("magmatico", 12, 2, 25, 24), e("spettro", 16, 3, 45, 12), e("cavaliere", 20, 2, 25, 24),
@@ -201,7 +204,7 @@ export const HARDCORE: ModeDef = {
   ],
   maxGroups: 3,
   modsFrom: 2,
-  modList: MODS_HARD,
+  modList: MODS_HC,
   doubleModsFrom: 15,
   minis: [
     { wave: 10, kind: "bruto", hpBp: 80000, mods: ["benedetto"] },
@@ -214,6 +217,7 @@ export const HARDCORE: ModeDef = {
   perle: { perWave: 1, win: 50, boss: 5 },
   unlock: "molten",
   maps: ALL_MAPS,
+  mapHpBp: { lungomare: 13500, foce: 11500 },
 };
 
 // Notti di Natale. Volutamente quasi impossibili: il Disgelo le ammorbidisce durante dicembre.
@@ -308,6 +312,7 @@ export function modeWaves(m: ModeDef, level: LevelDef): WaveGroup[][] {
   if (hit) return hit;
   const lanes = level.map.lanes.length;
   const out: WaveGroup[][] = [];
+  const mapBp = Math.floor(((level.survivalHpBp ?? 10000) * (m.mapHpBp?.[level.id] ?? 10000)) / 10000);
   for (let w = 1; w <= m.waves; w++) {
     const avail = m.pool.filter((p) => p.from <= w);
     // Il nemico appena arrivato compare per tre ondate di fila, gli altri a rotazione.
@@ -324,7 +329,7 @@ export function modeWaves(m: ModeDef, level: LevelDef): WaveGroup[][] {
       interval: p.interval,
       delay: j * 40,
       lane: (w + j) % lanes,
-      hpMulBp: hpMulFor(m, w, level.survivalHpBp ?? 10000),
+      hpMulBp: hpMulFor(m, w, mapBp),
     }));
     if (m.modsFrom && w >= m.modsFrom) {
       const i = (w - m.modsFrom) % m.modList.length;
@@ -342,7 +347,7 @@ export function modeWaves(m: ModeDef, level: LevelDef): WaveGroup[][] {
         interval: 1,
         delay: 160 + 60 * groups.filter((x) => x.boss).length,
         lane: w % lanes,
-        hpMulBp: hpMulFor(m, w, Math.floor((b.hpBp * (level.survivalHpBp ?? 10000)) / 10000)),
+        hpMulBp: hpMulFor(m, w, Math.floor((b.hpBp * mapBp) / 10000)),
         lifeDamage: b === m.boss ? Math.max(ENEMIES[b.kind].lifeDamage, 20) : Math.min(ENEMIES[b.kind].lifeDamage, 6),
         boss: true,
         mods: b.mods,

@@ -275,6 +275,31 @@ button.danger { border-color: var(--coral); color: var(--coral); justify-self: s
 @media (max-width: 420px) { .modes { grid-template-columns: 1fr; } #arsenal button { min-width: 96px; padding-inline: 6px; } }
 @media (max-height: 400px) { #next { min-height: 0; font-size: 13px; } .stat b { font-size: 16px; } #app { padding-block: 4px; } }
 @media (prefers-reduced-motion: reduce) { .card.hint { animation: none; border-color: var(--brass); } }
+
+/* ---------- rifinitura 0.8: piastre in rilievo, colori dei valori, schermate finali in un riquadro ---------- */
+button { border-radius: 4px; background: linear-gradient(180deg, #21404c, var(--plate-up)); box-shadow: inset 0 1px 0 rgba(255,255,255,.06), 0 1px 0 rgba(0,0,0,.35); transition: transform .08s ease, border-color .15s ease; }
+button:not(:disabled):active { transform: translateY(1px); }
+@media (hover: hover) { button:not(:disabled):hover { border-color: #5b7d86; } }
+#again, #resume, .mode, #go { background: linear-gradient(180deg, #f0c76a, var(--brass)); box-shadow: inset 0 1px 0 rgba(255,255,255,.35), 0 2px 0 rgba(0,0,0,.35); }
+#hud { border-radius: 4px; background: linear-gradient(180deg, #17303a, var(--plate)); box-shadow: inset 0 1px 0 rgba(255,255,255,.05); }
+#lives { color: #ffb2a0; }
+#cash { color: #f0c76a; }
+#wave { color: var(--ice); }
+.card { border-radius: 4px; background: linear-gradient(180deg, #17303a, var(--plate)); }
+.card .cost { color: #f0c76a; font-weight: 700; }
+.card.on { background: linear-gradient(180deg, #284652, var(--plate-up)); }
+.level, .mission, .row, .medal { border-radius: 6px; }
+.card-panel { display: flex; flex-direction: column; align-items: center; gap: 6px; max-width: min(92%, 480px); max-height: 100%; overflow-y: auto; box-sizing: border-box; padding: 14px 18px; background: radial-gradient(ellipse at 50% 0%, rgba(224,179,84,.12), transparent 60%), rgba(11,23,29,.94); border: 1px solid rgba(224,179,84,.35); border-radius: 10px; box-shadow: 0 20px 50px rgba(0,0,0,.6); }
+#pauseLayer .card-panel { gap: 8px; min-width: 220px; }
+#endTitle { text-shadow: 0 2px 12px rgba(0,0,0,.6); }
+#toast { border-radius: 6px; box-shadow: 0 6px 16px rgba(0,0,0,.45); }
+#menu h2 { display: flex; align-items: baseline; gap: 10px; }
+#menu h2::after { content: ""; flex: 1; height: 1px; background: linear-gradient(90deg, rgba(224,179,84,.45), transparent); }
+#menu h2.xmasHead { flex-wrap: wrap; }
+#menu h2.xmasHead::after { order: 1; flex-basis: 100%; }
+#menu h2.xmasHead small { order: 2; }
+#bossBar { border-radius: 6px; }
+.portrait #detail { border-radius: 8px; }
 </style>
 <div id="app" class="landscape">
   <div id="stage">
@@ -289,17 +314,21 @@ button.danger { border-color: var(--coral); color: var(--coral); justify-self: s
     <div id="adminDrawer" hidden></div>
     <button id="dialog" hidden><span id="dSpeaker"></span><span id="dText"></span><span id="dMore">Tocca per continuare</span></button>
     <div id="pauseLayer" class="layer" hidden>
-      <h2>In pausa</h2>
-      <button id="resume">Riprendi</button>
-      <button id="quit">Esci</button>
+      <div class="card-panel">
+        <h2>In pausa</h2>
+        <button id="resume">Riprendi</button>
+        <button id="quit">Esci</button>
+      </div>
     </div>
     <div id="end" class="layer" hidden>
-      <h1 id="endTitle"></h1>
-      <div id="endStars" aria-hidden="true"></div>
-      <p id="endText"></p>
-      <div id="endReward"></div>
-      <div id="endExtra"></div>
-      <div class="endBtns"><button id="again">Rigioca</button><button id="toMenu">Menu e Arsenale</button></div>
+      <div class="card-panel">
+        <h1 id="endTitle"></h1>
+        <div id="endStars" aria-hidden="true"></div>
+        <p id="endText"></p>
+        <div id="endReward"></div>
+        <div id="endExtra"></div>
+        <div class="endBtns"><button id="again">Rigioca</button><button id="toMenu">Menu e Arsenale</button></div>
+      </div>
     </div>
   </div>
   <aside id="panel" aria-label="Plancia di comando">

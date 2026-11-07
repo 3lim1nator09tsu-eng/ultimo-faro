@@ -1,17 +1,13 @@
-// Pannello admin locale: prova delle torri, comandi in partita, progressi e bilanciamento.
-// Vive solo su questo dispositivo; la versione online passerà dal server con ruoli e registro.
+// Pannello admin: prova delle torri, comandi in partita, progressi, bilanciamento e premi ai giocatori.
+// Le prove di bilanciamento valgono su questo dispositivo; pubblicate, valgono per tutti dal server.
 import { NIGHTS, SURVIVAL } from "../sim-core/modes";
-import { EVENT_LEVELS, levelById, Branch, ENEMIES, EnemyKind, GameMode, LEVELS, MOD_ORDER, MODS, Mod, TOWERS, TOWER_ORDER, TowerKind, TowerStats } from "../sim-core/content";
+import { ADMIN_ONLY, EVENT_LEVELS, levelById, ENEMIES, EnemyKind, GameMode, LEVELS, MAX_RANK, MOD_ORDER, MODS, Mod, SURVIVAL_MAPS, TOWERS, TOWER_ORDER, TowerKind } from "../sim-core/content";
+import { ALL_MODES, Balance, LevelKey, MAP_FIELDS, MODE_FIELDS, MapOv, ModeOv, TOWER_FIELDS, TowerOv, Unit, balanceSize, fromShown, levelRef, mapBaseValue, mapValue, modeBaseValue, modeByKey, modeKey, modeValue, toShown, towerBaseValue } from "../sim-core/balance";
 import { Command, GameState } from "../sim-core/sim";
+import type { GrantPayload, PeekRow } from "./net";
 
-export type LevelKey = "1" | "2" | "3" | Branch;
-
-export interface Override {
-  kind: TowerKind;
-  lvl: LevelKey;
-  field: keyof TowerStats | "cost";
-  value: number;
-}
+export type BalanceKind = "towers" | "modes" | "maps";
+export type BalanceEntry = TowerOv | ModeOv | MapOv;
 
 export interface AdminApi {
   state(): GameState;
@@ -21,11 +17,28 @@ export interface AdminApi {
   setSpeed(n: number): void;
   dps(on?: boolean): boolean;
   progress: Record<string, () => void>;
-  overrides(): Override[];
-  applyOverride(o: Override): void;
-  resetOverrides(): void;
+  balance: {
+    /** Prove su questo dispositivo, non ancora pubblicate. */
+    draft(): Balance;
+    /** Valori pubblicati sul server, validi per tutti. */
+    published(): Balance;
+    publishedNote(): string;
+    /** Serve l'account admin collegato. */
+    canPublish(): boolean;
+    setDraft(kind: BalanceKind, entry: BalanceEntry): void;
+    clearDraft(): void;
+    publish(title: string): Promise<void>;
+    unpublish(kind: BalanceKind, entry: BalanceEntry): Promise<void>;
+    resetPublished(): Promise<void>;
+    reload(): Promise<void>;
+  };
   /** Nomi dei giocatori della partita, nell'ordine della simulazione: il cash admin va a uno solo. */
   players?(): string[];
+  /** Premi ai giocatori: presente solo con l'account admin collegato. */
+  grants?: {
+    peek(username: string): Promise<PeekRow | null>;
+    grant(userId: string, payload: GrantPayload, note: string): Promise<void>;
+  };
   /** Stanze online: presenti solo con l'account admin collegato. */
   online?: {
     rooms(): Promise<Array<{ code: string; status: string; mode: string; level: string; night: number; info: Record<string, unknown>; updated_at: string }>>;
@@ -33,41 +46,43 @@ export interface AdminApi {
   };
 }
 
-// Campi modificabili, con unità leggibili.
-export const FIELDS: Array<{ field: Override["field"]; label: string; unit: "n" | "tile" | "tick" | "pct" | "slow" }> = [
-  { field: "cost", label: "Costo", unit: "n" },
-  { field: "damage", label: "Danno", unit: "n" },
-  { field: "cooldown", label: "Ricarica (tick, 10 = 1 s)", unit: "tick" },
-  { field: "range", label: "Gittata (caselle)", unit: "tile" },
-  { field: "radius", label: "Area (caselle)", unit: "tile" },
-  { field: "chains", label: "Salti del fulmine", unit: "n" },
-  { field: "slowBp", label: "Rallentamento (%)", unit: "slow" },
-  { field: "income", label: "Rendita", unit: "n" },
-  { field: "auraBp", label: "Bonus disco (%)", unit: "pct" },
-  { field: "hasteBp", label: "Cadenza in più (%)", unit: "pct" },
-  { field: "pulse", label: "Cura ogni (tick)", unit: "tick" },
-  { field: "immune", label: "Protezione (tick)", unit: "tick" },
-  { field: "markBp", label: "Marchio (% danno subito)", unit: "pct" },
-  { field: "stunChanceBp", label: "Probabilità stordimento (%)", unit: "pct" },
-];
-
-export function levelRef(kind: TowerKind, lvl: LevelKey): Record<string, number> {
+const LEVEL_KEYS: LevelKey[] = ["1", "2", "3", "A", "B", "A2", "B2"];
+export function levelName(kind: TowerKind, lvl: LevelKey): string {
   const def = TOWERS[kind];
-  return (lvl === "A" || lvl === "B" ? def.branches[lvl] : def.levels[Number(lvl) - 1]) as unknown as Record<string, number>;
+  if (lvl === "A" || lvl === "B") return `4${lvl} ${def.branches[lvl].name}`;
+  if (lvl === "A2" || lvl === "B2") return `5${lvl[0]} ${def.branches2?.[lvl[0] as "A" | "B"]?.name ?? ""}`;
+  return `livello ${lvl}`;
 }
+export const modeLabel = (k: string) => {
+  const m = modeByKey(k);
+  if (!m) return k;
+  return m.id === "natale" ? m.name.split(" · ")[0] : m.id === "hardcore" ? "Hardcore" : m.name;
+};
+const mapName = (id: string) => {
+  try {
+    return levelById(id).name;
+  } catch {
+    return id;
+  }
+};
+const shown = (unit: Unit, v: number) => `${toShown(unit, v).toLocaleString("it-IT")}${unit === "bp" || unit === "pct" || unit === "slow" ? "%" : ""}`;
 
-export function toShown(unit: string, v: number): number {
-  if (unit === "tile") return v / 1000;
-  if (unit === "pct") return Math.round(v / 100);
-  if (unit === "slow") return Math.round((10000 - v) / 100);
-  return v;
-}
-
-export function fromShown(unit: string, v: number): number {
-  if (unit === "tile") return Math.round(v * 1000);
-  if (unit === "pct") return Math.round(v * 100);
-  if (unit === "slow") return 10000 - Math.round(v * 100);
-  return Math.round(v);
+/** Una riga leggibile per la bacheca: "Kingpin, livello 2 · Danno 30 → 40". */
+export function describeEntry(kind: BalanceKind, o: BalanceEntry): string {
+  if (kind === "towers") {
+    const t = o as TowerOv;
+    const f = TOWER_FIELDS.find((x) => x.field === t.field)!;
+    return `${TOWERS[t.kind].name}, ${levelName(t.kind, t.lvl)} · ${f.label.replace(/ \(.*\)$/, "")}: ${shown(f.unit, towerBaseValue(t))} → ${shown(f.unit, t.value)}`;
+  }
+  if (kind === "modes") {
+    const m = o as ModeOv;
+    const def = modeByKey(m.mode)!;
+    const f = m.field.startsWith("mapHp:") ? { label: `Vita su ${mapName(m.field.slice(6))}`, unit: "bp" as Unit } : MODE_FIELDS.find((x) => x.field === m.field)!;
+    return `${modeLabel(m.mode)} · ${f.label.replace(/ \(.*\)$/, "")}: ${shown(f.unit, modeBaseValue(def, m.field))} → ${shown(f.unit, m.value)}`;
+  }
+  const p = o as MapOv;
+  const f = MAP_FIELDS.find((x) => x.field === p.field)!;
+  return `${mapName(p.map)} · ${f.label.replace(/ \(.*\)$/, "")}: ${shown(f.unit, mapBaseValue(p.map, p.field))} → ${shown(f.unit, p.value)}`;
 }
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, props: Record<string, unknown> = {}, ...kids: Array<Node | string>) => {
@@ -86,7 +101,14 @@ const el = <K extends keyof HTMLElementTagNameMap>(tag: K, props: Record<string,
 
 export function renderAdminPanel(host: HTMLElement, api: AdminApi, close: () => void) {
   host.innerHTML = "";
-  const tabs = ["Prova torri", "Progressi", "Bilanciamento", ...(api.online ? ["Stanze online"] : [])];
+  const tabs: Array<[string, (body: HTMLElement) => void]> = [
+    ["Prova torri", (b) => sandboxTab(b, api)],
+    ["Progressi", (b) => progressTab(b, api)],
+    ["Bilancia torri", (b) => towerBalanceTab(b, api, () => show(current))],
+    ["Bilancia modalità", (b) => modeBalanceTab(b, api, () => show(current))],
+    ["Giocatori", (b) => playersTab(b, api)],
+    ...(api.online ? [["Stanze online", (b: HTMLElement) => onlineTab(b, api)] as [string, (body: HTMLElement) => void]] : []),
+  ];
   let current = 0;
   try {
     current = Math.min(tabs.length - 1, Number(sessionStorage.getItem("faro.adminTab")) || 0);
@@ -104,14 +126,13 @@ export function renderAdminPanel(host: HTMLElement, api: AdminApi, close: () => 
       /* facoltativo */
     }
     for (const [j, b] of [...bar.children].entries()) b.setAttribute("aria-selected", String(j === i));
+    const y = body.scrollTop;
     body.innerHTML = "";
-    if (i === 0) sandboxTab(body, api);
-    else if (i === 1) progressTab(body, api);
-    else if (i === 2) balanceTab(body, api);
-    else onlineTab(body, api);
+    tabs[i][1](body);
+    body.scrollTop = y;
   };
-  tabs.forEach((t, i) => bar.append(el("button", { role: "tab", text: t, onclick: () => show(i) })));
-  host.append(head, el("p", { class: "note", text: "Solo su questo dispositivo. Le partite di prova non danno premi e non contano per classifiche e missioni." }), bar, body);
+  tabs.forEach(([t], i) => bar.append(el("button", { role: "tab", text: t, onclick: () => show(i) })));
+  host.append(head, el("p", { class: "note", text: "Le partite di prova non danno premi e non contano per classifiche e missioni." }), bar, body);
   show(current);
 }
 
@@ -127,7 +148,7 @@ function sandboxTab(body: HTMLElement, api: AdminApi) {
   const mode = el("select", { id: "adMode" }, ...options.map(([value, text]) => el("option", { value, text })));
   const gelo = el("select", { id: "adGelo" }, ...[10000, 8800, 7800, 6800, 6000].map((v) => el("option", { value: String(v), text: `${v / 100}%` })));
   body.append(
-    el("p", { text: "Partita di prova con tutte le 12 torri, 100.000 cash e i comandi admin sempre a portata. Il tasto Admin sulla carta apre i comandi durante la partita." }),
+    el("p", { text: "Partita di prova con tutte le torri, 100.000 cash e i comandi admin sempre a portata. Il tasto Admin sulla carta apre i comandi durante la partita." }),
     el("label", { class: "adField" }, "Mappa", level),
     el("label", { class: "adField" }, "Modalità", mode),
     el("label", { class: "adField" }, "Forza dell'evento (solo Notti)", gelo),
@@ -173,57 +194,359 @@ function progressTab(body: HTMLElement, api: AdminApi) {
   body.append(grid, reset);
 }
 
-function balanceTab(body: HTMLElement, api: AdminApi) {
-  const kind = el("select", { id: "adTower" }, ...TOWER_ORDER.map((k) => el("option", { value: k, text: TOWERS[k].name })));
-  const lvl = el("select", { id: "adLvl" });
+// ---------- bilanciamento ----------
+
+/** Riga con valore attuale, originale e tasto Applica. */
+function numberRow(label: string, unit: Unit, value: number, base: number, attrs: Record<string, string>, onApply: (v: number) => void, toast: (t: string) => void) {
+  const input = el("input", { type: "number", step: unit === "tile" ? "0.1" : unit === "bp" || unit === "pct" || unit === "slow" ? "1" : "1", value: String(toShown(unit, value)), ...attrs }) as HTMLInputElement;
+  const apply = el("button", {
+    text: "Applica",
+    onclick: () => {
+      const n = Number(input.value);
+      if (input.value.trim() === "" || !Number.isFinite(n) || n < 0) return toast("Inserisci un numero valido");
+      onApply(fromShown(unit, n));
+    },
+  });
+  input.addEventListener("keydown", (ev) => (ev as KeyboardEvent).key === "Enter" && apply.click());
+  const changed = value !== base;
+  return el("label", { class: `adRow${changed ? " changed" : ""}` }, el("span", { text: label }, el("small", { text: changed ? `originale ${shown(unit, base)}` : "" })), input, apply);
+}
+
+function towerBalanceTab(body: HTMLElement, api: AdminApi, redraw: () => void) {
+  let pick: { kind: TowerKind; lvl: LevelKey } = { kind: "balestra", lvl: "1" };
+  try {
+    const saved = JSON.parse(sessionStorage.getItem("faro.adTower") || "null");
+    if (saved && TOWER_ORDER.includes(saved.kind) && LEVEL_KEYS.includes(saved.lvl)) pick = saved;
+  } catch {
+    /* facoltativo */
+  }
+  const remember = () => {
+    try {
+      sessionStorage.setItem("faro.adTower", JSON.stringify(pick));
+    } catch {
+      /* facoltativo */
+    }
+  };
+  const kind = el("select", { id: "adTower" }, ...TOWER_ORDER.map((k) => el("option", { value: k, text: TOWERS[k].name, selected: k === pick.kind }))) as HTMLSelectElement;
+  const lvl = el("select", { id: "adLvl" }) as HTMLSelectElement;
   const form = el("div", { class: "adForm" });
   const refreshLevels = () => {
-    const def = TOWERS[kind.value as TowerKind];
     lvl.innerHTML = "";
-    lvl.append(el("option", { value: "1", text: "Livello 1" }), el("option", { value: "2", text: "Livello 2" }), el("option", { value: "3", text: "Livello 3" }), el("option", { value: "A", text: `4A ${def.branches.A.name}` }), el("option", { value: "B", text: `4B ${def.branches.B.name}` }));
+    for (const L of LEVEL_KEYS) if (levelRef(pick.kind, L)) lvl.append(el("option", { value: L, text: levelName(pick.kind, L), selected: L === pick.lvl }));
+    if (!levelRef(pick.kind, pick.lvl)) pick.lvl = "1";
   };
   const refreshForm = () => {
     form.innerHTML = "";
-    const k = kind.value as TowerKind;
-    const L = lvl.value as LevelKey;
-    const ref = levelRef(k, L);
-    for (const f of FIELDS) {
+    const ref = levelRef(pick.kind, pick.lvl)!;
+    for (const f of TOWER_FIELDS) {
       const value = ref[f.field as string];
-      const relevant = f.field === "cost" || (f.field === "slowBp" ? value < 10000 : f.field === "markBp" ? value > 10000 : value > 0);
+      if (value === undefined) continue;
+      const base = towerBaseValue({ kind: pick.kind, lvl: pick.lvl, field: f.field });
+      const relevant = f.field === "cost" || value !== base || (f.field === "slowBp" ? value < 10000 : f.field === "markBp" ? value > 10000 : value > 0);
       if (!relevant) continue;
-      const input = el("input", { type: "number", step: f.unit === "tile" ? "0.1" : "1", value: String(toShown(f.unit, value)), "data-field": f.field as string }) as HTMLInputElement;
-      const apply = el("button", {
-        text: "Applica",
-        onclick: () => {
-          const n = Number(input.value);
-          if (!Number.isFinite(n) || n < 0) {
-            api.toast("Inserisci un numero valido");
-            return;
-          }
-          api.applyOverride({ kind: k, lvl: L, field: f.field, value: fromShown(f.unit, n) });
-          refreshForm();
-        },
-      });
-      form.append(el("label", { class: "adRow" }, el("span", { text: f.label }), input, apply));
+      form.append(numberRow(f.label, f.unit, value, base, { "data-field": f.field as string }, (v) => {
+        api.balance.setDraft("towers", { kind: pick.kind, lvl: pick.lvl, field: f.field, value: v });
+        redraw();
+      }, api.toast));
     }
   };
   kind.addEventListener("change", () => {
+    pick = { kind: kind.value as TowerKind, lvl: "1" };
+    remember();
     refreshLevels();
     refreshForm();
   });
-  lvl.addEventListener("change", refreshForm);
+  lvl.addEventListener("change", () => {
+    pick.lvl = lvl.value as LevelKey;
+    remember();
+    refreshForm();
+  });
   refreshLevels();
   refreshForm();
-  const list = el("ul", { class: "adList" });
-  for (const o of api.overrides()) list.append(el("li", { text: `${TOWERS[o.kind].name} ${o.lvl}: ${String(o.field)} = ${o.value}` }));
   body.append(
-    el("p", { text: "Ogni modifica vale subito, resta salvata su questo dispositivo e compare nella bacheca Novità." }),
+    el("p", { text: "Le modifiche valgono subito su questo dispositivo, così le provi. Quando ti convincono, pubblicale: arrivano a tutti i giocatori al prossimo avvio del gioco." }),
     el("label", { class: "adField" }, "Torre", kind),
     el("label", { class: "adField" }, "Livello", lvl),
     form,
-    el("h3", { text: "Modifiche attive" }),
-    api.overrides().length ? list : el("p", { class: "note", text: "Nessuna modifica." }),
-    el("button", { class: "danger", text: "Ripristina i valori originali", onclick: () => api.resetOverrides() }),
+  );
+  balanceFooter(body, api, redraw);
+}
+
+function modeBalanceTab(body: HTMLElement, api: AdminApi, redraw: () => void) {
+  let modeK = "easy";
+  let mapK = "porto";
+  try {
+    modeK = modeByKey(sessionStorage.getItem("faro.adMode") || "") ? sessionStorage.getItem("faro.adMode")! : "easy";
+    mapK = sessionStorage.getItem("faro.adMap") || "porto";
+  } catch {
+    /* facoltativo */
+  }
+  const mapIds = [...SURVIVAL_MAPS, ...EVENT_LEVELS.filter((l) => !SURVIVAL_MAPS.includes(l.id)).map((l) => l.id)];
+  if (!mapIds.includes(mapK)) mapK = "porto";
+  const modeSel = el("select", { id: "adBalMode" }, ...ALL_MODES.map((m) => el("option", { value: modeKey(m), text: m.id === "natale" ? m.name : `${modeLabel(modeKey(m))} · ${m.waves} ondate`, selected: modeKey(m) === modeK }))) as HTMLSelectElement;
+  const mapSel = el("select", { id: "adBalMap" }, ...mapIds.map((id) => el("option", { value: id, text: mapName(id), selected: id === mapK }))) as HTMLSelectElement;
+  const modeForm = el("div", { class: "adForm", id: "adModeForm" });
+  const mapForm = el("div", { class: "adForm", id: "adMapForm" });
+  const fillMode = () => {
+    modeForm.innerHTML = "";
+    const m = modeByKey(modeK)!;
+    for (const f of MODE_FIELDS) {
+      if (f.field === "minisBp" && !m.minis.length) continue;
+      modeForm.append(numberRow(f.label, f.unit, modeValue(m, f.field), modeBaseValue(m, f.field), { "data-mfield": f.field }, (v) => {
+        if (v > f.max) return api.toast(`Al massimo ${shown(f.unit, f.max)}`);
+        api.balance.setDraft("modes", { mode: modeK, field: f.field, value: v });
+        redraw();
+      }, api.toast));
+    }
+    modeForm.append(el("h4", { text: "Correzione per mappa, solo in questa modalità" }));
+    for (const id of m.maps) {
+      const field = `mapHp:${id}`;
+      modeForm.append(numberRow(`Vita su ${mapName(id)} (%)`, "bp", modeValue(m, field), modeBaseValue(m, field), { "data-mfield": field }, (v) => {
+        if (v > 100000) return api.toast("Al massimo 1000%");
+        api.balance.setDraft("modes", { mode: modeK, field, value: v });
+        redraw();
+      }, api.toast));
+    }
+  };
+  const fillMap = () => {
+    mapForm.innerHTML = "";
+    for (const f of MAP_FIELDS) {
+      mapForm.append(numberRow(f.label, f.unit, mapValue(mapK, f.field), mapBaseValue(mapK, f.field), { "data-pfield": f.field }, (v) => {
+        if (v > f.max) return api.toast(`Al massimo ${shown(f.unit, f.max)}`);
+        api.balance.setDraft("maps", { map: mapK, field: f.field, value: v });
+        redraw();
+      }, api.toast));
+    }
+  };
+  modeSel.addEventListener("change", () => {
+    modeK = modeSel.value;
+    try {
+      sessionStorage.setItem("faro.adMode", modeK);
+    } catch {
+      /* facoltativo */
+    }
+    fillMode();
+  });
+  mapSel.addEventListener("change", () => {
+    mapK = mapSel.value;
+    try {
+      sessionStorage.setItem("faro.adMap", mapK);
+    } catch {
+      /* facoltativo */
+    }
+    fillMap();
+  });
+  fillMode();
+  fillMap();
+  body.append(
+    el("p", { text: "La vita reale di un nemico è: vita base × curva dell'ondata × vita della modalità × correzione della mappa. Sotto ogni campo cambiato vedi il valore originale. La Campagna e l'Infinita hanno ondate scritte a mano: per loro contano solo le mappe." }),
+    el("label", { class: "adField" }, "Modalità", modeSel),
+    modeForm,
+    el("h3", { text: "Mappa" }),
+    el("p", { class: "note", text: "La vita su mappa vale in tutte le modalità a ricetta (sopravvivenza, Hardcore, Notti); il cash iniziale vale ovunque, Campagna compresa." }),
+    el("label", { class: "adField" }, "Mappa", mapSel),
+    mapForm,
+  );
+  balanceFooter(body, api, redraw);
+}
+
+function entries(b: Balance): Array<[BalanceKind, BalanceEntry]> {
+  return [...b.towers.map((o): [BalanceKind, BalanceEntry] => ["towers", o]), ...b.modes.map((o): [BalanceKind, BalanceEntry] => ["modes", o]), ...b.maps.map((o): [BalanceKind, BalanceEntry] => ["maps", o])];
+}
+
+/** Prove locali, pubblicazione e valori già pubblicati: in fondo alle due schede di bilanciamento. */
+function balanceFooter(body: HTMLElement, api: AdminApi, redraw: () => void) {
+  const B = api.balance;
+  const draft = B.draft();
+  const pub = B.published();
+  const box = el("section", { class: "adBalance" });
+  box.append(el("h3", { text: `Prove su questo dispositivo (${balanceSize(draft)})` }));
+  if (!balanceSize(draft)) box.append(el("p", { class: "note", text: "Nessuna prova in corso." }));
+  else {
+    box.append(el("ul", { class: "adList", id: "adDraftList" }, ...entries(draft).map(([k, o]) => el("li", { text: describeEntry(k, o) }))));
+    if (B.canPublish()) {
+      const title = el("input", { id: "adPubTitle", placeholder: "Titolo per la bacheca (facoltativo)", maxlength: "120" }) as HTMLInputElement;
+      const go = el("button", {
+        class: "mode",
+        id: "adPublish",
+        text: "Pubblica per tutti",
+        onclick: async () => {
+          go.disabled = true;
+          try {
+            await B.publish(title.value.trim());
+            api.toast("Pubblicato: vale per tutti dal prossimo avvio del gioco");
+          } catch (e) {
+            api.toast((e as Error).message);
+          }
+          redraw();
+        },
+      }) as HTMLButtonElement;
+      box.append(el("div", { class: "olRoom two" }, title, go));
+    } else box.append(el("p", { class: "note", text: "Per pubblicarle per tutti entra con l'account admin nella sezione Online." }));
+    box.append(armed("Annulla le prove", "Tocca di nuovo per annullare", () => {
+      B.clearDraft();
+      redraw();
+    }));
+  }
+  box.append(el("h3", { text: `Pubblicato per tutti (${balanceSize(pub)})` }), el("p", { class: "note", text: B.publishedNote() }));
+  if (balanceSize(pub)) {
+    const ul = el("ul", { class: "adList adPub", id: "adPubList" });
+    for (const [k, o] of entries(pub))
+      ul.append(
+        el(
+          "li",
+          {},
+          el("span", { text: describeEntry(k, o) }),
+          ...(B.canPublish()
+            ? [
+                el("button", {
+                  text: "Togli",
+                  title: "Riporta questo valore all'originale per tutti",
+                  onclick: async () => {
+                    try {
+                      await B.unpublish(k, o);
+                      api.toast("Valore riportato all'originale per tutti");
+                    } catch (e) {
+                      api.toast((e as Error).message);
+                    }
+                    redraw();
+                  },
+                }),
+              ]
+            : []),
+        ),
+      );
+    box.append(ul);
+    if (B.canPublish())
+      box.append(armed("Riporta tutto all'originale per tutti", "Tocca di nuovo: vale per tutti", async () => {
+        try {
+          await B.resetPublished();
+          api.toast("Bilanciamento originale ripristinato per tutti");
+        } catch (e) {
+          api.toast((e as Error).message);
+        }
+        redraw();
+      }));
+  }
+  box.append(el("button", {
+    text: "Ricarica dal server",
+    onclick: async () => {
+      try {
+        await B.reload();
+        api.toast("Bilanciamento aggiornato");
+      } catch (e) {
+        api.toast((e as Error).message);
+      }
+      redraw();
+    },
+  }));
+  body.append(box);
+}
+
+/** Tasto che chiede un secondo tocco prima di agire. */
+function armed(text: string, confirm: string, act: () => void): HTMLButtonElement {
+  const b = el("button", { class: "danger", text }) as HTMLButtonElement;
+  b.addEventListener("click", () => {
+    if (b.dataset.armed) return act();
+    b.dataset.armed = "1";
+    b.textContent = confirm;
+    setTimeout(() => {
+      delete b.dataset.armed;
+      b.textContent = text;
+    }, 3000);
+  });
+  return b;
+}
+
+// ---------- premi ai giocatori ----------
+
+function playersTab(body: HTMLElement, api: AdminApi) {
+  const g = api.grants;
+  body.append(el("p", { text: "Scrivi il nome utente di un giocatore: puoi dargli Schegge e Perle, sbloccargli torri o portarle a un rango. Il premio resta sul server e lo riceve la prossima volta che apre il gioco, su qualunque dispositivo." }));
+  if (!g) {
+    body.append(el("p", { class: "note", text: "Serve l'account admin: entra dalla sezione Online del menu." }));
+    return;
+  }
+  const user = el("input", { id: "adGUser", placeholder: "Nome utente", maxlength: "20", autocapitalize: "none", spellcheck: "false" }) as HTMLInputElement;
+  const out = el("div", { id: "adGOut" });
+  const find = async () => {
+    out.innerHTML = "";
+    out.append(el("p", { class: "note", text: "Cerco…" }));
+    try {
+      const p = await g.peek(user.value);
+      out.innerHTML = "";
+      if (!p) return out.append(el("p", { class: "note", text: "Nessun giocatore con questo nome." }));
+      grantForm(out, p, api, find);
+    } catch (e) {
+      out.innerHTML = "";
+      out.append(el("p", { class: "note", text: (e as Error).message }));
+    }
+  };
+  user.addEventListener("keydown", (ev) => (ev as KeyboardEvent).key === "Enter" && void find());
+  body.append(el("div", { class: "olRoom two" }, user, el("button", { id: "adGFind", class: "mode", text: "Cerca", onclick: () => void find() })), out);
+}
+
+function grantForm(out: HTMLElement, p: PeekRow, api: AdminApi, refresh: () => Promise<void>) {
+  const unlocked = new Set(Array.isArray(p.unlocked) ? p.unlocked : []);
+  const ranks = (p.ranks && typeof p.ranks === "object" ? p.ranks : {}) as Record<string, number>;
+  out.append(
+    el("div", { class: "adPeek", id: "adPeek" },
+      el("b", { text: p.username }),
+      el("span", { text: `${Number(p.schegge).toLocaleString("it-IT")} Schegge · ${Number(p.perle).toLocaleString("it-IT")} Perle · ${unlocked.size} torri sbloccate` }),
+      el("span", { text: p.pending ? `${p.pending} premi in attesa di essere riscossi` : "Nessun premio in attesa" }),
+      ...(p.saved ? [] : [el("small", { text: "Non ha ancora un salvataggio online: i numeri si aggiornano dopo la sua prima partita con l'account." })]),
+    ),
+  );
+  const schegge = el("input", { id: "adGSchegge", type: "number", min: "0", max: "1000000", value: "0" }) as HTMLInputElement;
+  const perle = el("input", { id: "adGPerle", type: "number", min: "0", max: "100000", value: "0" }) as HTMLInputElement;
+  const rows = el("div", { class: "adGTowers" });
+  const pickable = TOWER_ORDER.filter((k) => !ADMIN_ONLY.includes(k));
+  for (const k of pickable) {
+    const has = unlocked.has(k);
+    const cur = has ? Math.max(1, Math.min(MAX_RANK, ranks[k] ?? 1)) : 0;
+    const unlock = el("input", { type: "checkbox", "data-unlock": k, checked: has, disabled: has }) as HTMLInputElement;
+    const rank = el("select", { "data-rank": k }, el("option", { value: "", text: has ? `rango ${cur}` : "—" }), ...Array.from({ length: MAX_RANK }, (_, i) => i + 1).filter((r) => r !== cur).map((r) => el("option", { value: String(r), text: `→ rango ${r}` })));
+    rows.append(el("label", { class: "adGRow" }, unlock, el("span", { text: TOWERS[k].name }), rank));
+  }
+  const note = el("input", { id: "adGNote", placeholder: "Messaggio per il giocatore (facoltativo)", maxlength: "120" }) as HTMLInputElement;
+  const send = el("button", {
+    class: "mode",
+    id: "adGSend",
+    text: "Invia il premio",
+    onclick: async () => {
+      const payload: GrantPayload = {};
+      const sN = Math.floor(Number(schegge.value) || 0);
+      const pN = Math.floor(Number(perle.value) || 0);
+      if (sN < 0 || pN < 0 || sN > 1000000 || pN > 100000) return api.toast("Valuta fuori dai limiti (Schegge fino a 1.000.000, Perle fino a 100.000)");
+      if (sN) payload.schegge = sN;
+      if (pN) payload.perle = pN;
+      const un = [...rows.querySelectorAll<HTMLInputElement>("input[data-unlock]:checked:not([disabled])")].map((i) => i.dataset.unlock!);
+      if (un.length) payload.unlock = un;
+      const rk: Record<string, number> = {};
+      for (const s of rows.querySelectorAll<HTMLSelectElement>("select[data-rank]")) if (s.value) rk[s.dataset.rank!] = Number(s.value);
+      if (Object.keys(rk).length) payload.ranks = rk;
+      if (!Object.keys(payload).length) return api.toast("Il premio è vuoto");
+      send.disabled = true;
+      try {
+        await api.grants!.grant(p.id, payload, note.value.trim());
+        api.toast(`Premio inviato a ${p.username}`);
+        await refresh();
+      } catch (e) {
+        api.toast((e as Error).message);
+        send.disabled = false;
+      }
+    },
+  }) as HTMLButtonElement;
+  out.append(
+    el("div", { class: "adForm" },
+      el("label", { class: "adRow" }, el("span", { text: "Schegge da aggiungere" }), schegge),
+      el("label", { class: "adRow" }, el("span", { text: "Perle da aggiungere" }), perle),
+    ),
+    el("h4", { text: "Torri: spunta per sbloccare, scegli un rango per portarla lì" }),
+    el("p", { class: "note", text: "Il rango si imposta esattamente (anche più basso, per correggere un errore) e sblocca la torre se non l'ha. Le torri admin non si regalano." }),
+    rows,
+    note,
+    send,
   );
 }
 

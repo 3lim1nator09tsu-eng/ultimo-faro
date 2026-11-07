@@ -263,6 +263,91 @@ export class Net {
     const rows = await this.json<Array<{ id: number }>>(`/rest/v1/admin_commands?select=id&room=eq.${room}&order=id.desc&limit=1`);
     return rows[0]?.id ?? 0;
   }
+
+  // ---------- bilanciamento globale ----------
+
+  /** Leggibile anche senza account: vale per tutti i giocatori. */
+  async fetchBalance(): Promise<BalanceRow | null> {
+    const rows = await this.json<BalanceRow[]>("/rest/v1/balance?select=data,rev,updated_at&id=eq.1", { auth: !!this.session });
+    return rows[0] ?? null;
+  }
+
+  /** Salva solo se nessun altro admin ha salvato nel frattempo (rev uguale). */
+  async saveBalance(data: unknown, rev: number): Promise<number> {
+    const rows = await this.json<Array<{ rev: number }>>(`/rest/v1/balance?id=eq.1&rev=eq.${rev}`, {
+      method: "PATCH",
+      headers: { Prefer: "return=representation" },
+      body: JSON.stringify({ data, rev: rev + 1, updated_at: new Date().toISOString(), updated_by: this.session!.userId }),
+    });
+    if (!rows.length) throw new NetError("Il bilanciamento è stato cambiato da un altro admin: ricarico e riprova", 409);
+    return rows[0].rev;
+  }
+
+  async logBalance(title: string, items: string[]): Promise<void> {
+    await this.json("/rest/v1/balance_log", { method: "POST", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ title: title.slice(0, 200), items }) });
+  }
+
+  async fetchBalanceLog(lim = 10): Promise<BalanceLogRow[]> {
+    return this.json<BalanceLogRow[]>(`/rest/v1/balance_log?select=id,title,items,created_at&order=id.desc&limit=${lim}`, { auth: !!this.session });
+  }
+
+  // ---------- premi ai giocatori ----------
+
+  async adminPeek(username: string): Promise<PeekRow | null> {
+    return this.json<PeekRow | null>("/rest/v1/rpc/admin_peek", { method: "POST", body: JSON.stringify({ uname: cleanUsername(username) }) });
+  }
+
+  async adminGrant(userId: string, payload: GrantPayload, note: string): Promise<void> {
+    await this.json("/rest/v1/grants", { method: "POST", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ user_id: userId, payload, note: note.slice(0, 200) || null }) });
+  }
+
+  async myGrants(): Promise<GrantRow[]> {
+    return this.json<GrantRow[]>(`/rest/v1/grants?select=id,payload,note&user_id=eq.${this.session!.userId}&claimed_at=is.null&order=id.asc`);
+  }
+
+  /** Segna il premio come riscosso; true solo se era ancora in attesa (niente doppie riscossioni tra dispositivi). */
+  async claimGrant(id: number): Promise<boolean> {
+    const rows = await this.json<Array<{ id: number }>>(`/rest/v1/grants?id=eq.${id}&claimed_at=is.null&select=id`, {
+      method: "PATCH",
+      headers: { Prefer: "return=representation" },
+      body: JSON.stringify({ claimed_at: new Date().toISOString() }),
+    });
+    return rows.length > 0;
+  }
+}
+
+export interface BalanceRow {
+  data: unknown;
+  rev: number;
+  updated_at: string;
+}
+export interface BalanceLogRow {
+  id: number;
+  title: string;
+  items: string[];
+  created_at: string;
+}
+export interface PeekRow {
+  id: string;
+  username: string;
+  schegge: number;
+  perle: number;
+  unlocked: string[];
+  ranks: Record<string, number>;
+  saved: boolean;
+  pending: number;
+}
+/** Un premio: valuta da aggiungere, torri da sbloccare, ranghi minimi da garantire. */
+export interface GrantPayload {
+  schegge?: number;
+  perle?: number;
+  unlock?: string[];
+  ranks?: Record<string, number>;
+}
+export interface GrantRow {
+  id: number;
+  payload: GrantPayload;
+  note: string | null;
 }
 
 function translate(msg: string): string {

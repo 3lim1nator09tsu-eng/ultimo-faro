@@ -31,9 +31,19 @@ ok(roleA === "host" && roleB === "guest", `ruoli: ${roleA} / ${roleB}`);
 const nA = await A.evaluate(() => document.querySelectorAll("#lobbyBody .players li").length);
 const nB = await B.evaluate(() => document.querySelectorAll("#lobbyBody .players li").length);
 ok(nA === 2 && nB === 2, `entrambi vedono 2 giocatori (${nA}, ${nB})`);
+// Prove di bilanciamento di chi ospita: devono valere anche per chi partecipa.
+await A.evaluate(() => {
+  const b = window.__faro.debug.adminApi.balance;
+  b.setDraft("modes", { mode: "easy", field: "hpBp", value: 20000 });
+  b.setDraft("towers", { kind: "balestra", lvl: "1", field: "damage", value: 3 });
+});
+const balB0 = await B.evaluate(() => JSON.stringify(window.__faro.debug.balance()));
 await A.click("#lobbyStart");
 await B.waitForFunction(() => window.__faro.debug.match?.status === "playing" && !window.__faro.state.sandbox, null, { timeout: 4000 });
 ok(true, "la partita parte anche per chi partecipa");
+const balA = await A.evaluate(() => JSON.stringify(window.__faro.debug.balance()));
+const balB = await B.evaluate(() => JSON.stringify(window.__faro.debug.balance()));
+ok(balB0 !== balA && balB === balA, `chi partecipa usa il bilanciamento di chi ospita (${balB0} → ${balB})`);
 // Chi ospita costruisce, chi partecipa costruisce e migliora.
 await A.evaluate(() => window.__faro.debug.send({ t: "build", kind: "balestra", cx: 2, cy: 2 }));
 await B.evaluate(() => window.__faro.debug.send({ t: "build", kind: "mortaio", cx: 4, cy: 2 }));
@@ -84,6 +94,10 @@ const [t2B, h2B, ds] = await B.evaluate(() => [window.__faro.state.tick, window.
 ok(ds >= 1 && t2A === t2B && h2A === h2B, `desincronizzazione rilevata e riallineata (desync ${ds}, tick ${t2A}/${t2B})`);
 await A.screenshot({ path: "dist/shots/40-coop-host.png" });
 await B.screenshot({ path: "dist/shots/41-coop-guest.png" });
+await B.evaluate(() => window.__faro.debug.match.onClosed("prova finita"));
+await B.waitForTimeout(200);
+const balBack = await B.evaluate(() => JSON.stringify(window.__faro.debug.balance()));
+ok(balBack === balB0, `uscito dalla stanza, chi partecipa torna ai suoi valori (${balBack})`);
 ok(errs.length === 0, `nessun errore di pagina ${errs.join(" | ")}`);
 await b.close();
 server.kill();

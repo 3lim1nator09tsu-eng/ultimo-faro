@@ -40,6 +40,7 @@ export interface ModeDef {
   unlock: GameMode | null; // modalità da vincere prima
   maps: string[];
   mapHpBp?: Record<string, number>; // correzione in più per mappa, solo in questa modalità
+  countBp?: number; // quantità di nemici rispetto alla ricetta (pannello admin), 10000 = invariata
 }
 
 export interface NightDef extends ModeDef {
@@ -325,7 +326,7 @@ export function modeWaves(m: ModeDef, level: LevelDef): WaveGroup[][] {
     }
     const groups: WaveGroup[] = chosen.map((p, j) => ({
       enemy: p.kind,
-      count: Math.max(1, p.count + Math.floor((p.step * (w - p.from)) / 100)),
+      count: Math.max(1, Math.floor(((p.count + Math.floor((p.step * (w - p.from)) / 100)) * (m.countBp ?? 10000)) / 10000)),
       interval: p.interval,
       delay: j * 40,
       lane: (w + j) % lanes,

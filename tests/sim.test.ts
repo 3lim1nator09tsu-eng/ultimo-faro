@@ -742,3 +742,57 @@ test("Kingpin: al massimo 4 per giocatore", () => {
   step(s, [{ t: "build", kind: "kingpin", cx: 9, cy: 4, p: 1 }]);
   assert.equal(s.towers.filter((t) => t.owner === 1).length, 1, "il limite è per giocatore");
 });
+
+test("Bilanciamento: modalità, mappe e torri si applicano e si annullano", async () => {
+  const B = await import("../src/sim-core/balance");
+  const M = await import("../src/sim-core/modes");
+  const lvl = levelById("porto");
+  const base = M.modeWaves(M.SURVIVAL[0], lvl);
+  const hp0 = base[4][0].hpMulBp;
+  const n0 = base[4][0].count;
+  const boss0 = base[19].find((g) => g.boss)!.hpMulBp;
+  B.applyBalance({ towers: [{ kind: "balestra", lvl: "1", field: "damage", value: 99 }], modes: [{ mode: "easy", field: "hpBp", value: 16000 }, { mode: "easy", field: "countBp", value: 20000 }, { mode: "easy", field: "bossHpBp", value: 200000 }, { mode: "easy", field: "lives", value: 7 }, { mode: "easy", field: "bonusCash", value: 500 }], maps: [{ map: "porto", field: "startCash", value: 999 }] });
+  const w = M.modeWaves(M.SURVIVAL[0], lvl);
+  assert.ok(Math.abs(w[4][0].hpMulBp - hp0 * 2) <= 2, `vita ${hp0} → ${w[4][0].hpMulBp}`);
+  assert.equal(w[4][0].count, n0 * 2);
+  assert.ok(w[19].find((g) => g.boss)!.hpMulBp > boss0 * 3);
+  assert.equal(TOWERS.balestra.levels[0].damage, 99);
+  const s = createGame(5, { mode: "easy", level: "porto" });
+  assert.equal(s.lives, 7);
+  assert.equal(s.cash, 1499);
+  // Le Perle a zero non sono più condivise: cambiarle in Easy non tocca Medium.
+  B.applyBalance({ towers: [], modes: [{ mode: "easy", field: "perleWave", value: 3 }], maps: [] });
+  assert.equal(M.SURVIVAL[0].perle.perWave, 3);
+  assert.equal(M.SURVIVAL[1].perle.perWave, 0);
+  B.applyBalance();
+  assert.equal(M.modeWaves(M.SURVIVAL[0], lvl)[4][0].hpMulBp, hp0);
+  assert.equal(TOWERS.balestra.levels[0].damage !== 99, true);
+  assert.equal(createGame(5, { mode: "easy", level: "porto" }).lives, 20);
+  // Notti, mini-boss e correzione per mappa.
+  const n3 = M.NIGHTS[2];
+  const mini0 = n3.minis[0].hpBp;
+  B.applyBalance({ towers: [], modes: [{ mode: "natale:3", field: "minisBp", value: 5000 }, { mode: "hardcore", field: "mapHp:porto", value: 15000 }], maps: [] });
+  assert.equal(n3.minis[0].hpBp, mini0 / 2);
+  assert.equal(M.HARDCORE.mapHpBp!.porto, 15000);
+  assert.equal(M.HARDCORE.mapHpBp!.lungomare, 13500);
+  B.applyBalance();
+  assert.equal(M.HARDCORE.mapHpBp!.porto, undefined);
+  assert.equal(n3.minis[0].hpBp, mini0);
+});
+
+test("Bilanciamento: i dati sporchi vengono scartati e i livelli si uniscono", async () => {
+  const B = await import("../src/sim-core/balance");
+  const clean = B.cleanBalance({
+    towers: [{ kind: "balestra", lvl: "1", field: "damage", value: 30 }, { kind: "nessuna", lvl: "1", field: "damage", value: 3 }, { kind: "balestra", lvl: "9", field: "damage", value: 3 }, { kind: "balestra", lvl: "1", field: "__proto__", value: 3 }, { kind: "balestra", lvl: "A2", field: "damage", value: 3 }, { kind: "kingpin", lvl: "A2", field: "damage", value: 70 }],
+    modes: [{ mode: "easy", field: "hpBp", value: 12000 }, { mode: "nope", field: "hpBp", value: 1 }, { mode: "easy", field: "lives", value: -3 }, { mode: "easy", field: "lives", value: Infinity }, { mode: "hardcore", field: "mapHp:lungomare", value: 9000 }, { mode: "hardcore", field: "mapHp:atlantide", value: 9000 }],
+    maps: [{ map: "porto", field: "startCash", value: 400 }, { map: "porto", field: "waves", value: 1 }],
+  });
+  assert.equal(clean.towers.length, 2);
+  assert.equal(clean.modes.length, 2);
+  assert.equal(clean.maps.length, 1);
+  const merged = B.mergeBalance({ ...B.emptyBalance(), modes: [{ mode: "easy", field: "hpBp", value: 12000 }] }, { ...B.emptyBalance(), modes: [{ mode: "easy", field: "hpBp", value: 9000 }] });
+  assert.deepEqual(merged.modes, [{ mode: "easy", field: "hpBp", value: 9000 }]);
+  const pruned = B.pruneBalance({ towers: [{ kind: "balestra", lvl: "1", field: "damage", value: TOWERS.balestra.levels[0].damage }], modes: [{ mode: "easy", field: "hpBp", value: 8000 }], maps: [] });
+  assert.equal(B.balanceSize(pruned), 0);
+  assert.equal(B.balanceSig(merged), B.balanceSig(B.mergeBalance(merged)));
+});

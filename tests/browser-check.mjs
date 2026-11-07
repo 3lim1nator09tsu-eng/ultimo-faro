@@ -279,15 +279,47 @@ for (const vp of [{ width: 390, height: 700 }, { width: 844, height: 390 }]) {
   await page.locator("#adminOpen").click();
   await page.waitForTimeout(100);
   await page.screenshot({ path: `${outDir}/19-admin-${tag}.png` });
-  check(`${tag}: il pannello ha tre schede`, (await page.locator(".adTabs button").count()) === 3);
+  check(`${tag}: il pannello ha cinque schede senza account`, (await page.locator(".adTabs button").count()) === 5);
   // Bilanciamento: danno della Balestra al livello 1.
-  await page.locator('.adTabs button:has-text("Bilanciamento")').click();
+  await page.locator('.adTabs button:has-text("Bilancia torri")').click();
   await page.locator('#adminPanel input[data-field="damage"]').fill("20");
   await page.locator('#adminPanel .adRow:has(input[data-field="damage"]) button').click();
   await page.waitForTimeout(80);
   await page.screenshot({ path: `${outDir}/20-admin-balance-${tag}.png` });
   const meta = await page.evaluate(() => window.__faro.debug.meta);
-  check(`${tag}: la modifica di bilanciamento viene salvata e annotata`, meta.overrides.length === 1 && meta.overrides[0].value === 20 && meta.changes.length === 1, JSON.stringify(meta.overrides));
+  check(`${tag}: la modifica di bilanciamento viene salvata e annotata`, meta.draft.towers.length === 1 && meta.draft.towers[0].value === 20 && meta.changes.length === 1, JSON.stringify(meta.draft));
+  check(`${tag}: la riga modificata mostra il valore originale`, (await page.locator('#adminPanel .adRow.changed:has(input[data-field="damage"]) small').textContent()).includes("originale"));
+  // Modalità: vita dei nemici di Easy al 150% e cash del Porto.
+  await page.locator('.adTabs button:has-text("Bilancia modalità")').click();
+  await page.locator("#adBalMode").selectOption("easy");
+  await page.locator('#adModeForm input[data-mfield="hpBp"]').fill("150");
+  await page.locator('#adModeForm .adRow:has(input[data-mfield="hpBp"]) button').click();
+  await page.waitForTimeout(60);
+  await page.locator("#adBalMap").selectOption("porto");
+  await page.locator('#adMapForm input[data-pfield="startCash"]').fill("700");
+  await page.locator('#adMapForm .adRow:has(input[data-pfield="startCash"]) button').click();
+  await page.waitForTimeout(60);
+  await page.screenshot({ path: `${outDir}/20b-admin-modes-${tag}.png` });
+  const m2 = await page.evaluate(() => window.__faro.debug.meta.draft);
+  check(`${tag}: le modifiche di modalità e mappa finiscono nelle prove`, m2.modes.length === 1 && m2.modes[0].value === 15000 && m2.maps.length === 1 && m2.maps[0].value === 700, JSON.stringify(m2));
+  check(`${tag}: senza account non si pubblica`, (await page.locator("#adPublish").count()) === 0 && (await page.locator("#adDraftList li").count()) === 3);
+  const easy = await page.evaluate(() => {
+    window.__faro.debug.restart(3, { mode: "easy", level: "porto" });
+    return window.__faro.state.cash;
+  });
+  check(`${tag}: il cash di mappa modificato vale in partita`, easy === 700, String(easy));
+  await page.evaluate(() => window.__faro.debug.openAdmin());
+  await page.waitForTimeout(60);
+  // Giocatori: senza account admin la scheda spiega cosa serve.
+  await page.locator('.adTabs button:has-text("Giocatori")').click();
+  check(`${tag}: la scheda Giocatori chiede l'account admin`, (await page.locator("#adminPanel .adBody").textContent()).includes("Serve l'account admin"));
+  // Annullare le prove riporta i valori originali (due tocchi).
+  await page.locator('.adTabs button:has-text("Bilancia modalità")').click();
+  await page.locator('.adBalance button.danger:has-text("Annulla le prove")').click();
+  await page.locator('.adBalance button.danger:has-text("Tocca di nuovo")').click();
+  await page.waitForTimeout(60);
+  const m3 = await page.evaluate(() => window.__faro.debug.meta.draft);
+  check(`${tag}: annullare le prove svuota le modifiche`, m3.towers.length + m3.modes.length + m3.maps.length === 0, JSON.stringify(m3));
   // Prova torri.
   await page.locator('.adTabs button:has-text("Prova torri")').click();
   await page.locator("#adStart").click();

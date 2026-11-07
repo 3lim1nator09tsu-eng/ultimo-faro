@@ -3,10 +3,11 @@ import { ADMIN_ONLY, EVENT_TOWER, KINGPIN_QUEUE, SURVIVAL_MAPS, UNITS, UNIT_ORDE
 import { Command, GameEvent, GameOptions, GameState, modBit, abilityCdOf, allowedOf, cashOf, apexBlock, apexPrice, applyCommands, modsOf, perleFor, cellEmerged, createGame, effStats, hashState, isBuildable, laneIsOpen, levelOf, rankedStats, restore, rewardFor, sellValue, specPrice, statsIn, snapshot, starsFor, step, upgradePrice, waveCount, wavePreview } from "../sim-core/sim";
 import { playBot } from "../sim-core/bot";
 import { HARDCORE, ModeDef, NIGHTS, SURVIVAL, disgeloFor, modeDef } from "../sim-core/modes";
-import { LocalTransport, Net, RealtimeTransport, Transport, roomCode } from "./net";
+import { GrantPayload, LocalTransport, Net, RealtimeTransport, Transport, roomCode } from "./net";
 import { NetMatch, Player, Setup } from "./netplay";
 import { renderLobby, renderOnline } from "./online-ui";
-import { AdminApi, Override, levelRef, renderAdminDrawer, renderAdminPanel } from "./admin";
+import { AdminApi, BalanceEntry, BalanceKind, describeEntry, renderAdminDrawer, renderAdminPanel } from "./admin";
+import { Balance, applyBalance, balanceSize, cleanBalance, emptyBalance, mergeBalance, pruneBalance } from "../sim-core/balance";
 import { ChangeEntry, MEDALS, MISSIONS, MissionSlot, Totals, VERSION_NOTES, emptyTotals, levelFromXp, levelReward, missionProgress, missionTarget, missionText, newSlot } from "./progress";
 import { COLORS, enemySize, applyMap, drawEnemy, drawFaro, drawShoal, drawTide, drawTowerShape, mapToScreen, renderBackground, toPx } from "./draw";
 
@@ -218,7 +219,7 @@ interface Meta {
   hcWins: Record<string, number>;
   medals: string[];
   adminEnabled: boolean;
-  overrides: Override[];
+  draft: Balance; // prove di bilanciamento su questo dispositivo
   changes: ChangeEntry[];
   newsSeen: number;
   modeWins: Record<string, number>;
@@ -236,7 +237,7 @@ function freshMeta(): Meta {
   const totals = emptyTotals();
   return {
     v: 2, schegge: 0, earned: 0, unlocked: [...STARTER_TOWERS], loadout: [...STARTER_TOWERS], ranks, stars: {}, wins: {}, bestWave: {}, introSeen: false, seenLines: [],
-    perle: 0, xp: 0, totals, missions: [0, 1, 2].map((i) => newSlot(i, totals)), missionNext: 3, hcWins: {}, medals: [], adminEnabled: false, overrides: [], changes: [], newsSeen: 0,
+    perle: 0, xp: 0, totals, missions: [0, 1, 2].map((i) => newSlot(i, totals)), missionNext: 3, hcWins: {}, medals: [], adminEnabled: false, draft: emptyBalance(), changes: [], newsSeen: 0,
     modeWins: {}, modeBest: {}, nightWins: {}, nightBest: {}, mapPick: "porto", account: "", rev: 0,
   };
 }
@@ -281,7 +282,9 @@ function loadMeta(raw: string | null = store.get("faro.meta.v1")): Meta {
     m.hcWins = record(d.hcWins, 1e6);
     if (Array.isArray(d.medals)) m.medals = d.medals.filter((x) => typeof x === "string");
     m.adminEnabled = !!d.adminEnabled;
-    if (Array.isArray(d.overrides)) m.overrides = d.overrides.filter((o) => o && TOWER_ORDER.includes(o.kind) && typeof o.value === "number");
+    // Le modifiche della 0.8 erano solo per le torri: diventano prove su questo dispositivo.
+    const old = (d as { overrides?: unknown }).overrides;
+    m.draft = cleanBalance(d.draft ?? (Array.isArray(old) ? { towers: old } : null));
     if (Array.isArray(d.changes)) m.changes = d.changes.filter((c) => c && typeof c.title === "string").slice(-50);
     m.newsSeen = n(d.newsSeen, 0, 1e6, 0);
     const keyed = (v: unknown, keys: string[]) => {
@@ -353,7 +356,7 @@ async function syncAfterLogin() {
       meta.adminEnabled = keepAdmin || net.session.isAdmin;
       meta.account = id;
       store.set("faro.meta.v1", JSON.stringify(meta));
-      applyOverrides();
+      applyAll();
       cloudNote = "Progressi caricati dal salvataggio online";
     } else {
       meta.account = id;
@@ -365,22 +368,112 @@ async function syncAfterLogin() {
   }
   if (net.session?.isAdmin) meta.adminEnabled = true;
   store.set("faro.meta.v1", JSON.stringify(meta));
+  await claimGrants();
   if (inMenu) renderMenu();
 }
 
-// Valori originali delle torri, per poter annullare le modifiche di bilanciamento.
-const TOWER_BASE = JSON.parse(JSON.stringify(TOWERS)) as typeof TOWERS;
-function applyOverrides() {
-  for (const k of TOWER_ORDER) {
-    const b = TOWER_BASE[k];
-    TOWERS[k].levels.forEach((l, i) => Object.assign(l, b.levels[i]));
-    Object.assign(TOWERS[k].branches.A, b.branches.A);
-    Object.assign(TOWERS[k].branches.B, b.branches.B);
+// ---------- premi dell'admin ----------
+
+let claiming = false;
+/** Riscuote i premi in attesa: prima li segna come riscossi sul server, così un altro dispositivo non li prende due volte. */
+async function claimGrants() {
+  if (!net.session || meta.account !== net.session.userId || claiming) return;
+  claiming = true;
+  const got: string[] = [];
+  const notes: string[] = [];
+  try {
+    for (const g of await net.myGrants()) {
+      if (!(await net.claimGrant(g.id))) continue;
+      got.push(...applyGrant(g.payload));
+      if (g.note) notes.push(g.note);
+      store.set("faro.meta.v1", JSON.stringify(meta));
+    }
+  } catch {
+    /* si riprova al prossimo avvio */
   }
-  for (const o of meta.overrides) levelRef(o.kind, o.lvl)[o.field as string] = o.value;
+  claiming = false;
+  if (!got.length) return;
+  saveMeta();
+  toast(`Dall'admin: ${got.join(", ")}${notes.length ? ` · "${notes.join('" · "')}"` : ""}`);
+  if (inMenu) renderMenu();
 }
-applyOverrides();
-const news = () => [...meta.changes].reverse().concat(VERSION_NOTES);
+
+function applyGrant(p: GrantPayload): string[] {
+  const out: string[] = [];
+  const int = (v: unknown, hi: number) => (typeof v === "number" && Number.isFinite(v) ? Math.max(0, Math.min(hi, Math.floor(v))) : 0);
+  const sN = int(p?.schegge, 1_000_000);
+  const pN = int(p?.perle, 100_000);
+  if (sN) {
+    meta.schegge += sN;
+    out.push(`+${fmt(sN)} Schegge`);
+  }
+  if (pN) {
+    meta.perle += pN;
+    out.push(`+${fmt(pN)} Perle`);
+  }
+  const own = (k: TowerKind) => {
+    if (meta.unlocked.includes(k)) return false;
+    meta.unlocked.push(k);
+    if (meta.loadout.length < LOADOUT_SIZE) meta.loadout.push(k);
+    return true;
+  };
+  const ok = (k: unknown): k is TowerKind => typeof k === "string" && TOWER_ORDER.includes(k as TowerKind) && !ADMIN_ONLY.includes(k as TowerKind);
+  if (Array.isArray(p?.unlock)) for (const k of p.unlock) if (ok(k) && own(k)) out.push(`${TOWERS[k].name} sbloccata`);
+  if (p?.ranks && typeof p.ranks === "object")
+    for (const [k, r] of Object.entries(p.ranks)) {
+      if (!ok(k)) continue;
+      const rank = Math.max(1, Math.min(MAX_RANK, int(r, MAX_RANK)));
+      own(k);
+      meta.ranks[k] = rank;
+      out.push(`${TOWERS[k].name} al rango ${rank}`);
+    }
+  return out;
+}
+
+// Bilanciamento: valori del codice, poi quelli pubblicati sul server, poi le prove dell'admin su
+// questo dispositivo. In multigiocatore chi partecipa usa quelli di chi ospita.
+let published: Balance = emptyBalance();
+let publishedRev = 0;
+let publishedAt = "";
+let publishedFresh = false;
+let matchBalance: Balance | null = null;
+let serverNews: ChangeEntry[] = [];
+try {
+  const c = JSON.parse(store.get("faro.balance.v1") || "null");
+  if (c) {
+    published = cleanBalance(c.data);
+    publishedRev = Number(c.rev) || 0;
+    publishedAt = String(c.at || "");
+  }
+} catch {
+  /* copia illeggibile: si riparte dai valori del codice */
+}
+function applyAll() {
+  if (matchBalance) applyBalance(matchBalance);
+  else applyBalance(published, meta.draft);
+}
+applyAll();
+const effectiveBalance = () => matchBalance ?? mergeBalance(published, meta.draft);
+function cachePublished() {
+  store.set("faro.balance.v1", JSON.stringify({ data: published, rev: publishedRev, at: publishedAt }));
+}
+/** Scarica il bilanciamento pubblicato e la sua bacheca. */
+async function loadPublished(withNews = true) {
+  const row = await net.fetchBalance();
+  if (row) {
+    published = cleanBalance(row.data);
+    publishedRev = row.rev;
+    publishedAt = row.updated_at;
+    publishedFresh = true;
+    cachePublished();
+    applyAll();
+  }
+  if (withNews) {
+    const log = await net.fetchBalanceLog(15).catch(() => []);
+    serverNews = log.map((r) => ({ date: r.created_at.slice(0, 10), title: r.title, items: Array.isArray(r.items) ? r.items.map(String) : [], kind: "bilanciamento" as const }));
+  }
+}
+const news = () => [...meta.changes].reverse().concat(serverNews).sort((x, y) => (x.date < y.date ? 1 : x.date > y.date ? -1 : 0)).concat(VERSION_NOTES);
 const today = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -1578,9 +1671,18 @@ function renderOnlineSection() {
 
 async function checkServer() {
   reachable = await net.ping();
+  if (reachable) {
+    try {
+      await loadPublished();
+      if (inMenu) renderNews();
+    } catch {
+      /* resta la copia salvata sul dispositivo */
+    }
+  }
   if (net.session && reachable) {
     // All'avvio si ricarica il ruolo e, se il salvataggio non è ancora legato, lo si collega.
     if (meta.account !== net.session.userId) await syncAfterLogin();
+    else await claimGrants();
   }
   if (inMenu) renderOnlineSection();
 }
@@ -1594,10 +1696,18 @@ function transportFor(code: string, local: boolean): Transport {
 }
 
 function wireMatch(m: NetMatch) {
+  m.balance = () => effectiveBalance();
+  m.onBalance = (b) => {
+    // Messaggi in ritardo di una stanza già lasciata non devono cambiare i valori.
+    if (!b || match !== m) return;
+    matchBalance = cleanBalance(b);
+    applyAll();
+  };
   m.onLobby = () => {
     if (!$("lobby").hidden) renderLobby($("lobbyBody"), m, lobbyApi);
   };
   m.onStart = (st) => {
+    if (match !== m) return;
     $("lobby").hidden = true;
     beginState(st);
     toast(m.isHost ? "Partita avviata" : "Partita iniziata");
@@ -1752,6 +1862,10 @@ function leaveMatch() {
   (m as NetMatch & { probe?: BroadcastChannel }).probe?.close();
   if (m.isHost && net.session && !(m as NetMatch & { local?: boolean }).local) net.updateRoom(m.code, { status: "ended" }).catch(() => {});
   $("lobby").hidden = true;
+  if (matchBalance) {
+    matchBalance = null;
+    applyAll();
+  }
 }
 
 // ---------- accesso admin ----------
@@ -2016,11 +2130,11 @@ const adminApi: AdminApi = {
     }), "Missioni completate"),
     reset: () => {
       const keepAdmin = meta.adminEnabled;
-      const keepOverrides = meta.overrides;
+      const keepDraft = meta.draft;
       const keepChanges = meta.changes;
       meta = freshMeta();
       meta.adminEnabled = keepAdmin;
-      meta.overrides = keepOverrides;
+      meta.draft = keepDraft;
       meta.changes = keepChanges;
       meta.introSeen = true;
       saveMeta();
@@ -2040,35 +2154,85 @@ const adminApi: AdminApi = {
       command: (code: string, cmd: Command) => net.adminCommand(code, cmd),
     };
   },
-  overrides: () => meta.overrides,
-  applyOverride(o) {
-    const ref = levelRef(o.kind, o.lvl);
-    const old = ref[o.field as string];
-    if (old === o.value) return;
-    meta.overrides = meta.overrides.filter((x) => !(x.kind === o.kind && x.lvl === o.lvl && x.field === o.field));
-    if (TOWER_BASE[o.kind] && (levelRef as unknown) && baseValue(o) !== o.value) meta.overrides.push(o);
-    applyOverrides();
-    const lvlName = o.lvl === "A" || o.lvl === "B" ? TOWERS[o.kind].branches[o.lvl].name : `livello ${o.lvl}`;
-    logChange(`${TOWERS[o.kind].name}, ${lvlName}`, [`${String(o.field)}: ${old} → ${o.value}`]);
-    saveMeta();
-    toast("Modifica applicata e registrata nella bacheca");
-    renderAdminPanel($("adminBody"), adminApi, closeAdmin);
+  get grants() {
+    if (!net.session?.isAdmin) return undefined;
+    return {
+      peek: (u: string) => net.adminPeek(u),
+      grant: (id: string, payload: GrantPayload, note: string) => net.adminGrant(id, payload, note),
+    };
   },
-  resetOverrides() {
-    if (!meta.overrides.length) return;
-    logChange("Valori originali ripristinati", meta.overrides.map((o) => `${TOWERS[o.kind].name} ${o.lvl}: ${String(o.field)}`));
-    meta.overrides = [];
-    applyOverrides();
-    saveMeta();
-    toast("Valori originali ripristinati");
-    renderAdminPanel($("adminBody"), adminApi, closeAdmin);
+  balance: {
+    draft: () => meta.draft,
+    published: () => published,
+    publishedNote: () =>
+      publishedRev
+        ? `Versione ${publishedRev}, del ${new Date(publishedAt).toLocaleString("it-IT", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}${publishedFresh ? "" : " (copia salvata: server non raggiunto)"}.`
+        : publishedFresh
+          ? "Valori originali: niente di pubblicato."
+          : "Server non raggiunto: valgono i valori originali o l'ultima copia salvata.",
+    canPublish: () => !!net.session?.isAdmin,
+    setDraft(kind: BalanceKind, entry: BalanceEntry) {
+      const key = (o: BalanceEntry) => JSON.stringify({ ...o, value: 0 });
+      const rest = (meta.draft[kind] as BalanceEntry[]).filter((o) => key(o) !== key(entry));
+      // Una prova uguale al valore pubblicato (o all'originale, se non c'è nulla di pubblicato) non serve.
+      const pub = (published[kind] as BalanceEntry[]).find((o) => key(o) === key(entry));
+      const redundant = pub ? pub.value === entry.value : !(pruneBalance({ ...emptyBalance(), [kind]: [entry] })[kind] as BalanceEntry[]).length;
+      (meta.draft[kind] as BalanceEntry[]) = redundant ? rest : [...rest, entry];
+      if (!net.session?.isAdmin) logChange("Bilanciamento di prova", [describeEntry(kind, entry)]);
+      applyAll();
+      saveMeta();
+      toast(net.session?.isAdmin ? "Prova applicata su questo dispositivo" : "Modifica applicata e registrata nella bacheca");
+    },
+    clearDraft() {
+      if (!balanceSize(meta.draft)) return;
+      if (!net.session?.isAdmin) logChange("Valori originali ripristinati", [...meta.draft.towers.map((o) => describeEntry("towers", o)), ...meta.draft.modes.map((o) => describeEntry("modes", o)), ...meta.draft.maps.map((o) => describeEntry("maps", o))]);
+      meta.draft = emptyBalance();
+      applyAll();
+      saveMeta();
+      toast("Prove annullate");
+    },
+    async publish(title: string) {
+      if (!net.session?.isAdmin) throw new Error("Serve l'account admin");
+      if (!balanceSize(meta.draft)) return;
+      // Si riparte dall'ultima versione sul server, per non cancellare le modifiche di un altro admin.
+      await loadPublished(false);
+      const items = [...meta.draft.towers.map((o) => describeEntry("towers", o)), ...meta.draft.modes.map((o) => describeEntry("modes", o)), ...meta.draft.maps.map((o) => describeEntry("maps", o))];
+      const next = pruneBalance(mergeBalance(published, meta.draft));
+      await publishBalance(next, title || "Bilanciamento aggiornato", items);
+      meta.draft = emptyBalance();
+      saveMeta();
+      applyAll();
+    },
+    async unpublish(kind: BalanceKind, entry: BalanceEntry) {
+      if (!net.session?.isAdmin) throw new Error("Serve l'account admin");
+      await loadPublished(false);
+      const key = (o: BalanceEntry) => JSON.stringify({ ...o, value: 0 });
+      const next: Balance = { ...published, [kind]: (published[kind] as BalanceEntry[]).filter((o) => key(o) !== key(entry)) };
+      const item = describeEntry(kind, entry).replace(/: (.*) → .*$/, ": torna a $1");
+      await publishBalance(next, "Valore riportato all'originale", [item]);
+    },
+    async resetPublished() {
+      if (!net.session?.isAdmin) throw new Error("Serve l'account admin");
+      await loadPublished(false);
+      if (!balanceSize(published)) return;
+      await publishBalance(emptyBalance(), "Bilanciamento riportato ai valori originali", [`${balanceSize(published)} modifiche tolte`]);
+    },
+    async reload() {
+      await loadPublished();
+      renderNews();
+    },
   },
 };
 
-function baseValue(o: Override): number {
-  const def = TOWER_BASE[o.kind];
-  const ref = (o.lvl === "A" || o.lvl === "B" ? def.branches[o.lvl] : def.levels[Number(o.lvl) - 1]) as unknown as Record<string, number>;
-  return ref[o.field as string];
+async function publishBalance(next: Balance, title: string, items: string[]) {
+  publishedRev = await net.saveBalance(next, publishedRev);
+  published = next;
+  publishedAt = new Date().toISOString();
+  cachePublished();
+  applyAll();
+  await net.logBalance(title, items).catch(() => {});
+  await loadPublished().catch(() => {});
+  renderNews();
 }
 
 function adminMeta(change: () => void, msg: string) {
@@ -3047,6 +3211,7 @@ function start(saved: { snap?: string; log?: Array<[number, Command[]]>; seen?: 
       },
       adminApi,
       openAdmin,
+      balance: () => effectiveBalance(),
       send,
       get match() {
         return match;

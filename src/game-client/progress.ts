@@ -129,6 +129,18 @@ export const MEDALS: Array<{ id: string; name: string; text: string; ok: (m: Med
 export const VERSION_NOTES: ChangeEntry[] = [
   {
     date: "2026-11-07",
+    title: "Versione 0.9: bilanciamento dal server e premi dell'admin",
+    kind: "versione",
+    items: [
+      "L'admin può cambiare vita, quantità e crescita dei nemici, boss, mini-boss, vite, cash e premi di ogni modalità e di ogni Notte",
+      "Correzioni per mappa: vita dei nemici e cash iniziale",
+      "Le modifiche si provano sul dispositivo dell'admin e poi si pubblicano: arrivano a tutti all'avvio del gioco e compaiono qui in bacheca",
+      "In multigiocatore valgono i valori di chi ospita, per tutti i giocatori della stanza",
+      "L'admin può mandare a un giocatore Schegge, Perle, torri sbloccate o ranghi: li ricevi al prossimo avvio, su qualunque dispositivo",
+    ],
+  },
+  {
+    date: "2026-11-07",
     title: "Versione 0.8.1: Kingpin rifatto",
     kind: "versione",
     items: [

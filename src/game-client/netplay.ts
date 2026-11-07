@@ -47,6 +47,9 @@ export class NetMatch {
   onEvents: (events: GameEvent[]) => void = () => {};
   onNote: (text: string) => void = () => {};
   onClosed: (why: string) => void = () => {};
+  /** Bilanciamento in vigore da chi ospita: tutti devono simulare con gli stessi valori. */
+  balance: () => unknown = () => null;
+  onBalance: (b: unknown) => void = () => {};
 
   private pending: Command[] = [];
   private out: Frame[] = [];
@@ -79,9 +82,12 @@ export class NetMatch {
       t.on("sync", (p: { id: string }) => this.hostSync(p.id));
     } else {
       t.on("lobby", (p: { players: Player[]; setup: Setup; status: NetMatch["status"] }) => this.guestLobby(p));
-      t.on("start", (p: { seed: number; opts: GameOptions; order: string[] }) => this.guestStart(p.seed, p.opts, p.order));
+      t.on("start", (p: { seed: number; opts: GameOptions; order: string[]; bal?: unknown }) => {
+        this.onBalance(p.bal ?? null);
+        this.guestStart(p.seed, p.opts, p.order);
+      });
       t.on("f", (p: { a: number; b: number; c: Frame[]; h: Array<[number, string]> }) => this.guestFrames(p));
-      t.on("snap", (p: { to: string; tick: number; data: string; confirmed: number; order: string[] }) => this.guestSnap(p));
+      t.on("snap", (p: { to: string; tick: number; data: string; confirmed: number; order: string[]; bal?: unknown }) => this.guestSnap(p));
       t.on("bye", () => {
         this.status = "ended";
         this.onClosed("Chi ospitava ha chiuso la stanza");
@@ -183,7 +189,7 @@ export class NetMatch {
     this.pending = [];
     this.out = [];
     this.hashes = [];
-    this.t.send("start", { seed, opts, order: this.order });
+    this.t.send("start", { seed, opts, order: this.order, bal: this.balance() });
     this.broadcastLobby();
     return this.state;
   }
@@ -227,7 +233,7 @@ export class NetMatch {
     if (!this.state) return;
     this.flush();
     const data = await pack(snapshot(this.state));
-    this.t.send("snap", { to, tick: this.state.tick, data, confirmed: this.state.tick, order: this.order });
+    this.t.send("snap", { to, tick: this.state.tick, data, confirmed: this.state.tick, order: this.order, bal: this.balance() });
   }
 
   // ---------- chi partecipa ----------
@@ -307,9 +313,10 @@ export class NetMatch {
     setTimeout(() => (this.syncing = false), 6000);
   }
 
-  private async guestSnap(p: { to: string; tick: number; data: string; confirmed: number; order: string[] }) {
+  private async guestSnap(p: { to: string; tick: number; data: string; confirmed: number; order: string[]; bal?: unknown }) {
     if (p.to !== this.me.id) return;
     if (Array.isArray(p.order)) this.order = p.order;
+    this.onBalance(p.bal ?? null);
     const first = !this.state;
     this.state = restore(await unpack(p.data));
     this.status = this.state.phase === "won" || this.state.phase === "lost" ? "ended" : "playing";

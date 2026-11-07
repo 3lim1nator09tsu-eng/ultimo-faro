@@ -603,6 +603,8 @@ function applyCommand(state: GameState, cmd: Command, events: GameEvent[]): void
       const def = TOWERS[cmd.kind];
       if (!def) return reject("Torre sconosciuta");
       if (!allowedOf(state, p).includes(cmd.kind)) return reject("Torre non in squadra");
+      const limit = def.maxPerPlayer;
+      if (limit && state.towers.filter((x) => x.kind === cmd.kind && x.owner === p).length >= limit) return reject(`Al massimo ${limit} ${def.name} per giocatore`);
       if (!isBuildable(state, cmd.cx, cmd.cy)) return reject("Qui non si può costruire");
       const cost = buildCost(state, cmd.kind, cmd.cx, cmd.cy);
       if (cash() < cost) return reject("Cash insufficiente");

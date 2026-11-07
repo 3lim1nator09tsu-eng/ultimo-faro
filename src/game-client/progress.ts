@@ -138,6 +138,8 @@ export const VERSION_NOTES: ChangeEntry[] = [
       "La Famiglia, poi La Cupola: scagnozzi molto più frequenti, arriva il Sicario, abilità Taglia (20 s di ricarica)",
       "Il Boss, poi Il Don: il Kingpin spara molto più forte, gli scagnozzi valgono meno",
       "Gli scagnozzi hanno una vita fissa: chi gli va addosso la perde tutta; il Portavalori dà cash quando si schianta",
+      "Kingpin ribilanciato: mitra più debole ai livelli 3-5 (Il Boss 100, Il Don 160), La Cupola più lenta, Buttafuori con 500 di vita",
+      "Al massimo 4 Kingpin per giocatore",
     ],
   },
   {

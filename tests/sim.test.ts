@@ -658,7 +658,7 @@ test("Kingpin: spara, costa 800, coda da 1 a 4 posti, scagnozzi gratis, due perc
   assert.ok(s.cash >= cash0, "gli scagnozzi non costano");
   s.enemies = [];
   // Il percorso Boss: il Kingpin fa più danno, gli scagnozzi meno.
-  assert.ok(TOWERS.kingpin.branches.B.damage > TOWERS.kingpin.branches.A.damage * 2);
+  assert.ok(TOWERS.kingpin.branches.B.damage > TOWERS.kingpin.branches.A.damage * 1.5);
   assert.ok(TOWERS.kingpin.branches.B.unitBp < TOWERS.kingpin.branches.A.unitBp);
   assert.ok(allIntegers(s));
   // Spara anche con la coda vuota.
@@ -730,4 +730,15 @@ test("Kingpin: Buttafuori da 900 contro nemico da 500, il nemico muore e il Butt
   step(s, []);
   assert.ok(!s.enemies.some((x) => x.id === e.id), "il nemico muore sul colpo");
   assert.equal(s.units.find((x) => x.id === u.id)?.hp, 400, "il Buttafuori resta con 400");
+});
+
+test("Kingpin: al massimo 4 per giocatore", () => {
+  const s = createGame(14, { mode: "easy", players: [{ allowed: ["kingpin"], ranks: {} }, { allowed: ["kingpin"], ranks: {} }] });
+  s.cash = 99999;
+  s.others[0].cash = 99999;
+  const cells = [[2, 2], [4, 2], [2, 4], [4, 4], [6, 4], [9, 4]];
+  for (const [cx, cy] of cells) step(s, [{ t: "build", kind: "kingpin", cx, cy, p: 0 }]);
+  assert.equal(s.towers.filter((t) => t.owner === 0).length, 4, "il quinto viene rifiutato");
+  step(s, [{ t: "build", kind: "kingpin", cx: 9, cy: 4, p: 1 }]);
+  assert.equal(s.towers.filter((t) => t.owner === 1).length, 1, "il limite è per giocatore");
 });

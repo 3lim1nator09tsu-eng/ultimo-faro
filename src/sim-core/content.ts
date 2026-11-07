@@ -238,6 +238,7 @@ export interface TowerDef {
   ability?: { name: string; summary: string };
   perle?: number; // torre Hardcore: si compra con le Perle Nere
   exclusive?: "admin" | "evento"; // solo per gli admin, oppure premio dell'evento
+  maxPerPlayer?: number; // quante se ne possono piazzare per giocatore
   apex: string; // nome della torre al livello 6
   levels: TowerLevel[]; // livelli 1-3
   branches: Record<Branch, BranchDef>; // livello 4
@@ -576,31 +577,32 @@ TOWERS.kingpin = {
   damageType: "cinetico",
   target: "first",
   unlock: 600,
+  maxPerPlayer: 4,
   levels: [
     { ...base, cost: 800, damage: 30, cooldown: 4, range: 4200, detect: true, spawnEvery: 110, spawnMax: 2, unitSet: 1, unitBp: 10000, queueSlots: 1 },
     { ...base, cost: 550, damage: 44, cooldown: 4, range: 4400, detect: true, spawnEvery: 100, spawnMax: 3, unitSet: 3, unitBp: 12000, queueSlots: 2 },
-    { ...base, cost: 800, damage: 62, cooldown: 3, range: 4700, detect: true, spawnEvery: 90, spawnMax: 4, unitSet: 7, unitBp: 14500, queueSlots: 3 },
+    { ...base, cost: 800, damage: 55, cooldown: 3, range: 4700, detect: true, spawnEvery: 90, spawnMax: 4, unitSet: 7, unitBp: 14000, queueSlots: 3 },
   ],
   branches: {
     A: {
       ...base, name: "La Famiglia", summary: "Scagnozzi più spesso, arriva il Sicario, abilità Taglia", cost: 1200,
-      damage: 62, cooldown: 3, range: 4700, detect: true, spawnEvery: 60, spawnMax: 5, unitSet: 15, unitBp: 18000, queueSlots: 4,
+      damage: 58, cooldown: 3, range: 4700, detect: true, spawnEvery: 70, spawnMax: 5, unitSet: 15, unitBp: 16000, queueSlots: 4,
       abilityCooldown: 200, abilityTicks: 100, abilityBp: 30000,
     },
     B: {
       ...base, name: "Il Boss", summary: "Il Kingpin spara molto più forte, gli scagnozzi meno", cost: 1200,
-      damage: 150, cooldown: 3, range: 5300, detect: true, spawnEvery: 110, spawnMax: 3, unitSet: 7, unitBp: 11000, queueSlots: 4,
+      damage: 100, cooldown: 3, range: 5300, detect: true, spawnEvery: 110, spawnMax: 3, unitSet: 7, unitBp: 11000, queueSlots: 4,
     },
   },
   branches2: {
     A: {
-      ...base, name: "La Cupola", summary: "Uno scagnozzo ogni 4 s, fino a 7, Taglia più lunga e più ricca", cost: 2000,
-      damage: 72, cooldown: 3, range: 4900, detect: true, spawnEvery: 40, spawnMax: 7, unitSet: 15, unitBp: 24000, queueSlots: 4,
+      ...base, name: "La Cupola", summary: "Uno scagnozzo ogni 5,5 s, fino a 6, Taglia più lunga e più ricca", cost: 2000,
+      damage: 66, cooldown: 3, range: 4900, detect: true, spawnEvery: 55, spawnMax: 6, unitSet: 15, unitBp: 20000, queueSlots: 4,
       abilityCooldown: 200, abilityTicks: 150, abilityBp: 40000,
     },
     B: {
       ...base, name: "Il Don", summary: "Raffiche che ignorano l'armatura", cost: 2000,
-      damage: 280, cooldown: 2, range: 5900, detect: true, pierce: true, spawnEvery: 120, spawnMax: 3, unitSet: 7, unitBp: 10000, queueSlots: 4,
+      damage: 160, cooldown: 3, range: 5900, detect: true, pierce: true, spawnEvery: 120, spawnMax: 3, unitSet: 7, unitBp: 10000, queueSlots: 4,
     },
   },
 };
@@ -621,7 +623,7 @@ export interface UnitDef {
 export const UNITS: Record<UnitKind, UnitDef> = {
   scagnozzo: { name: "Scagnozzo", hp: 160, speed: 40, range: 2200, damage: 16, cooldown: 4 },
   portavalori: { name: "Portavalori", hp: 120, speed: 55, range: 0, damage: 0, cooldown: 0, pay: 35 },
-  buttafuori: { name: "Buttafuori", hp: 650, speed: 34, range: 700, damage: 80, cooldown: 8 },
+  buttafuori: { name: "Buttafuori", hp: 500, speed: 34, range: 700, damage: 80, cooldown: 8 },
   sicario: { name: "Sicario", hp: 220, speed: 30, range: 6000, damage: 210, cooldown: 25, strong: true },
 };
 

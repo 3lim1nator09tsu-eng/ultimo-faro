@@ -121,6 +121,18 @@ export function decide(state: GameState, policy: BotPolicy): Command[] {
   // "mirato": giocatore attento. Usa le abilità, mescola torri e sale di livello quando conviene.
   const ability = useAbilities(state);
   if (ability) return [ability];
+  // Kingpin: coda piena di Buttafuori (e un Portavalori), Taglia quando ci sono molti nemici.
+  for (const t of state.towers) {
+    if (t.kind !== "kingpin") continue;
+    const st = statsIn(state, t);
+    if (st.abilityCooldown && t.abilityCd === 0 && state.phase === "wave" && state.enemies.length >= 8) return [{ t: "towerAbility", id: t.id }];
+    const slots = Math.min(4, st.queueSlots || 1);
+    if (t.queue.length < slots) {
+      const want = (st.unitSet & 4 ? ["buttafuori", "buttafuori", st.unitSet & 8 ? "sicario" : "buttafuori", "portavalori"] : ["scagnozzo", "portavalori", "scagnozzo", "scagnozzo"])[t.queue.length];
+      if (st.unitSet & (1 << ["scagnozzo", "portavalori", "buttafuori", "sicario"].indexOf(want))) return [{ t: "queue", id: t.id, unit: want as "scagnozzo" }];
+    }
+    if (st.unitSet & 4 && t.queue[0] === "scagnozzo") return [{ t: "unqueue", id: t.id, index: 0 }];
+  }
   const count = (k: TowerKind) => state.towers.filter((t) => t.kind === k).length;
   const kinds = enemiesIn(state.mode, levelOf(state), state.night);
   const saboteurs = kinds.has("sabotatore") || [...kinds].some((k) => ENEMIES[k].song || ENEMIES[k].deathFreeze);
@@ -128,6 +140,7 @@ export function decide(state: GameState, policy: BotPolicy): Command[] {
   const w = state.wave;
   const upto = (cap: number, v: number) => Math.min(cap, v);
   const wants: Array<[TowerKind, number]> = [
+    ["kingpin", w >= 3 ? upto(TOWERS.kingpin.maxPerPlayer ?? 4, 1 + Math.floor(w / 8)) : 0],
     ["cecchino", hidden && w >= 2 ? upto(4, 2 + Math.floor(w / 8)) : 0],
     ["capitano", hidden && w >= 2 ? upto(3, 1 + Math.floor(w / 12)) : 0],
     ["medico", saboteurs && w >= 5 ? upto(3, 1 + Math.floor(w / 15)) : 0],
@@ -146,7 +159,7 @@ export function decide(state: GameState, policy: BotPolicy): Command[] {
   // Nelle partite lunghe, prima di aggiungere torri si migliorano quelle che ci sono.
   const unfinished = state.towers.filter((t) => TOWERS[t.kind].family === "attacco" && t.level < 3).length;
   const growFirst = w >= 10 && unfinished >= 3;
-  const pick: Record<TowerKind, Branch> = { balestra: "B", mortaio: "A", soffio: "B", cecchino: "B", bobina: "A", officina: "A", grammofono: "A", capitano: "B", medico: "B", arpione: "B", mitragliera: "B", purificatore: "A", cometa: "A", custode: "A", campana: "A", kingpin: "B" };
+  const pick: Record<TowerKind, Branch> = { balestra: "B", mortaio: "A", soffio: "B", cecchino: "B", bobina: "A", officina: "A", grammofono: "A", capitano: "B", medico: "B", arpione: "B", mitragliera: "B", purificatore: "A", cometa: "A", custode: "A", campana: "A", kingpin: (globalThis as { BOT_KP?: Branch }).BOT_KP ?? "B" };
   const ordered = [...state.towers].sort((a, b) => a.level - b.level || a.id - b.id);
   // Prima porta ogni torre almeno al livello 2: meglio poche torri forti che tante deboli.
   if (state.towers.length >= 3) {

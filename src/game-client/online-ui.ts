@@ -26,6 +26,7 @@ export interface OnlineApi {
   toast(t: string): void;
   rerender(): void;
   afterLogin(): Promise<void>;
+  afterLogout(): void;
   createRoom(mode: GameMode, level: string, night: number): Promise<void>;
   joinRoom(code: string, local: boolean): Promise<void>;
   leaderboard: LeaderRow[] | null;
@@ -102,6 +103,7 @@ export function renderOnline(host: HTMLElement, api: OnlineApi) {
     text: "Esci",
     onclick: () => {
       api.net.logout();
+      api.afterLogout();
       api.toast("Disconnesso: i progressi restano su questo dispositivo");
       api.rerender();
     },
@@ -143,7 +145,7 @@ export function renderOnline(host: HTMLElement, api: OnlineApi) {
       },
     })),
     el("div", { class: "olRoom two" }, code, el("button", { id: "olJoin", text: "Entra", onclick: () => void api.joinRoom(code.value.trim().toUpperCase(), false) })),
-    el("p", { class: "note", text: "Fino a 4 giocatori. Cash e vite sono in comune, ognuno porta la sua squadra: in partita ci sono tutte le torri delle squadre, al rango più alto." }),
+    el("p", { class: "note", text: "Fino a 4 giocatori. Le vite sono in comune; cash, torri e abilità sono di ognuno, e ognuno porta la sua squadra con i suoi ranghi." }),
   );
   // Classifica.
   const board = el("div", { id: "olBoard" });
@@ -157,6 +159,7 @@ export function renderOnline(host: HTMLElement, api: OnlineApi) {
     el("button", { id: "olBoardBtn", text: api.leaderboard ? "Aggiorna la classifica" : "Mostra la classifica", onclick: () => void api.loadLeaderboard() }),
     board,
     el("div", { class: "olPass" }, pw, change),
+    localRoomRow(api),
   );
 }
 

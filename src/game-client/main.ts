@@ -218,7 +218,6 @@ interface Meta {
   missionNext: number;
   hcWins: Record<string, number>;
   medals: string[];
-  adminEnabled: boolean;
   draft: Balance; // prove di bilanciamento su questo dispositivo
   changes: ChangeEntry[];
   newsSeen: number;
@@ -237,7 +236,7 @@ function freshMeta(): Meta {
   const totals = emptyTotals();
   return {
     v: 2, schegge: 0, earned: 0, unlocked: [...STARTER_TOWERS], loadout: [...STARTER_TOWERS], ranks, stars: {}, wins: {}, bestWave: {}, introSeen: false, seenLines: [],
-    perle: 0, xp: 0, totals, missions: [0, 1, 2].map((i) => newSlot(i, totals)), missionNext: 3, hcWins: {}, medals: [], adminEnabled: false, draft: emptyBalance(), changes: [], newsSeen: 0,
+    perle: 0, xp: 0, totals, missions: [0, 1, 2].map((i) => newSlot(i, totals)), missionNext: 3, hcWins: {}, medals: [], draft: emptyBalance(), changes: [], newsSeen: 0,
     modeWins: {}, modeBest: {}, nightWins: {}, nightBest: {}, mapPick: "porto", account: "", rev: 0,
   };
 }
@@ -281,7 +280,6 @@ function loadMeta(raw: string | null = store.get("faro.meta.v1")): Meta {
     }
     m.hcWins = record(d.hcWins, 1e6);
     if (Array.isArray(d.medals)) m.medals = d.medals.filter((x) => typeof x === "string");
-    m.adminEnabled = !!d.adminEnabled;
     // Le modifiche della 0.8 erano solo per le torri: diventano prove su questo dispositivo.
     const old = (d as { overrides?: unknown }).overrides;
     m.draft = cleanBalance(d.draft ?? (Array.isArray(old) ? { towers: old } : null));
@@ -333,8 +331,7 @@ function saveMeta() {
 }
 async function pushCloud() {
   if (!net.session) return;
-  const { adminEnabled: _a, ...rest } = meta;
-  void _a;
+  const rest = meta;
   try {
     await net.pushSave(rest, meta.rev, meta.earned, meta.totals.wins, meta.totals.perle);
     cloudNote = `Salvato online alle ${new Date().toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })}`;
@@ -351,23 +348,26 @@ async function syncAfterLogin() {
     const row = await net.loadSave();
     if (row && row.meta && typeof row.meta === "object") {
       store.set("faro.meta.backup", JSON.stringify(meta));
-      const keepAdmin = meta.adminEnabled;
       meta = loadMeta(JSON.stringify(row.meta));
-      meta.adminEnabled = keepAdmin || net.session.isAdmin;
       meta.account = id;
       store.set("faro.meta.v1", JSON.stringify(meta));
-      applyAll();
       cloudNote = "Progressi caricati dal salvataggio online";
     } else {
+      // Account nuovo: prende i progressi del dispositivo solo se non erano già di un altro account.
+      if (meta.account && meta.account !== id) {
+        store.set("faro.meta.backup", JSON.stringify(meta));
+        const keep = { introSeen: meta.introSeen, mapPick: meta.mapPick, newsSeen: meta.newsSeen };
+        meta = { ...freshMeta(), ...keep };
+        cloudNote = "Account nuovo: si parte da zero (i progressi dell'altro account restano suoi)";
+      } else cloudNote = "Progressi di questo dispositivo salvati online";
       meta.account = id;
       await pushCloud();
-      cloudNote = "Progressi di questo dispositivo salvati online";
     }
   } catch (e) {
     cloudNote = `Salvataggio online non disponibile: ${(e as Error).message}`;
   }
-  if (net.session?.isAdmin) meta.adminEnabled = true;
   store.set("faro.meta.v1", JSON.stringify(meta));
+  applyAll();
   await claimGrants();
   if (inMenu) renderMenu();
 }
@@ -450,10 +450,14 @@ try {
 }
 function applyAll() {
   if (matchBalance) applyBalance(matchBalance);
-  else applyBalance(published, meta.draft);
+  else applyBalance(published, myDraft());
+}
+/** Le prove di bilanciamento valgono solo per l'admin confermato. */
+function myDraft(): Balance {
+  return isAdmin() ? meta.draft : emptyBalance();
 }
 applyAll();
-const effectiveBalance = () => matchBalance ?? mergeBalance(published, meta.draft);
+const effectiveBalance = () => matchBalance ?? mergeBalance(published, myDraft());
 function cachePublished() {
   store.set("faro.balance.v1", JSON.stringify({ data: published, rev: publishedRev, at: publishedAt }));
 }
@@ -970,6 +974,11 @@ function setHtml(el: HTMLElement, html: string) {
 // ---------- comandi e tick ----------
 
 function send(cmd: Command) {
+  // Comandi admin: solo con l'account admin confermato, o nella partita di prova aperta dal pannello.
+  if (cmd.t.startsWith("admin") && !isAdmin() && !state.sandbox) {
+    toast("Solo l'admin");
+    return;
+  }
   if (match && match.status === "playing" && match.state === state) {
     const admin = cmd.t.startsWith("admin");
     if (admin && cmd.t === "adminCash" && cmd.to === undefined) cmd = { ...cmd, to: myP };
@@ -1395,7 +1404,8 @@ function renderMenu() {
   setText($("mLevel"), `Livello ${lv.level}`);
   setText($("mXp"), `${fmt(lv.into)} / ${fmt(lv.need)} XP`);
   $("mXpBar").style.setProperty("--p", String(lv.into / lv.need));
-  $("adminOpen").hidden = !meta.adminEnabled;
+  $("adminOpen").hidden = !isAdmin();
+  if (!isAdmin()) $("adminPanel").hidden = true;
   setText($("gfxToggle"), `Grafica: ${gfx === "alta" ? "alta" : "leggera"}`);
   renderOnlineSection();
   renderMissions();
@@ -1453,14 +1463,14 @@ function renderMenu() {
   const host = $("arsenal");
   host.innerHTML = "";
   // Torri admin: compaiono e si usano solo con l'admin attivo.
-  if (meta.adminEnabled) for (const k of ADMIN_ONLY) if (!meta.unlocked.includes(k)) meta.unlocked.push(k);
-  if (!meta.adminEnabled && ADMIN_ONLY.some((k) => meta.unlocked.includes(k))) {
+  if (isAdmin()) for (const k of ADMIN_ONLY) if (!meta.unlocked.includes(k)) meta.unlocked.push(k);
+  if (!isAdmin() && ADMIN_ONLY.some((k) => meta.unlocked.includes(k))) {
     meta.unlocked = meta.unlocked.filter((k) => !ADMIN_ONLY.includes(k));
     meta.loadout = meta.loadout.filter((k) => !ADMIN_ONLY.includes(k));
     if (!meta.loadout.length) meta.loadout = [...STARTER_TOWERS];
   }
   for (const kind of TOWER_ORDER) {
-    if (ADMIN_ONLY.includes(kind) && !meta.adminEnabled) continue;
+    if (ADMIN_ONLY.includes(kind) && !isAdmin()) continue;
     const def = TOWERS[kind];
     const row = document.createElement("div");
     const owned = meta.unlocked.includes(kind);
@@ -1652,6 +1662,10 @@ const onlineApi = {
   toast: (t: string) => toast(t),
   rerender: () => renderMenu(),
   afterLogin: () => syncAfterLogin(),
+  afterLogout: () => {
+    applyAll();
+    $("adminPanel").hidden = true;
+  },
   createRoom: (mode: GameMode, level: string, night: number) => createRoom(mode, level, night),
   joinRoom: (code: string, local: boolean) => joinRoom(code, local),
   async loadLeaderboard() {
@@ -1680,7 +1694,14 @@ async function checkServer() {
     }
   }
   if (net.session && reachable) {
-    // All'avvio si ricarica il ruolo e, se il salvataggio non è ancora legato, lo si collega.
+    // All'avvio si ricarica il ruolo dal server: senza conferma il pannello admin resta chiuso.
+    try {
+      await net.refreshProfile();
+    } catch {
+      /* server non raggiunto: niente pannello admin */
+    }
+    applyAll();
+    if (inMenu) renderMenu();
     if (meta.account !== net.session.userId) await syncAfterLogin();
     else await claimGrants();
   }
@@ -1870,113 +1891,10 @@ function leaveMatch() {
 
 // ---------- accesso admin ----------
 
-// Impronta della password admin per lo sblocco sul dispositivo. Le azioni sulle partite degli altri
-// passano comunque dal server, che controlla il ruolo dell'account.
-const ADMIN_HASH = "a6845d1b882c9b99c3014751ec790609a34e31523ee28b0f00df9f70e9a86b2f";
-async function sha256(text: string): Promise<string> {
-  const data = new TextEncoder().encode(text);
-  if (globalThis.crypto?.subtle) {
-    const buf = await crypto.subtle.digest("SHA-256", data);
-    return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
-  }
-  return sha256Plain(data);
-}
-
-/** SHA-256 senza WebCrypto, per le pagine aperte fuori da un contesto sicuro. */
-function sha256Plain(msg: Uint8Array): string {
-  const K = new Uint32Array([
-    0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
-    0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da, 0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
-    0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
-    0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3, 0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
-  ]);
-  const H = new Uint32Array([0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19]);
-  const len = msg.length;
-  const total = Math.ceil((len + 9) / 64) * 64;
-  const buf = new Uint8Array(total);
-  buf.set(msg);
-  buf[len] = 0x80;
-  const bits = len * 8;
-  const dv = new DataView(buf.buffer);
-  dv.setUint32(total - 4, bits >>> 0);
-  dv.setUint32(total - 8, Math.floor(bits / 0x100000000));
-  const W = new Uint32Array(64);
-  const rotr = (x: number, n: number) => (x >>> n) | (x << (32 - n));
-  for (let off = 0; off < total; off += 64) {
-    for (let i = 0; i < 16; i++) W[i] = dv.getUint32(off + i * 4);
-    for (let i = 16; i < 64; i++) {
-      const s0 = rotr(W[i - 15], 7) ^ rotr(W[i - 15], 18) ^ (W[i - 15] >>> 3);
-      const s1 = rotr(W[i - 2], 17) ^ rotr(W[i - 2], 19) ^ (W[i - 2] >>> 10);
-      W[i] = (W[i - 16] + s0 + W[i - 7] + s1) >>> 0;
-    }
-    let [a, b, c, d, e, f, g, h] = H;
-    for (let i = 0; i < 64; i++) {
-      const t1 = (h + (rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25)) + ((e & f) ^ (~e & g)) + K[i] + W[i]) >>> 0;
-      const t2 = ((rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22)) + ((a & b) ^ (a & c) ^ (b & c))) >>> 0;
-      h = g;
-      g = f;
-      f = e;
-      e = (d + t1) >>> 0;
-      d = c;
-      c = b;
-      b = a;
-      a = (t1 + t2) >>> 0;
-    }
-    H[0] += a;
-    H[1] += b;
-    H[2] += c;
-    H[3] += d;
-    H[4] += e;
-    H[5] += f;
-    H[6] += g;
-    H[7] += h;
-  }
-  return [...H].map((x) => x.toString(16).padStart(8, "0")).join("");
-}
-
-function askAdminPassword() {
-  if (net.session?.isAdmin) {
-    meta.adminEnabled = true;
-    saveMeta();
-    toast("Pannello admin attivo");
-    renderMenu();
-    return;
-  }
-  const body = $("adminBody");
-  body.innerHTML = "";
-  const h = document.createElement("h2");
-  h.textContent = "Accesso admin";
-  const input = document.createElement("input");
-  input.type = "password";
-  input.id = "adminPass";
-  input.placeholder = "Password admin";
-  input.autocomplete = "current-password";
-  const ok = document.createElement("button");
-  ok.className = "mode";
-  ok.id = "adminPassOk";
-  ok.textContent = "Sblocca";
-  const no = document.createElement("button");
-  no.textContent = "Annulla";
-  const note = document.createElement("p");
-  note.className = "note";
-  note.textContent = "Sblocca il pannello su questo dispositivo. Per agire sulle stanze degli altri entra con l'account admin.";
-  const tryIt = async () => {
-    if ((await sha256(`ultimofaro:${input.value}`)) === ADMIN_HASH) {
-      meta.adminEnabled = true;
-      saveMeta();
-      toast("Pannello admin attivo");
-      openAdmin();
-    } else {
-      toast("Password sbagliata");
-      input.value = "";
-    }
-  };
-  ok.addEventListener("click", () => void tryIt());
-  input.addEventListener("keydown", (ev) => ev.key === "Enter" && void tryIt());
-  no.addEventListener("click", closeAdmin);
-  body.append(h, note, input, ok, no);
-  $("adminPanel").hidden = false;
-  input.focus();
+// Il pannello admin si apre solo con un account che il server conferma come admin in questa sessione
+// del gioco: non basta un'impostazione salvata sul dispositivo, né una password scritta nel codice.
+function isAdmin(): boolean {
+  return net.verified && !!net.session?.isAdmin;
 }
 
 function renderMissions() {
@@ -2099,6 +2017,7 @@ const adminApi: AdminApi = {
   send: (cmd) => send(cmd),
   toast: (t) => toast(t),
   startSandbox(level, mode, night, eventBp) {
+    if (!isAdmin()) return;
     $("adminPanel").hidden = true;
     newMatch(mode, level, newSeed(), { mode, level, sandbox: true, ranks: meta.ranks, night, eventBp });
     toast("Partita di prova: tutte le torri, nessun premio");
@@ -2129,11 +2048,10 @@ const adminApi: AdminApi = {
       else m.base = meta.totals[def.key] - missionTarget(m);
     }), "Missioni completate"),
     reset: () => {
-      const keepAdmin = meta.adminEnabled;
+      if (!isAdmin()) return;
       const keepDraft = meta.draft;
       const keepChanges = meta.changes;
       meta = freshMeta();
-      meta.adminEnabled = keepAdmin;
       meta.draft = keepDraft;
       meta.changes = keepChanges;
       meta.introSeen = true;
@@ -2172,6 +2090,7 @@ const adminApi: AdminApi = {
           : "Server non raggiunto: valgono i valori originali o l'ultima copia salvata.",
     canPublish: () => !!net.session?.isAdmin,
     setDraft(kind: BalanceKind, entry: BalanceEntry) {
+      if (!isAdmin()) return;
       const key = (o: BalanceEntry) => JSON.stringify({ ...o, value: 0 });
       const rest = (meta.draft[kind] as BalanceEntry[]).filter((o) => key(o) !== key(entry));
       // Una prova uguale al valore pubblicato (o all'originale, se non c'è nulla di pubblicato) non serve.
@@ -2184,6 +2103,7 @@ const adminApi: AdminApi = {
       toast(net.session?.isAdmin ? "Prova applicata su questo dispositivo" : "Modifica applicata e registrata nella bacheca");
     },
     clearDraft() {
+      if (!isAdmin()) return;
       if (!balanceSize(meta.draft)) return;
       if (!net.session?.isAdmin) logChange("Valori originali ripristinati", [...meta.draft.towers.map((o) => describeEntry("towers", o)), ...meta.draft.modes.map((o) => describeEntry("modes", o)), ...meta.draft.maps.map((o) => describeEntry("maps", o))]);
       meta.draft = emptyBalance();
@@ -2236,6 +2156,7 @@ async function publishBalance(next: Balance, title: string, items: string[]) {
 }
 
 function adminMeta(change: () => void, msg: string) {
+  if (!isAdmin()) return;
   change();
   if (meta.loadout.length < LOADOUT_SIZE) for (const k of meta.unlocked) if (!meta.loadout.includes(k) && meta.loadout.length < LOADOUT_SIZE) meta.loadout.push(k);
   saveMeta();
@@ -2244,6 +2165,7 @@ function adminMeta(change: () => void, msg: string) {
 }
 
 function openAdmin() {
+  if (!isAdmin()) return;
   $("adminPanel").hidden = false;
   renderAdminPanel($("adminBody"), adminApi, closeAdmin);
 }
@@ -2473,23 +2395,6 @@ function bindButtons() {
     const d = $("adminDrawer");
     d.hidden = !d.hidden;
     if (!d.hidden) renderAdminDrawer(d, adminApi);
-  });
-  // Cinque tocchi sul titolo attivano o spengono il pannello admin.
-  let taps = 0;
-  let tapTimer = 0;
-  $("menuTitle").addEventListener("click", () => {
-    taps++;
-    clearTimeout(tapTimer);
-    tapTimer = window.setTimeout(() => (taps = 0), 1500);
-    if (taps >= 5) {
-      taps = 0;
-      if (meta.adminEnabled) {
-        meta.adminEnabled = false;
-        saveMeta();
-        toast("Pannello admin nascosto");
-        renderMenu();
-      } else askAdminPassword();
-    }
   });
   $("newsToggle").addEventListener("click", () => {
     const n = $("news");
@@ -3149,7 +3054,7 @@ function frame(now: number) {
     lastRender = now;
     updatePanel();
     updateBossBar();
-    $("adminBtn").hidden = inMenu || !(meta.adminEnabled || state.sandbox);
+    $("adminBtn").hidden = inMenu || !(isAdmin() || state.sandbox);
     render(now);
   }
   requestAnimationFrame(frame);
@@ -3192,7 +3097,6 @@ function start(saved: { snap?: string; log?: Array<[number, Command[]]>; seen?: 
       return state.seed;
     },
     debug: {
-      sha256Plain: (t: string) => sha256Plain(new TextEncoder().encode(t)),
       restart(seed: number, opts: GameOptions = {}) {
         newMatch(opts.mode ?? "campagna", opts.level ?? "porto", seed, opts);
         dialogQueue = [];

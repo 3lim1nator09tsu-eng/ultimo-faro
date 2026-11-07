@@ -74,6 +74,8 @@ export const cleanUsername = (u: string) => u.trim().toLowerCase();
 
 export class Net {
   session: Session | null = storage.get();
+  /** Il ruolo admin è stato confermato dal server durante questa apertura del gioco. */
+  verified = false;
   private refreshing: Promise<void> | null = null;
 
   get online(): boolean {
@@ -143,12 +145,26 @@ export class Net {
       this.session.username = prof[0].username;
       this.session.isAdmin = !!prof[0].is_admin;
     }
+    this.verified = !!prof[0];
     storage.set(this.session);
     return this.session;
   }
 
+  /** Rilegge nome e ruolo dal server: il ruolo salvato sul dispositivo non vale da solo. */
+  async refreshProfile(): Promise<void> {
+    if (!this.session) return;
+    const id = this.session.userId;
+    const prof = await this.json<Array<{ username: string; is_admin: boolean }>>(`/rest/v1/profiles?select=username,is_admin&id=eq.${id}`);
+    if (!this.session || this.session.userId !== id) return;
+    this.session.isAdmin = !!prof[0]?.is_admin;
+    if (prof[0]) this.session.username = prof[0].username;
+    this.verified = !!prof[0];
+    storage.set(this.session);
+  }
+
   logout() {
     const s = this.session;
+    this.verified = false;
     this.session = null;
     storage.set(null);
     if (s) fetch(SUPA.url + "/auth/v1/logout", { method: "POST", headers: { apikey: SUPA.key, Authorization: `Bearer ${s.access}` } }).catch(() => {});
@@ -174,6 +190,7 @@ export class Net {
           if (res.status === 400 || res.status === 401) {
             // Sessione scaduta o revocata: serve un nuovo accesso.
             this.session = null;
+            this.verified = false;
             storage.set(null);
             return;
           }

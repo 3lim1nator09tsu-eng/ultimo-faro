@@ -12,81 +12,9 @@ const ok = (c, m) => {
   if (!c) fails++;
 };
 
-// ---------- server finto ----------
-const ADMIN = "00000000-0000-4000-8000-00000000000a";
-const LUCA = "00000000-0000-4000-8000-00000000000b";
-const users = { admin: { id: ADMIN, pw: "segreta1", admin: true }, luca: { id: LUCA, pw: "lucaluca", admin: false } };
-const db = { balance: { data: {}, rev: 0, updated_at: "2026-11-07T10:00:00Z" }, log: [], grants: [], saves: {}, nextId: 1 };
-const who = (req) => {
-  const a = req.headers()["authorization"] || "";
-  const id = a.replace("Bearer tok-", "");
-  return Object.values(users).find((u) => u.id === id) ?? null;
-};
-const q = (url, k) => new URL(url).searchParams.get(k);
-async function handle(route) {
-  const req = route.request();
-  const url = req.url();
-  const path = new URL(url).pathname;
-  const m = req.method();
-  const cors = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "*", "Access-Control-Allow-Methods": "*", "Content-Type": "application/json" };
-  const send = (status, data) => route.fulfill({ status, headers: cors, body: data === undefined ? "" : JSON.stringify(data) });
-  if (m === "OPTIONS") return send(204);
-  const body = req.postData() ? JSON.parse(req.postData()) : null;
-  const u = who(req);
-  if (path === "/auth/v1/health") return send(200, {});
-  if (path === "/auth/v1/token") {
-    const name = body.email.split("@")[0];
-    const usr = users[name];
-    if (!usr || usr.pw !== body.password) return send(400, { error_description: "Invalid login credentials" });
-    return send(200, { access_token: `tok-${usr.id}`, refresh_token: "r", expires_in: 3600, user: { id: usr.id } });
-  }
-  if (path === "/rest/v1/profiles") {
-    const id = q(url, "id")?.replace("eq.", "");
-    const usr = Object.entries(users).find(([, x]) => x.id === id);
-    return send(200, usr ? [{ username: usr[0], is_admin: usr[1].admin }] : []);
-  }
-  if (path === "/rest/v1/saves") {
-    if (m === "GET") return send(200, db.saves[u?.id] ? [db.saves[u.id]] : []);
-    db.saves[u.id] = { meta: body.meta, rev: body.rev, updated_at: body.updated_at };
-    return send(201);
-  }
-  if (path === "/rest/v1/balance") {
-    if (m === "GET") return send(200, [db.balance]);
-    if (!u?.admin) return send(200, []);
-    if (q(url, "rev") !== `eq.${db.balance.rev}`) return send(200, []);
-    db.balance = { data: body.data, rev: body.rev, updated_at: body.updated_at };
-    return send(200, [{ rev: db.balance.rev }]);
-  }
-  if (path === "/rest/v1/balance_log") {
-    if (m === "GET") return send(200, [...db.log].reverse());
-    if (!u?.admin) return send(403, { message: "new row violates row-level security policy" });
-    db.log.push({ id: db.nextId++, title: body.title, items: body.items, created_at: "2026-11-07T12:00:00Z" });
-    return send(201);
-  }
-  if (path === "/rest/v1/rpc/admin_peek") {
-    if (!u?.admin) return send(400, { message: "Solo per gli admin" });
-    const usr = users[body.uname];
-    if (!usr) return send(200, null);
-    const meta = db.saves[usr.id]?.meta;
-    return send(200, { id: usr.id, username: body.uname, schegge: meta?.schegge ?? 0, perle: meta?.perle ?? 0, unlocked: meta?.unlocked ?? [], ranks: meta?.ranks ?? {}, saved: !!meta, pending: db.grants.filter((g) => g.user_id === usr.id && !g.claimed_at).length });
-  }
-  if (path === "/rest/v1/grants") {
-    if (m === "POST") {
-      if (!u?.admin) return send(403, { message: "new row violates row-level security policy" });
-      db.grants.push({ id: db.nextId++, user_id: body.user_id, payload: body.payload, note: body.note, claimed_at: null });
-      return send(201);
-    }
-    if (m === "GET") return send(200, db.grants.filter((g) => g.user_id === u?.id && !g.claimed_at).map(({ id, payload, note }) => ({ id, payload, note })));
-    if (m === "PATCH") {
-      const id = Number(q(url, "id").replace("eq.", ""));
-      const g = db.grants.find((x) => x.id === id && x.user_id === u?.id && !x.claimed_at);
-      if (!g) return send(200, []);
-      g.claimed_at = body.claimed_at;
-      return send(200, [{ id }]);
-    }
-  }
-  return send(200, []);
-}
+import { ADMIN, LUCA, SUPA_GLOB, fakeSupabase, login } from "./fake-supa.mjs";
+const fake = fakeSupabase();
+const { db, handle } = fake;
 
 const browser = await chromium.launch();
 async function open() {
@@ -94,21 +22,14 @@ async function open() {
   const page = await context.newPage();
   const errors = [];
   page.on("pageerror", (e) => errors.push(String(e)));
-  await page.route("https://jhbzszfglgetrcipaene.supabase.co/**", handle);
+  await page.route(SUPA_GLOB, handle);
   await page.route("https://fonts*/**", (r) => r.abort());
-  await page.setContent(html, { waitUntil: "load" });
+  await page.route("https://faro.test/", (r) => r.fulfill({ status: 200, contentType: "text/html; charset=utf-8", body: html }));
+  await page.goto("https://faro.test/");
   await page.waitForFunction(() => window.__faro);
   await page.waitForTimeout(400);
   return { page, errors, context };
 }
-async function login(page, name, pw) {
-  await page.fill("#olUser", name);
-  await page.fill("#olPass", pw);
-  await page.click("#olLogin");
-  await page.waitForSelector("#olLogout", { timeout: 5000 });
-  await page.waitForTimeout(400);
-}
-
 // ---------- l'admin pubblica e regala ----------
 const A = await open();
 await login(A.page, "admin", "segreta1");
@@ -196,10 +117,47 @@ await L3.page.waitForTimeout(600);
 const meta3 = await L3.page.evaluate(() => window.__faro.debug.meta);
 ok(meta3.schegge === 500, `nessuna doppia riscossione (${meta3.schegge})`);
 ok(L2.errors.length + L3.errors.length === 0, `nessun errore nelle pagine del giocatore ${[...L2.errors, ...L3.errors].join(" | ")}`);
-// Un giocatore normale non vede le schede da admin online.
+// Un giocatore normale non apre il pannello, nemmeno dalla console.
 await L3.page.evaluate(() => window.__faro.debug.openAdmin());
-const tabsL = await L3.page.locator(".adTabs button").allTextContents();
-ok(!tabsL.includes("Stanze online") && !(await L3.page.locator("#adPublish").count()), "senza ruolo admin niente pubblicazione né stanze");
+ok((await L3.page.locator("#adminPanel").isHidden()) && (await L3.page.locator("#adminOpen").isHidden()), "senza ruolo admin il pannello non si apre");
+
+// ---------- stesso dispositivo: prima l'admin, poi un altro account ----------
+const D = await open();
+await login(D.page, "admin", "segreta1");
+await D.page.evaluate(() => window.__faro.debug.adminApi.progress.schegge());
+ok((await D.page.locator("#adminOpen").isVisible()) && (await D.page.evaluate(() => window.__faro.debug.meta.schegge)) >= 1000, "l'admin ha il pannello e si dà Schegge");
+await D.page.click("#olLogout");
+await D.page.waitForTimeout(200);
+ok(await D.page.locator("#adminOpen").isHidden(), "dopo l'uscita il pannello sparisce");
+await login(D.page, "nuovo", "nuovonuovo");
+await D.page.waitForTimeout(400);
+const dm = await D.page.evaluate(() => window.__faro.debug.meta);
+ok(await D.page.locator("#adminOpen").isHidden(), "un altro account sullo stesso dispositivo non ha il pannello");
+ok(dm.schegge === 0 && !dm.unlocked.includes("custode"), `l'account nuovo non eredita i progressi dell'admin (${dm.schegge} Schegge)`);
+const before = await D.page.evaluate(() => {
+  window.__faro.debug.restart(2, { mode: "easy", level: "porto" });
+  const c = window.__faro.state.cash;
+  window.__faro.debug.send({ t: "adminCash", amount: 50000 });
+  window.__faro.debug.adminApi.startSandbox("porto", "easy");
+  return [c, window.__faro.state.cash, !!window.__faro.state.sandbox];
+});
+ok(before[0] === before[1] && !before[2], `comandi admin e partita di prova rifiutati (${before.join(", ")})`);
+// Riaprendo la pagina con la sessione salvata, il ruolo si ricontrolla sul server.
+{
+  const R = await open();
+  await login(R.page, "admin", "segreta1");
+  fake.users.admin.admin = false;
+  const p2 = await R.context.newPage();
+  await p2.route(SUPA_GLOB, handle);
+  await p2.route("https://faro.test/", (r) => r.fulfill({ status: 200, contentType: "text/html; charset=utf-8", body: html }));
+  await p2.goto("https://faro.test/");
+  await p2.waitForFunction(() => window.__faro);
+  await p2.waitForTimeout(800);
+  const still = true;
+  ok(still && (await p2.locator("#adminOpen").isHidden()) && (await p2.locator("#olLogout").isVisible()), "se il server toglie il ruolo, al riavvio il pannello non c'è più (sessione ancora aperta)");
+  fake.users.admin.admin = true;
+}
+ok(D.errors.length === 0, `nessun errore nel cambio di account ${D.errors.join(" | ")}`);
 
 await browser.close();
 console.log(fails ? `${fails} prove fallite` : "Online: tutte le prove superate");

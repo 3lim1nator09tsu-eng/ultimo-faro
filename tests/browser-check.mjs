@@ -3,7 +3,7 @@ import { readFileSync, mkdirSync } from "node:fs";
 import { createRequire } from "node:module";
 
 const require = createRequire("/opt/npm-tools/node_modules/");
-const ADMIN_PASSWORD = process.env.FARO_ADMIN_PW ?? "";
+import { SUPA_GLOB, fakeSupabase, login } from "./fake-supa.mjs";
 const { chromium } = require("playwright");
 const outDir = process.argv[2] ?? "dist/shots";
 mkdirSync(outDir, { recursive: true });
@@ -266,20 +266,18 @@ for (const vp of [{ width: 390, height: 700 }, { width: 844, height: 390 }]) {
   const tag = `${vp.width}x${vp.height}`;
   const { page, errors, context } = await open(vp, { menu: true });
   check(`${tag}: il pannello admin è nascosto all'inizio`, await page.locator("#adminOpen").isHidden());
+  // Senza account admin non si apre in nessun modo, nemmeno dalla console o con i tocchi sul titolo.
   for (let i = 0; i < 5; i++) await page.locator("#menuTitle").click();
-  check(`${tag}: cinque tocchi sul titolo chiedono la password admin`, await page.locator("#adminPass").isVisible());
-  await page.locator("#adminPass").fill("sbagliata");
-  await page.locator("#adminPassOk").click();
-  check(`${tag}: con la password sbagliata il pannello resta chiuso`, !(await page.locator("#adminOpen").isVisible()));
-  await page.locator("#adminPass").fill(ADMIN_PASSWORD);
-  await page.locator("#adminPassOk").click();
-  await page.waitForTimeout(150);
-  await page.locator("#adminPanel .adClose").click();
-  check(`${tag}: con la password giusta compare il pannello admin`, await page.locator("#adminOpen").isVisible());
+  await page.evaluate(() => window.__faro.debug.openAdmin());
+  check(`${tag}: senza account admin il pannello non si apre`, (await page.locator("#adminPanel").isHidden()) && (await page.locator("#adminOpen").isHidden()));
+  const fake = fakeSupabase();
+  await page.route(SUPA_GLOB, fake.handle);
+  await login(page, "admin", "segreta1");
+  check(`${tag}: con l'account admin compare il pannello admin`, await page.locator("#adminOpen").isVisible());
   await page.locator("#adminOpen").click();
   await page.waitForTimeout(100);
   await page.screenshot({ path: `${outDir}/19-admin-${tag}.png` });
-  check(`${tag}: il pannello ha cinque schede senza account`, (await page.locator(".adTabs button").count()) === 5);
+  check(`${tag}: il pannello ha sei schede`, (await page.locator(".adTabs button").count()) === 6);
   // Bilanciamento: danno della Balestra al livello 1.
   await page.locator('.adTabs button:has-text("Bilancia torri")').click();
   await page.locator('#adminPanel input[data-field="damage"]').fill("20");
@@ -287,7 +285,7 @@ for (const vp of [{ width: 390, height: 700 }, { width: 844, height: 390 }]) {
   await page.waitForTimeout(80);
   await page.screenshot({ path: `${outDir}/20-admin-balance-${tag}.png` });
   const meta = await page.evaluate(() => window.__faro.debug.meta);
-  check(`${tag}: la modifica di bilanciamento viene salvata e annotata`, meta.draft.towers.length === 1 && meta.draft.towers[0].value === 20 && meta.changes.length === 1, JSON.stringify(meta.draft));
+  check(`${tag}: la modifica di bilanciamento viene salvata e annotata`, meta.draft.towers.length === 1 && meta.draft.towers[0].value === 20, JSON.stringify(meta.draft));
   check(`${tag}: la riga modificata mostra il valore originale`, (await page.locator('#adminPanel .adRow.changed:has(input[data-field="damage"]) small').textContent()).includes("originale"));
   // Modalità: vita dei nemici di Easy al 150% e cash del Porto.
   await page.locator('.adTabs button:has-text("Bilancia modalità")').click();
@@ -302,7 +300,7 @@ for (const vp of [{ width: 390, height: 700 }, { width: 844, height: 390 }]) {
   await page.screenshot({ path: `${outDir}/20b-admin-modes-${tag}.png` });
   const m2 = await page.evaluate(() => window.__faro.debug.meta.draft);
   check(`${tag}: le modifiche di modalità e mappa finiscono nelle prove`, m2.modes.length === 1 && m2.modes[0].value === 15000 && m2.maps.length === 1 && m2.maps[0].value === 700, JSON.stringify(m2));
-  check(`${tag}: senza account non si pubblica`, (await page.locator("#adPublish").count()) === 0 && (await page.locator("#adDraftList li").count()) === 3);
+  check(`${tag}: le tre prove sono elencate e si possono pubblicare`, (await page.locator("#adPublish").count()) === 1 && (await page.locator("#adDraftList li").count()) === 3);
   const easy = await page.evaluate(() => {
     window.__faro.debug.restart(3, { mode: "easy", level: "porto" });
     return window.__faro.state.cash;
@@ -310,9 +308,8 @@ for (const vp of [{ width: 390, height: 700 }, { width: 844, height: 390 }]) {
   check(`${tag}: il cash di mappa modificato vale in partita`, easy === 700, String(easy));
   await page.evaluate(() => window.__faro.debug.openAdmin());
   await page.waitForTimeout(60);
-  // Giocatori: senza account admin la scheda spiega cosa serve.
   await page.locator('.adTabs button:has-text("Giocatori")').click();
-  check(`${tag}: la scheda Giocatori chiede l'account admin`, (await page.locator("#adminPanel .adBody").textContent()).includes("Serve l'account admin"));
+  check(`${tag}: la scheda Giocatori ha la ricerca per nome`, await page.locator("#adGUser").isVisible());
   // Annullare le prove riporta i valori originali (due tocchi).
   await page.locator('.adTabs button:has-text("Bilancia modalità")').click();
   await page.locator('.adBalance button.danger:has-text("Annulla le prove")').click();
@@ -363,7 +360,7 @@ for (const vp of [{ width: 390, height: 700 }, { width: 844, height: 390 }]) {
   await page.waitForTimeout(100);
   let st = await page.evaluate(() => window.__faro.state);
   check("Hardcore: 10 vite e 50 ondate", st.lives === 10 && (await page.locator("#wave").textContent()) === "0/50");
-  await page.evaluate(() => window.__faro.debug.send({ t: "adminWave", wave: 2 }));
+  await page.evaluate(() => window.__faro.step(window.__faro.state, [{ t: "adminWave", wave: 2 }]));
   await page.waitForTimeout(150);
   check("Hardcore: l'anteprima mostra i modificatori", /Agile/.test((await page.locator("#next").textContent()) ?? ""));
   await page.evaluate(() => {

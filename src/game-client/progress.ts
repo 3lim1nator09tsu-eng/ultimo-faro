@@ -129,6 +129,17 @@ export const MEDALS: Array<{ id: string; name: string; text: string; ok: (m: Med
 export const VERSION_NOTES: ChangeEntry[] = [
   {
     date: "2026-11-07",
+    title: "Versione 0.9.1: pannello admin solo per l'admin",
+    kind: "versione",
+    items: [
+      "Il pannello admin si apre solo con l'account admin, confermato dal server a ogni avvio: niente più password sul dispositivo",
+      "Cambiando account sullo stesso telefono o PC il pannello non resta aperto",
+      "Un account nuovo non eredita più i progressi dell'account usato prima sullo stesso dispositivo",
+      "Comandi admin e partite di prova rifiutati a chi non è admin",
+    ],
+  },
+  {
+    date: "2026-11-07",
     title: "Versione 0.9: bilanciamento dal server e premi dell'admin",
     kind: "versione",
     items: [

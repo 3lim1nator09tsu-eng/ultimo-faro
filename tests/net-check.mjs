@@ -2,6 +2,7 @@
 import { createRequire } from "node:module";
 import { spawn } from "node:child_process";
 const { chromium } = createRequire("/opt/npm-tools/node_modules/")("playwright");
+import { SUPA_GLOB, fakeSupabase, login } from "./fake-supa.mjs";
 const server = spawn("python3", ["-m", "http.server", "8765", "--bind", "127.0.0.1"], { cwd: "dist", stdio: "ignore" });
 await new Promise((r) => setTimeout(r, 800));
 let fails = 0;
@@ -16,6 +17,16 @@ for (const p of [A, B]) {
   await p.goto("http://127.0.0.1:8765/web/index.html");
   await p.waitForTimeout(300);
 }
+// Chi ospita è l'admin (account confermato dal server finto): i comandi admin sono suoi.
+const fake = fakeSupabase();
+await A.route(SUPA_GLOB, fake.handle);
+await login(A, "admin", "segreta1");
+// Chi partecipa senza account non può usare i comandi admin né le prove di bilanciamento.
+const guestTry = await B.evaluate(() => {
+  window.__faro.debug.adminApi.balance.setDraft("modes", { mode: "easy", field: "lives", value: 999 });
+  return JSON.stringify(window.__faro.debug.balance());
+});
+ok(guestTry === JSON.stringify({ towers: [], modes: [], maps: [] }), `senza admin le prove di bilanciamento sono ignorate (${guestTry})`);
 const enter = async (p) => {
   await p.evaluate(() => { document.querySelector(".olLocal").open = true; });
   await p.fill("#olLocalCode", "PROVA");

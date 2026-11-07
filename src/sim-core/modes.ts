@@ -252,7 +252,7 @@ export const NIGHTS: NightDef[] = [
   night(2, "foce", 25, { wave: 25, kind: "renna", hpBp: 65000 }, [{ wave: 12, kind: "folletto", hpBp: 60000 }], "Notte 2 · Zoccoli sul Ghiaccio", "La Renna Nera scatta all'improvviso."),
   night(3, "marea", 30, { wave: 30, kind: "pupazzo", hpBp: 480000 }, [{ wave: 15, kind: "renna", hpBp: 70000 }], "Notte 3 · Neve che Cammina", "Il Pupazzo Colossale si spezza in sei."),
   night(4, "foce", 35, { wave: 35, kind: "befana", hpBp: 620000 }, [{ wave: 17, kind: "pupazzo", hpBp: 70000 }, { wave: 28, kind: "folletto", hpBp: 90000 }], "Notte 4 · Scope nel Buio", "La Befana vola invisibile: serve chi la vede."),
-  night(5, "marea", 40, { wave: 40, kind: "krampus", hpBp: 800000 }, [
+  night(5, "crocevia", 40, { wave: 40, kind: "krampus", hpBp: 600000 }, [
     { wave: 10, kind: "folletto", hpBp: 80000 },
     { wave: 20, kind: "renna", hpBp: 90000 },
     { wave: 28, kind: "pupazzo", hpBp: 90000 },

@@ -576,6 +576,76 @@ export function drawTowerShape(ctx: CanvasRenderingContext2D, kind: TowerKind, x
     ctx.beginPath();
     ctx.arc(0, 0, T * 0.1, 0, Math.PI * 2);
     ctx.fill();
+  } else if (kind === "custode") {
+    // Lanterna del Custode: un occhio d'oro dentro una lanterna bianca.
+    ctx.rotate(angle);
+    ctx.fillStyle = "#f6efd8";
+    ctx.strokeStyle = COLORS.brass;
+    ctx.lineWidth = T * 0.04;
+    ctx.beginPath();
+    ctx.moveTo(-T * 0.2, -T * 0.24);
+    ctx.lineTo(T * 0.2, -T * 0.24);
+    ctx.lineTo(T * 0.26, T * 0.2);
+    ctx.lineTo(-T * 0.26, T * 0.2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = branch === "B" ? COLORS.coral : COLORS.brass;
+    ctx.beginPath();
+    ctx.ellipse(0, -T * 0.02, T * 0.15, T * 0.09, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#1a2124";
+    ctx.beginPath();
+    ctx.arc(0, -T * 0.02, T * 0.05, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = COLORS.brass;
+    ctx.beginPath();
+    ctx.moveTo(T * 0.26, 0);
+    ctx.lineTo(T * 0.38, 0);
+    ctx.stroke();
+  } else if (kind === "campana") {
+    const swing = Math.sin(time * 0.003) * 0.25;
+    ctx.rotate(swing);
+    ctx.fillStyle = COLORS.brass;
+    ctx.strokeStyle = "#f6efd8";
+    ctx.lineWidth = T * 0.035;
+    ctx.beginPath();
+    ctx.moveTo(-T * 0.08, -T * 0.28);
+    ctx.quadraticCurveTo(-T * 0.2, -T * 0.25, -T * 0.2, T * 0.05);
+    ctx.lineTo(-T * 0.29, T * 0.2);
+    ctx.lineTo(T * 0.29, T * 0.2);
+    ctx.lineTo(T * 0.2, T * 0.05);
+    ctx.quadraticCurveTo(T * 0.2, -T * 0.25, T * 0.08, -T * 0.28);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = branch === "B" ? COLORS.ice : "#1a2124";
+    ctx.beginPath();
+    ctx.arc(0, T * 0.25, T * 0.06, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (kind === "cometa") {
+    ctx.rotate(angle);
+    // Coda della cometa.
+    ctx.strokeStyle = branch === "B" ? "rgba(165,228,236,.8)" : "rgba(255,226,150,.75)";
+    ctx.lineWidth = T * 0.06;
+    for (const dy of [-0.08, 0, 0.08]) {
+      ctx.beginPath();
+      ctx.moveTo(-T * 0.05, T * dy);
+      ctx.lineTo(-T * 0.33, T * dy * 2.2);
+      ctx.stroke();
+    }
+    ctx.fillStyle = "#fff6d6";
+    ctx.strokeStyle = COLORS.brass;
+    ctx.lineWidth = T * 0.03;
+    ctx.beginPath();
+    for (let i = 0; i < 10; i++) {
+      const a = (i * Math.PI) / 5 - Math.PI / 2 + time * 0.0008;
+      const r = i % 2 ? T * 0.09 : T * 0.21;
+      ctx.lineTo(T * 0.1 + Math.cos(a) * r, Math.sin(a) * r);
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
   } else {
     const spin = time * 0.0004;
     ctx.strokeStyle = branch === "B" ? COLORS.coral : COLORS.ice;

@@ -12,7 +12,9 @@ export type EnemyKind =
   | "spettro" | "cavaliere" | "recaduto"
   | "brinato" | "orso" | "regina"
   | "elfo" | "pupazzetto" | "folletto" | "renna" | "pupazzo" | "befana" | "krampus";
-export type TowerKind = "balestra" | "mortaio" | "soffio" | "cecchino" | "bobina" | "officina" | "grammofono" | "capitano" | "medico" | "arpione" | "mitragliera" | "purificatore";
+export type TowerKind =
+  | "balestra" | "mortaio" | "soffio" | "cecchino" | "bobina" | "officina" | "grammofono" | "capitano" | "medico" | "arpione" | "mitragliera" | "purificatore"
+  | "custode" | "campana" | "cometa";
 export type Branch = "A" | "B";
 export type EnemyClass = "carne" | "corazza" | "meccanico";
 export type DamageType = "cinetico" | "gelo" | "elettrico" | "nessuno";
@@ -227,6 +229,7 @@ export interface TowerDef {
   unlock: number; // prezzo in Schegge; 0 = disponibile da subito
   ability?: { name: string; summary: string };
   perle?: number; // torre Hardcore: si compra con le Perle Nere
+  exclusive?: "admin" | "evento"; // solo per gli admin, oppure premio dell'evento
   apex: string; // nome della torre al livello 6
   levels: TowerLevel[]; // livelli 1-3
   branches: Record<Branch, BranchDef>; // livello 4
@@ -491,14 +494,75 @@ TOWERS.purificatore = {
   },
 };
 
+// Torri riservate: due per gli admin, una per chi vince la Notte 5.
+TOWERS.custode = {
+  apex: "Occhio del Creatore",
+  name: "Lanterna del Custode",
+  role: "Solo admin. Colpi enormi sul più forte, vede gli invisibili",
+  family: "attacco",
+  damageType: "nessuno",
+  target: "strong",
+  unlock: 0,
+  exclusive: "admin",
+  levels: [
+    { ...base, cost: 500, damage: 420, cooldown: 15, range: 7000, pierce: true },
+    { ...base, cost: 400, damage: 700, cooldown: 14, range: 7500, pierce: true },
+    { ...base, cost: 600, damage: 1100, cooldown: 13, range: 8000, pierce: true },
+  ],
+  branches: {
+    A: { ...base, name: "Luce che giudica", summary: "Un colpo devastante, doppio sui boss", cost: 900, damage: 2600, cooldown: 20, range: 9000, pierce: true, bossBp: 20000 },
+    B: { ...base, name: "Raggio continuo", summary: "Un raggio che non smette mai", cost: 900, damage: 260, cooldown: 2, range: 6500, pierce: true },
+  },
+};
+TOWERS.campana = {
+  apex: "Campana del Giudizio",
+  name: "Campana del Custode",
+  role: "Solo admin. Più danno, cadenza e gittata, vista sugli invisibili e niente stordimenti",
+  family: "supporto",
+  damageType: "nessuno",
+  target: "first",
+  unlock: 0,
+  exclusive: "admin",
+  levels: [
+    { ...base, cost: 450, range: 3000, auraBp: 2000, hasteBp: 1500, rangeBuffBp: 1000, immune: 10 },
+    { ...base, cost: 350, range: 3500, auraBp: 3000, hasteBp: 2000, rangeBuffBp: 1500, immune: 10 },
+    { ...base, cost: 500, range: 4000, auraBp: 4000, hasteBp: 2500, rangeBuffBp: 2000, immune: 10 },
+  ],
+  branches: {
+    A: { ...base, name: "Rintocco profondo", summary: "Bonus fortissimi da vicino", cost: 800, range: 4000, auraBp: 6000, hasteBp: 3500, rangeBuffBp: 2500, immune: 10 },
+    B: { ...base, name: "Eco lontana", summary: "Copre mezza mappa", cost: 800, range: 7000, auraBp: 3500, hasteBp: 2500, rangeBuffBp: 2000, immune: 10 },
+  },
+};
+TOWERS.cometa = {
+  apex: "Cometa di Natale",
+  name: "Stella Cometa",
+  role: "Premio della Notte 5. Stelle ad area che vedono gli invisibili",
+  family: "attacco",
+  damageType: "gelo",
+  target: "first",
+  unlock: 0,
+  exclusive: "evento",
+  levels: [
+    { ...base, cost: 350, damage: 95, cooldown: 18, range: 5500, radius: 1500 },
+    { ...base, cost: 280, damage: 160, cooldown: 17, range: 5800, radius: 1500 },
+    { ...base, cost: 420, damage: 250, cooldown: 16, range: 6200, radius: 1700 },
+  ],
+  branches: {
+    A: { ...base, name: "Pioggia di stelle", summary: "Esplosioni molto più ampie", cost: 650, damage: 320, cooldown: 16, range: 6500, radius: 2600 },
+    B: { ...base, name: "Coda di ghiaccio", summary: "Spesso congela chi colpisce", cost: 650, damage: 360, cooldown: 16, range: 6200, radius: 1700, stunTicks: 15, stunChanceBp: 6000 },
+  },
+};
+export const ADMIN_ONLY: TowerKind[] = ["custode", "campana"];
+export const EVENT_TOWER: TowerKind = "cometa";
+
 // Rilevamento: queste torri vedono gli invisibili; il Capitano lo presta alle torri vicine.
-export const DETECTORS: TowerKind[] = ["cecchino", "arpione", "purificatore"];
+export const DETECTORS: TowerKind[] = ["cecchino", "arpione", "purificatore", "custode", "cometa"];
 for (const k of DETECTORS) {
   TOWERS[k].levels = TOWERS[k].levels.map((l) => ({ ...l, detect: true }));
   TOWERS[k].branches = { A: { ...TOWERS[k].branches.A, detect: true }, B: { ...TOWERS[k].branches.B, detect: true } };
 }
 
-export const TOWER_ORDER: TowerKind[] = ["balestra", "mortaio", "soffio", "cecchino", "bobina", "officina", "grammofono", "capitano", "medico", "arpione", "mitragliera", "purificatore"];
+export const TOWER_ORDER: TowerKind[] = ["balestra", "mortaio", "soffio", "cecchino", "bobina", "officina", "grammofono", "capitano", "medico", "arpione", "mitragliera", "purificatore", "cometa", "custode", "campana"];
 export const HARDCORE_TOWERS: TowerKind[] = TOWER_ORDER.filter((k) => TOWERS[k].perle);
 
 // Apex: il livello 6 della torre, uno per tipo e per partita, con il rango permanente almeno 3.
@@ -522,7 +586,7 @@ export function apexStats(s: TowerStats): TowerStats {
     markBp: s.markBp > 10000 ? s.markBp + 1000 : s.markBp,
   };
 }
-export const STARTER_TOWERS: TowerKind[] = TOWER_ORDER.filter((k) => TOWERS[k].unlock === 0 && !TOWERS[k].perle);
+export const STARTER_TOWERS: TowerKind[] = TOWER_ORDER.filter((k) => TOWERS[k].unlock === 0 && !TOWERS[k].perle && !TOWERS[k].exclusive);
 export const LOADOUT_SIZE = 6;
 export const TRACKS: Record<Track, { name: string; summary: string }> = {
   danno: { name: "Danno", summary: "più danno" },
@@ -775,8 +839,51 @@ export const LEVELS: LevelDef[] = [
   },
 ];
 
+// Mappa finale dell'evento: quattro correnti unite all'ingresso, separate in mezzo, di nuovo unite prima del Faro.
+const CROCEVIA: MapDef = {
+  name: "Il Crocevia",
+  lanes: [0, 1, 2, 3].map((i): Cell[] => {
+    const row = [1, 3, 5, 7][i];
+    return [
+      [-1, 4],
+      [2, 4],
+      [2, row],
+      [12, row],
+      [12, 4],
+      [15, 4],
+    ];
+  }),
+  laneOpen: [1, 1, 1, 1],
+  faro: [15, 4],
+  rocks: [
+    [0, 1],
+    [0, 7],
+    [8, 0],
+    [14, 0],
+    [15, 8],
+  ],
+  emerge: [],
+  labels: [
+    { x: 7, y: 0.45, text: "Il Crocevia" },
+    { x: 7, y: 8.55, text: "Quattro correnti" },
+  ],
+  compass: [14.3, 6.6],
+};
+
+export const EVENT_LEVELS: LevelDef[] = [
+  {
+    id: "crocevia",
+    name: "Il Crocevia",
+    sub: "Quattro corsie unite che si separano e si ricongiungono davanti al Faro.",
+    map: CROCEVIA,
+    startCash: 600,
+    waveBonusBp: 20000,
+    waves: LEVELS[2].waves,
+  },
+];
+
 export function levelById(id: string): LevelDef {
-  return LEVELS.find((l) => l.id === id) ?? LEVELS[0];
+  return LEVELS.find((l) => l.id === id) ?? EVENT_LEVELS.find((l) => l.id === id) ?? LEVELS[0];
 }
 
 export const CAMPAIGN_LENGTH = 10;

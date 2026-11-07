@@ -497,7 +497,7 @@ test("divisione, gelo alla morte, furto e immunità al rallentamento", () => {
 
 test("sandbox e comandi admin: tutte le torri, nessun premio, vite infinite, salto d'ondata", () => {
   const s = createGame(1, { sandbox: true, allowed: ["balestra"] });
-  assert.equal(s.allowed.length, 12);
+  assert.equal(s.allowed.length, 15);
   assert.ok(s.cash >= 100000);
   step(s, [{ t: "adminGod", on: true }, { t: "adminSpawn", enemy: "corridore", count: 5, mods: ["agile"] }]);
   for (let i = 0; i < 600; i++) step(s, []);
@@ -507,4 +507,57 @@ test("sandbox e comandi admin: tutte le torri, nessun premio, vite infinite, sal
   s.phase = "won";
   s.cleared = 10;
   assert.equal(rewardFor(s), 0);
+});
+
+test("multigiocatore: cash, torri e abilità per giocatore, vite in comune", () => {
+  const s = createGame(11, { mode: "easy", players: [{ allowed: ["balestra", "mortaio"], ranks: {} }, { allowed: ["soffio"], ranks: { soffio: 4 } }] });
+  assert.equal(s.others.length, 1);
+  assert.equal(s.cash, s.others[0].cash);
+  const start = s.cash;
+  step(s, [{ t: "build", kind: "balestra", cx: 2, cy: 2, p: 0 }]);
+  assert.equal(s.cash, start - 100);
+  assert.equal(s.others[0].cash, start, "il cash dell'altro non si tocca");
+  step(s, [{ t: "build", kind: "balestra", cx: 4, cy: 2, p: 1 }]);
+  assert.equal(s.towers.length, 1, "il secondo giocatore non ha la Balestra in squadra");
+  step(s, [{ t: "build", kind: "soffio", cx: 4, cy: 2, p: 1 }]);
+  const soffio = s.towers.find((t) => t.kind === "soffio")!;
+  assert.equal(soffio.owner, 1);
+  assert.equal(soffio.rank, 4, "la torre usa i ranghi del suo proprietario");
+  const bal = s.towers.find((t) => t.kind === "balestra")!;
+  const before = s.towers.length;
+  step(s, [{ t: "sell", id: bal.id, p: 1 }]);
+  assert.equal(s.towers.length, before, "non si vende la torre di un altro");
+  step(s, [{ t: "upgrade", id: bal.id, p: 1 }]);
+  assert.equal(bal.level, 1, "non si migliora la torre di un altro");
+  // Abilità separate.
+  step(s, [{ t: "skip", p: 0 }]);
+  step(s, [{ t: "ability", id: "gelata", p: 1 }]);
+  assert.ok(s.others[0].abilityCd.gelata > 0 && s.abilityCd.gelata === 0, "la Gelata del secondo non consuma quella del primo");
+  // Cash admin a un solo giocatore.
+  const c0 = s.cash;
+  const c1 = s.others[0].cash;
+  step(s, [{ t: "adminCash", amount: 1000, to: 1 }]);
+  assert.equal(s.cash, c0);
+  assert.equal(s.others[0].cash, c1 + 1000);
+  // Le taglie vanno a tutti: dopo un'ondata entrambi hanno guadagnato.
+  for (let i = 0; i < 3000 && s.phase === "wave"; i++) step(s, []);
+  assert.ok(s.cash > c0 && s.others[0].cash > c1 + 1000);
+  assert.ok(allIntegers(s));
+  assert.ok(createGame(1).hpScaleBp === 10000 && s.hpScaleBp > 10000, "con più giocatori i nemici sono più resistenti");
+});
+
+test("Crocevia: quattro corsie unite all'inizio e alla fine, separate in mezzo", () => {
+  const g = createGame(3, { mode: "natale", night: 5 });
+  assert.equal(g.levelId, "crocevia");
+  const lvl = levelById("crocevia");
+  assert.equal(lvl.map.lanes.length, 4);
+  const starts = new Set(lvl.map.lanes.map((l) => JSON.stringify(l.slice(0, 2))));
+  const ends = new Set(lvl.map.lanes.map((l) => JSON.stringify(l.slice(-2))));
+  const middles = new Set(lvl.map.lanes.map((l) => JSON.stringify(l[3])));
+  assert.equal(starts.size, 1, "stessa entrata");
+  assert.equal(ends.size, 1, "stesso tratto finale");
+  assert.equal(middles.size, 4, "in mezzo quattro strade diverse");
+  const waves = modeWaves(NIGHTS[4], lvl);
+  const lanes = new Set(waves.flat().map((x) => x.lane));
+  assert.equal(lanes.size, 4, "i nemici arrivano da tutte e quattro");
 });

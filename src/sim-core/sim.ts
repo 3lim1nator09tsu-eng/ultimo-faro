@@ -87,6 +87,8 @@ export interface Tower {
   bufRange: number;
   bufHaste: number;
   bufDetect: number; // 1 se un Capitano vicino gli fa vedere gli invisibili
+  owner: number; // giocatore che l'ha costruita (0 in solitaria)
+  rank: number; // rango permanente del proprietario per questa torre
 }
 
 export interface Shell {
@@ -136,6 +138,8 @@ export interface GameState {
   apexBuilt: number;
   bossKills: number;
   night: number; // Notte di Natale, 0 fuori dall'evento
+  others: PlayerPurse[]; // giocatori dal secondo in poi: ognuno ha il suo cash, le sue abilità e la sua squadra
+  hpScaleBp: number; // nemici più resistenti quando i giocatori sono più di uno
   eventBp: number; // forza dell'evento (Disgelo)
   allowed: TowerKind[];
   ranks: Record<TowerKind, number>;
@@ -146,6 +150,13 @@ export interface GameState {
   spawns: Spawn[];
 }
 
+export interface PlayerPurse {
+  cash: number;
+  abilityCd: Record<AbilityId, number>;
+  allowed: TowerKind[];
+  ranks: Record<TowerKind, number>;
+}
+
 export interface GameOptions {
   mode?: GameMode;
   level?: string;
@@ -154,9 +165,12 @@ export interface GameOptions {
   sandbox?: boolean;
   night?: number;
   eventBp?: number;
+  /** Multigiocatore: squadra e ranghi di ogni giocatore, il primo è chi ospita. */
+  players?: Array<{ allowed: TowerKind[]; ranks: Partial<Record<TowerKind, number>> }>;
 }
 
-export type Command =
+export type Command = CommandBody & { p?: number }; // p: giocatore che manda il comando (0 in solitaria)
+type CommandBody =
   | { t: "build"; kind: TowerKind; cx: number; cy: number }
   | { t: "upgrade"; id: number }
   | { t: "spec"; id: number; branch: Branch }
@@ -167,7 +181,7 @@ export type Command =
   | { t: "ability"; id: "fascio"; x: number; y: number }
   | { t: "ability"; id: "gelata" }
   | { t: "apex"; id: number }
-  | { t: "adminCash"; amount: number }
+  | { t: "adminCash"; amount: number; to?: number }
   | { t: "adminSpawn"; enemy: EnemyKind; count: number; lane?: number; mods?: Mod[]; boss?: boolean; hpMulBp?: number }
   | { t: "adminLives"; lives: number }
   | { t: "adminGod"; on: boolean }
@@ -196,14 +210,14 @@ export type GameEvent =
   | { e: "split"; x: number; y: number }
   | { e: "kill"; x: number; y: number; bounty: number; boss: boolean }
   | { e: "leak"; damage: number }
-  | { e: "income"; amount: number; lives: number }
+  | { e: "income"; amount: number; lives: number; amounts?: number[] }
   | { e: "wave"; wave: number }
   | { e: "laneOpen"; lane: number }
   | { e: "emerge" }
   | { e: "built"; id: number; kind: TowerKind }
   | { e: "upgraded"; id: number }
   | { e: "sold"; refund: number }
-  | { e: "reject"; reason: string }
+  | { e: "reject"; reason: string; p?: number }
   | { e: "end"; phase: "won" | "lost" };
 
 // ---------- geometria delle mappe ----------
@@ -263,6 +277,28 @@ export function geometry(level: LevelDef): Geometry {
 }
 
 export const levelOf = (state: GameState) => levelById(state.levelId);
+
+// ---------- giocatori ----------
+
+export const playerCount = (s: GameState) => 1 + s.others.length;
+export const cashOf = (s: GameState, p = 0) => (p <= 0 ? s.cash : (s.others[p - 1]?.cash ?? 0));
+export const abilityCdOf = (s: GameState, p = 0) => (p <= 0 || !s.others[p - 1] ? s.abilityCd : s.others[p - 1].abilityCd);
+export const allowedOf = (s: GameState, p = 0) => (p <= 0 || !s.others[p - 1] ? s.allowed : s.others[p - 1].allowed);
+export const ranksOf = (s: GameState, p = 0) => (p <= 0 || !s.others[p - 1] ? s.ranks : s.others[p - 1].ranks);
+function addCash(s: GameState, p: number, v: number) {
+  if (p <= 0) s.cash = Math.max(0, s.cash + v);
+  else if (s.others[p - 1]) s.others[p - 1].cash = Math.max(0, s.others[p - 1].cash + v);
+}
+/** Taglie e premi d'ondata: ogni giocatore riceve l'intera somma, come in TDS. */
+function payAll(s: GameState, v: number) {
+  s.cash += v;
+  for (const o of s.others) o.cash += v;
+}
+const cleanRanks = (r?: Partial<Record<TowerKind, number>>) => {
+  const out = {} as Record<TowerKind, number>;
+  for (const k of TOWER_ORDER) out[k] = Math.max(1, Math.min(MAX_RANK, r?.[k] ?? 1));
+  return out;
+};
 
 export function lanePoint(level: LevelDef, lane: number, dist: number): { x: number; y: number } {
   const geo = geometry(level);
@@ -336,7 +372,7 @@ export function apexPrice(state: GameState, t: Tower): number {
 /** Motivo per cui l'Apex non si può costruire, oppure null se si può. */
 export function apexBlock(state: GameState, t: Tower): string | null {
   if (t.level !== 4) return "Serve la specializzazione";
-  if ((state.ranks[t.kind] ?? 1) < APEX_RANK) return `Serve il rango ${APEX_RANK} nell'Arsenale`;
+  if ((t.rank ?? 1) < APEX_RANK) return `Serve il rango ${APEX_RANK} nell'Arsenale`;
   if (state.towers.some((o) => o.kind === t.kind && o.level >= 5)) return "Un solo Apex per tipo";
   return null;
 }
@@ -359,7 +395,7 @@ export function rankedStats(t: Pick<Tower, "kind" | "level" | "branch">, rank: n
 }
 
 export function statsIn(state: GameState, t: Tower): TowerStats {
-  return rankedStats(t, state.ranks[t.kind] ?? 1);
+  return rankedStats(t, t.rank ?? state.ranks[t.kind] ?? 1);
 }
 
 /** Valori in partita: rango più i bonus delle torri di supporto vicine. */
@@ -459,13 +495,16 @@ export function perleFor(state: GameState): number {
 
 export function createGame(seed: number, opts: GameOptions = {}): GameState {
   const clean = seed | 0 || 0x5eed1234;
-  const ranks = {} as Record<TowerKind, number>;
-  for (const k of TOWER_ORDER) ranks[k] = Math.max(1, Math.min(MAX_RANK, opts.ranks?.[k] ?? 1));
+  const team = opts.players?.length ? opts.players : null;
+  const ranks = cleanRanks(team ? team[0].ranks : opts.ranks);
+  const pick = (list?: TowerKind[]) => TOWER_ORDER.filter((k) => opts.sandbox || !list || list.includes(k));
   const mode = opts.mode ?? "campagna";
   const nightN = mode === "natale" ? Math.max(1, Math.min(5, opts.night ?? 1)) : 0;
   const m = modeDef(mode, nightN || 1);
   const levelId = mode === "natale" && m && "map" in m ? (m as { map: string }).map : opts.level;
-  const level = LEVELS.find((l) => l.id === levelId) ?? LEVELS[0];
+  const level = levelById(levelId ?? "porto");
+  const startCash = opts.sandbox ? 100000 : level.startCash + (m ? m.bonusCash : 0);
+  const others: PlayerPurse[] = (team ?? []).slice(1, 4).map((pl) => ({ cash: startCash, abilityCd: { fascio: 0, gelata: 0 }, allowed: pick(pl.allowed), ranks: cleanRanks(pl.ranks) }));
   return {
     seed: clean,
     rng: clean,
@@ -477,7 +516,7 @@ export function createGame(seed: number, opts: GameOptions = {}): GameState {
     cleared: 0,
     prepLeft: RULES.firstPrepTicks,
     prepCount: 1,
-    cash: opts.sandbox ? 100000 : level.startCash + (m ? m.bonusCash : 0),
+    cash: startCash,
     lives: m ? m.lives : RULES.startLives,
     nextId: 1,
     kills: 0,
@@ -490,8 +529,10 @@ export function createGame(seed: number, opts: GameOptions = {}): GameState {
     apexBuilt: 0,
     bossKills: 0,
     night: nightN,
+    others,
+    hpScaleBp: 10000 + 6000 * others.length,
     eventBp: mode === "natale" ? Math.max(1000, Math.min(30000, opts.eventBp ?? 10000)) : 10000,
-    allowed: TOWER_ORDER.filter((k) => opts.sandbox || !opts.allowed || opts.allowed.includes(k)),
+    allowed: pick(team ? team[0].allowed : opts.allowed),
     ranks,
     abilityCd: { fascio: 0, gelata: 0 },
     enemies: [],
@@ -505,18 +546,30 @@ export function createGame(seed: number, opts: GameOptions = {}): GameState {
 
 function applyCommand(state: GameState, cmd: Command, events: GameEvent[]): void {
   if (state.phase === "won" || state.phase === "lost") return;
+  const p = Math.max(0, Math.min(state.others.length, cmd.p ?? 0));
   const reject = (reason: string): void => {
-    events.push({ e: "reject", reason });
+    events.push({ e: "reject", reason, p });
+  };
+  const cash = () => cashOf(state, p);
+  // Solo chi ha costruito una torre la può migliorare, vendere o comandare.
+  const mine = (id: number) => {
+    const t = state.towers.find((x) => x.id === id);
+    if (t && t.owner !== p) {
+      reject("Questa torre è di un altro giocatore");
+      return undefined;
+    }
+    if (!t) reject("Torre non trovata");
+    return t;
   };
   switch (cmd.t) {
     case "build": {
       const def = TOWERS[cmd.kind];
       if (!def) return reject("Torre sconosciuta");
-      if (!state.allowed.includes(cmd.kind)) return reject("Torre non in squadra");
+      if (!allowedOf(state, p).includes(cmd.kind)) return reject("Torre non in squadra");
       if (!isBuildable(state, cmd.cx, cmd.cy)) return reject("Qui non si può costruire");
       const cost = buildCost(state, cmd.kind, cmd.cx, cmd.cy);
-      if (state.cash < cost) return reject("Cash insufficiente");
-      state.cash -= cost;
+      if (cash() < cost) return reject("Cash insufficiente");
+      addCash(state, p, -cost);
       const id = state.nextId++;
       state.towers.push({
         id,
@@ -540,30 +593,32 @@ function applyCommand(state: GameState, cmd: Command, events: GameEvent[]): void
         bufRange: 0,
         bufHaste: 0,
         bufDetect: 0,
+        owner: p,
+        rank: ranksOf(state, p)[cmd.kind] ?? 1,
       });
       events.push({ e: "built", id, kind: cmd.kind });
       return;
     }
     case "upgrade": {
-      const t = state.towers.find((x) => x.id === cmd.id);
-      if (!t) return reject("Torre non trovata");
+      const t = mine(cmd.id);
+      if (!t) return;
       const cost = upgradePrice(state, t);
       if (cost === null) return reject("Scegli una specializzazione");
-      if (state.cash < cost) return reject("Cash insufficiente");
-      state.cash -= cost;
+      if (cash() < cost) return reject("Cash insufficiente");
+      addCash(state, p, -cost);
       t.invested += cost;
       t.level += 1;
       events.push({ e: "upgraded", id: t.id });
       return;
     }
     case "spec": {
-      const t = state.towers.find((x) => x.id === cmd.id);
-      if (!t) return reject("Torre non trovata");
+      const t = mine(cmd.id);
+      if (!t) return;
       if (t.level !== 3) return reject("Serve il livello 3");
       if (!TOWERS[t.kind].branches[cmd.branch]) return reject("Specializzazione sconosciuta");
       const cost = specPrice(state, t, cmd.branch);
-      if (state.cash < cost) return reject("Cash insufficiente");
-      state.cash -= cost;
+      if (cash() < cost) return reject("Cash insufficiente");
+      addCash(state, p, -cost);
       t.invested += cost;
       t.level = 4;
       t.branch = cmd.branch;
@@ -571,10 +626,11 @@ function applyCommand(state: GameState, cmd: Command, events: GameEvent[]): void
       return;
     }
     case "sell": {
-      const idx = state.towers.findIndex((x) => x.id === cmd.id);
-      if (idx < 0) return reject("Torre non trovata");
-      const refund = sellValue(state, state.towers[idx]);
-      state.cash += refund;
+      const t = mine(cmd.id);
+      if (!t) return;
+      const idx = state.towers.indexOf(t);
+      const refund = sellValue(state, t);
+      addCash(state, p, refund);
       state.towers.splice(idx, 1);
       events.push({ e: "sold", refund });
       return;
@@ -582,18 +638,18 @@ function applyCommand(state: GameState, cmd: Command, events: GameEvent[]): void
     case "skip": {
       if (state.phase !== "prep") return;
       const seconds = Math.floor(state.prepLeft / 10);
-      state.cash += seconds * RULES.skipBonusPerSecond;
+      payAll(state, seconds * RULES.skipBonusPerSecond);
       state.prepLeft = 0;
       return;
     }
     case "apex": {
-      const t = state.towers.find((x) => x.id === cmd.id);
-      if (!t) return reject("Torre non trovata");
+      const t = mine(cmd.id);
+      if (!t) return;
       const block = apexBlock(state, t);
       if (block) return reject(block);
       const cost = apexPrice(state, t);
-      if (state.cash < cost) return reject("Cash insufficiente");
-      state.cash -= cost;
+      if (cash() < cost) return reject("Cash insufficiente");
+      addCash(state, p, -cost);
       t.invested += cost;
       t.level = 5;
       state.apexBuilt += 1;
@@ -601,15 +657,16 @@ function applyCommand(state: GameState, cmd: Command, events: GameEvent[]): void
       return;
     }
     case "track": {
-      const t = state.towers.find((x) => x.id === cmd.id);
-      if (!t || t.kind !== "grammofono") return reject("Solo il Grammofono cambia disco");
+      const t = mine(cmd.id);
+      if (!t) return;
+      if (t.kind !== "grammofono") return reject("Solo il Grammofono cambia disco");
       if (cmd.track !== "danno" && cmd.track !== "gittata" && cmd.track !== "sconto") return reject("Disco sconosciuto");
       t.track = cmd.track;
       return;
     }
     case "towerAbility": {
-      const t = state.towers.find((x) => x.id === cmd.id);
-      if (!t) return reject("Torre non trovata");
+      const t = mine(cmd.id);
+      if (!t) return;
       const s = statsIn(state, t);
       if (!s.abilityCooldown) return reject("Questa torre non ha abilità");
       if (state.phase !== "wave") return reject("Usala durante un'ondata");
@@ -631,8 +688,9 @@ function applyCommand(state: GameState, cmd: Command, events: GameEvent[]): void
     }
     case "ability": {
       if (state.phase !== "wave") return reject("Usala durante un'ondata");
-      if (state.abilityCd[cmd.id] > 0) return reject(`${ABILITIES[cmd.id].name} non è ancora pronto`);
-      state.abilityCd[cmd.id] = ABILITIES[cmd.id].cooldown;
+      const cds = abilityCdOf(state, p);
+      if (cds[cmd.id] > 0) return reject(`${ABILITIES[cmd.id].name} non è ancora pronto`);
+      cds[cmd.id] = ABILITIES[cmd.id].cooldown;
       state.abilitiesUsed += 1;
       if (cmd.id === "gelata") {
         for (const e of state.enemies) e.stun = Math.max(e.stun, e.boss ? (ABILITIES.gelata.bossStun as number) : (ABILITIES.gelata.stun as number));
@@ -648,7 +706,8 @@ function applyCommand(state: GameState, cmd: Command, events: GameEvent[]): void
       return;
     }
     case "adminCash": {
-      state.cash = Math.max(0, state.cash + cmd.amount);
+      // Il cash va a un solo giocatore: a quello indicato, altrimenti a chi manda il comando.
+      addCash(state, Math.max(0, Math.min(state.others.length, cmd.to ?? p)), cmd.amount | 0);
       state.adminTouched = true;
       return;
     }
@@ -696,8 +755,10 @@ function applyCommand(state: GameState, cmd: Command, events: GameEvent[]): void
       return;
     }
     case "adminRecharge": {
-      state.abilityCd.fascio = 0;
-      state.abilityCd.gelata = 0;
+      for (const cd of [state.abilityCd, ...state.others.map((o) => o.abilityCd)]) {
+        cd.fascio = 0;
+        cd.gelata = 0;
+      }
       for (const t of state.towers) {
         t.abilityCd = 0;
         t.stun = 0;
@@ -742,6 +803,7 @@ function spawnDue(state: GameState): void {
   for (const s of state.spawns.slice(0, n)) {
     const def = ENEMIES[s.enemy];
     let hp = hpForWave(def.hp, Math.max(1, state.wave), s.hpMulBp);
+    if (state.hpScaleBp !== 10000) hp = Math.floor((hp * state.hpScaleBp) / 10000);
     if (s.mods & modBit("gonfio")) hp *= 2;
     const p = lanePoint(level, s.lane, 0);
     state.enemies.push({
@@ -838,7 +900,7 @@ function minionHp(state: GameState, kind: EnemyKind): number {
   const m = modeDef(state.mode, state.night);
   const w = Math.max(1, state.wave);
   const mul = m ? hpMulFor(m, w, 10000) : 10000;
-  return hpForWave(ENEMIES[kind].hp, w, Math.floor((mul * state.eventBp) / 10000));
+  return Math.floor((hpForWave(ENEMIES[kind].hp, w, Math.floor((mul * state.eventBp) / 10000)) * state.hpScaleBp) / 10000);
 }
 
 function newEnemy(state: GameState, kind: EnemyKind, lane: number, dist: number, hp: number, mods: number, offset: number): Enemy {
@@ -874,7 +936,7 @@ function clearDead(state: GameState, events: GameEvent[]): void {
       events.push({ e: "frost", x: e.x, y: e.y, radius: def.deathFreeze.range });
     }
     const bounty = def.bounty * (e.boss ? 15 : 1);
-    state.cash += bounty;
+    payAll(state, bounty);
     state.kills += 1;
     if (e.boss) state.bossKills += 1;
     events.push({ e: "kill", x: e.x, y: e.y, bounty, boss: e.boss });
@@ -910,18 +972,21 @@ function pickTarget(state: GameState, t: Tower, s: TowerStats): Enemy | null {
 }
 
 function waveIncome(state: GameState, events: GameEvent[]): void {
-  let amount = 0;
+  // Rendita e interessi vanno a chi possiede l'Officina; le vite sono di tutti.
+  const amounts = new Array(playerCount(state)).fill(0) as number[];
   let lives = 0;
   for (const t of state.towers) {
     const s = statsIn(state, t);
-    if (s.income > 0) amount += s.income;
-    if (s.interestBp > 0) amount += Math.min(s.interestCap, Math.floor((state.cash * s.interestBp) / 10000));
+    const o = Math.min(t.owner ?? 0, amounts.length - 1);
+    if (s.income > 0) amounts[o] += s.income;
+    if (s.interestBp > 0) amounts[o] += Math.min(s.interestCap, Math.floor((cashOf(state, o) * s.interestBp) / 10000));
     if (s.lifePerWave > 0) lives += s.lifePerWave;
   }
   const before = state.lives;
   state.lives = Math.min(RULES.startLives, state.lives + lives);
-  state.cash += amount;
-  if (amount > 0 || state.lives > before) events.push({ e: "income", amount, lives: state.lives - before });
+  amounts.forEach((a, o) => addCash(state, o, a));
+  const total = amounts.reduce((a, b) => a + b, 0);
+  if (total > 0 || state.lives > before) events.push({ e: "income", amount: amounts[0], lives: state.lives - before, amounts });
 }
 
 function updateSupport(state: GameState, events: GameEvent[]): void {
@@ -952,6 +1017,17 @@ function updateSupport(state: GameState, events: GameEvent[]): void {
         o.bufHaste = Math.max(o.bufHaste, haste);
         o.bufDetect = 1;
         if (s.rangeBuffBp) o.bufRange = Math.max(o.bufRange, s.rangeBuffBp);
+      }
+    } else if (sup.kind === "campana") {
+      // Campana del Custode: tutto insieme, e le torri vicine non vengono stordite.
+      for (const o of state.towers) {
+        if (o === sup || !inRange(sup.x, sup.y, o.x, o.y, s.range)) continue;
+        o.bufDamage = Math.max(o.bufDamage, s.auraBp);
+        o.bufHaste = Math.max(o.bufHaste, s.hasteBp);
+        o.bufRange = Math.max(o.bufRange, s.rangeBuffBp);
+        o.bufDetect = 1;
+        o.immune = Math.max(o.immune, s.immune);
+        o.stun = 0;
       }
     } else if (sup.kind === "medico") {
       if (sup.cooldown > 0) {
@@ -1052,6 +1128,7 @@ function enemyActs(state: GameState, events: GameEvent[]): void {
         e.skillCd = def.steal.every;
         const amount = Math.min(state.cash, def.steal.amount);
         state.cash -= amount;
+        for (const o of state.others) o.cash -= Math.min(o.cash, def.steal.amount);
         events.push({ e: "steal", x: e.x, y: e.y, amount });
       } else if (def.charge) {
         e.skillCd = def.charge.every;
@@ -1088,8 +1165,10 @@ export function step(state: GameState, commands: Command[] = []): GameEvent[] {
   const geo = geometry(level);
 
   state.tick += 1;
-  if (state.abilityCd.fascio > 0) state.abilityCd.fascio -= 1;
-  if (state.abilityCd.gelata > 0) state.abilityCd.gelata -= 1;
+  for (const cd of state.others.length ? [state.abilityCd, ...state.others.map((o) => o.abilityCd)] : [state.abilityCd]) {
+    if (cd.fascio > 0) cd.fascio -= 1;
+    if (cd.gelata > 0) cd.gelata -= 1;
+  }
 
   if (state.phase === "prep") {
     state.prepLeft -= 1;
@@ -1240,7 +1319,7 @@ export function step(state: GameState, commands: Command[] = []): GameEvent[] {
   }
   if (state.phase === "wave" && state.enemies.length === 0 && state.spawns.length === 0) {
     state.cleared = state.wave;
-    state.cash += Math.floor(((RULES.waveBonusBase + RULES.waveBonusStep * state.wave) * level.waveBonusBp) / 10000);
+    payAll(state, Math.floor(((RULES.waveBonusBase + RULES.waveBonusStep * state.wave) * level.waveBonusBp) / 10000));
     waveIncome(state, events);
     if (state.mode !== "infinita" && state.wave >= waveCount(state)) {
       state.phase = "won";
@@ -1298,6 +1377,14 @@ export function hashState(state: GameState): string {
   for (const k of TOWER_ORDER) mix(state.ranks[k]);
   mix(state.abilityCd.fascio);
   mix(state.abilityCd.gelata);
+  mix(state.hpScaleBp);
+  for (const o of state.others) {
+    mix(o.cash);
+    mix(o.abilityCd.fascio);
+    mix(o.abilityCd.gelata);
+    for (const k of o.allowed) str(k);
+    for (const k of TOWER_ORDER) mix(o.ranks[k]);
+  }
   for (const e of state.enemies) {
     mix(e.id);
     str(e.kind);
@@ -1332,6 +1419,8 @@ export function hashState(state: GameState): string {
     str(t.track);
     mix(t.abilityCd);
     mix(t.abilityLeft);
+    mix(t.owner);
+    mix(t.rank);
   }
   for (const s of state.shells) {
     mix(s.id);

@@ -129,6 +129,20 @@ export const MEDALS: Array<{ id: string; name: string; text: string; ok: (m: Med
 export const VERSION_NOTES: ChangeEntry[] = [
   {
     date: "2026-11-07",
+    title: "Versione 0.7: multigiocatore per giocatore e Crocevia",
+    kind: "versione",
+    items: [
+      "In multigiocatore ognuno ha il suo cash, le sue torri e le sue abilità; le vite restano in comune",
+      "Taglie e premi d'ondata vanno a ogni giocatore; i nemici sono più resistenti quando si gioca in più",
+      "Il cash dato dall'admin va a un solo giocatore, scelto dal pannello",
+      "Due torri riservate agli admin: Lanterna del Custode e Campana del Custode",
+      "Stella Cometa: la torre premio per chi vince la Notte 5",
+      "La Notte 5 si gioca sul Crocevia: quattro corsie unite che si separano e si ricongiungono",
+      "Grafica leggera e meno lavoro quando il menu è aperto: il gioco consuma molto meno",
+    ],
+  },
+  {
+    date: "2026-11-07",
     title: "Versione 0.6: modalità, Natale e online",
     kind: "versione",
     items: [

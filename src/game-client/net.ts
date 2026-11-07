@@ -215,6 +215,14 @@ export class Net {
     });
   }
 
+  /** Quali di questi account sono admin (i profili sono leggibili da chi ha un account). */
+  async adminIds(ids: string[]): Promise<string[]> {
+    const safe = ids.filter((x) => /^[0-9a-f-]{36}$/i.test(x));
+    if (!safe.length) return [];
+    const rows = await this.json<Array<{ id: string; is_admin: boolean }>>(`/rest/v1/profiles?select=id,is_admin&id=in.(${safe.join(",")})`);
+    return rows.filter((r) => r.is_admin).map((r) => r.id);
+  }
+
   async leaderboard(lim = 20): Promise<LeaderRow[]> {
     return this.json<LeaderRow[]>("/rest/v1/rpc/leaderboard", { method: "POST", body: JSON.stringify({ lim }) });
   }

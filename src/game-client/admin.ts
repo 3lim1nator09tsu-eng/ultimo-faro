@@ -24,6 +24,8 @@ export interface AdminApi {
   overrides(): Override[];
   applyOverride(o: Override): void;
   resetOverrides(): void;
+  /** Nomi dei giocatori della partita, nell'ordine della simulazione: il cash admin va a uno solo. */
+  players?(): string[];
   /** Stanze online: presenti solo con l'account admin collegato. */
   online?: {
     rooms(): Promise<Array<{ code: string; status: string; mode: string; level: string; night: number; info: Record<string, unknown>; updated_at: string }>>;
@@ -240,13 +242,17 @@ export function renderAdminDrawer(host: HTMLElement, api: AdminApi, remote = fal
   const mods = el("div", { class: "adMods" });
   for (const m of MOD_ORDER) mods.append(el("label", { title: MODS[m].summary }, el("input", { type: "checkbox", value: m }), MODS[m].name));
   const wave = el("input", { id: "adWaveN", type: "number", value: String(Math.max(1, s.wave + 1)), min: "1" }) as HTMLInputElement;
+  const names = api.players?.() ?? [];
+  const to = el("select", { id: "adTo" }, ...names.map((n, i) => el("option", { value: String(i), text: `Cash a ${n}` }))) as HTMLSelectElement;
+  const target = () => (names.length > 1 ? Number(to.value) : undefined);
   host.append(
     remote ? el("b", { text: "Comandi per questa stanza" }) : el("div", { class: "adHead" }, el("b", { text: "Comandi admin" }), btn("Chiudi", () => (host.hidden = true))),
+    ...(names.length > 1 ? [el("label", { class: "adField" }, "Il cash va a un solo giocatore", to)] : []),
     el(
       "div",
       { class: "adGrid" },
-      btn("+1.000 cash", () => api.send({ t: "adminCash", amount: 1000 })),
-      btn("+10.000 cash", () => api.send({ t: "adminCash", amount: 10000 })),
+      btn("+1.000 cash", () => api.send({ t: "adminCash", amount: 1000, to: target() })),
+      btn("+10.000 cash", () => api.send({ t: "adminCash", amount: 10000, to: target() })),
       btn("Vite a 20", () => api.send({ t: "adminLives", lives: 20 })),
       ...(remote
         ? [btn("Vite infinite: sì", () => api.send({ t: "adminGod", on: true })), btn("Vite infinite: no", () => api.send({ t: "adminGod", on: false }))]
@@ -307,6 +313,7 @@ function onlineTab(body: HTMLElement, api: AdminApi) {
               const fake: AdminApi = {
                 ...api,
                 state: () => ({ levelId: r.level, wave: i.wave ?? 0, god: false }) as unknown as GameState,
+                players: () => i.players ?? [],
                 send: (cmd) => {
                   on.command(r.code, cmd).then(
                     () => api.toast(`Inviato alla stanza ${r.code}`),

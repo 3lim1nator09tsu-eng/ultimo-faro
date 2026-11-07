@@ -1,6 +1,6 @@
 // Multigiocatore in lockstep: chi ospita fa avanzare la simulazione e trasmette, tick per tick, i comandi
 // di tutti. Gli altri eseguono gli stessi tick con gli stessi comandi e ottengono la stessa partita.
-import { MAX_RANK, TOWER_ORDER, TowerKind } from "../sim-core/content";
+import { ADMIN_ONLY, MAX_RANK, TOWER_ORDER, TowerKind } from "../sim-core/content";
 import { Command, GameEvent, GameOptions, GameState, createGame, hashState, restore, snapshot, step } from "../sim-core/sim";
 import { Transport } from "./net";
 
@@ -34,6 +34,10 @@ export class NetMatch {
   setup: Setup;
   lastFrameAt = 0;
   desyncs = 0;
+  /** Ordine dei giocatori nella partita: l'indice è il numero del giocatore nella simulazione. */
+  order: string[] = [];
+  /** Giocatori che il server conferma come admin: solo loro portano le torri admin. */
+  adminIds = new Set<string>();
   /** Chi partecipa ha ricevuto almeno una volta la sala d'attesa da chi ospita. */
   gotLobby = false;
   /** Tick confermato da chi ospita: gli altri non possono andare oltre. */
@@ -75,9 +79,9 @@ export class NetMatch {
       t.on("sync", (p: { id: string }) => this.hostSync(p.id));
     } else {
       t.on("lobby", (p: { players: Player[]; setup: Setup; status: NetMatch["status"] }) => this.guestLobby(p));
-      t.on("start", (p: { seed: number; opts: GameOptions }) => this.guestStart(p.seed, p.opts));
+      t.on("start", (p: { seed: number; opts: GameOptions; order: string[] }) => this.guestStart(p.seed, p.opts, p.order));
       t.on("f", (p: { a: number; b: number; c: Frame[]; h: Array<[number, string]> }) => this.guestFrames(p));
-      t.on("snap", (p: { to: string; tick: number; data: string; confirmed: number }) => this.guestSnap(p));
+      t.on("snap", (p: { to: string; tick: number; data: string; confirmed: number; order: string[] }) => this.guestSnap(p));
       t.on("bye", () => {
         this.status = "ended";
         this.onClosed("Chi ospitava ha chiuso la stanza");
@@ -156,22 +160,19 @@ export class NetMatch {
   }
 
   /** Regole comuni: tutte le torri delle squadre dei giocatori, al rango più alto tra chi le porta. */
+  /** Regole della partita: ognuno porta la sua squadra con i suoi ranghi; chi ospita è il giocatore 0. */
   matchOptions(): GameOptions {
-    const allowed = new Set<TowerKind>();
-    const ranks = {} as Record<TowerKind, number>;
-    for (const p of this.players.values()) {
-      for (const k of p.loadout) {
-        allowed.add(k);
-        ranks[k] = Math.max(ranks[k] ?? 1, p.ranks[k] ?? 1);
-      }
-    }
+    const list = [...this.players.values()].sort((a, b) => (a.host ? -1 : b.host ? 1 : 0));
+    this.order = list.map((p) => p.id);
     return {
       mode: this.setup.mode,
       level: this.setup.level,
       night: this.setup.night || undefined,
       eventBp: this.setup.eventBp,
-      allowed: TOWER_ORDER.filter((k) => allowed.has(k)),
-      ranks,
+      players: list.map((p) => ({
+        allowed: p.loadout.filter((k) => TOWER_ORDER.includes(k) && (!ADMIN_ONLY.includes(k) || this.adminIds.has(p.id))),
+        ranks: p.ranks,
+      })),
     };
   }
 
@@ -182,14 +183,16 @@ export class NetMatch {
     this.pending = [];
     this.out = [];
     this.hashes = [];
-    this.t.send("start", { seed, opts });
+    this.t.send("start", { seed, opts, order: this.order });
     this.broadcastLobby();
     return this.state;
   }
 
   private hostCmd(id: string, c: Command) {
-    if (!this.players.has(id) || !c || !PLAYER_CMDS.has((c as { t: string }).t)) return;
-    this.pending.push(c);
+    const p = this.order.indexOf(id);
+    if (p < 0 || !c || !PLAYER_CMDS.has((c as { t: string }).t)) return;
+    // Il numero del giocatore lo decide chi ospita, non chi manda il comando.
+    this.pending.push({ ...c, p });
   }
 
   /** Comandi di chi ospita, del pannello admin locale o arrivati dal database: entrano nel prossimo tick. */
@@ -224,7 +227,7 @@ export class NetMatch {
     if (!this.state) return;
     this.flush();
     const data = await pack(snapshot(this.state));
-    this.t.send("snap", { to, tick: this.state.tick, data, confirmed: this.state.tick });
+    this.t.send("snap", { to, tick: this.state.tick, data, confirmed: this.state.tick, order: this.order });
   }
 
   // ---------- chi partecipa ----------
@@ -238,7 +241,8 @@ export class NetMatch {
     this.onLobby();
   }
 
-  private guestStart(seed: number, opts: GameOptions) {
+  private guestStart(seed: number, opts: GameOptions, order: string[]) {
+    this.order = Array.isArray(order) ? order : [];
     this.state = createGame(seed, opts);
     this.status = "playing";
     this.frames.clear();
@@ -303,8 +307,9 @@ export class NetMatch {
     setTimeout(() => (this.syncing = false), 6000);
   }
 
-  private async guestSnap(p: { to: string; tick: number; data: string; confirmed: number }) {
+  private async guestSnap(p: { to: string; tick: number; data: string; confirmed: number; order: string[] }) {
     if (p.to !== this.me.id) return;
+    if (Array.isArray(p.order)) this.order = p.order;
     const first = !this.state;
     this.state = restore(await unpack(p.data));
     this.status = this.state.phase === "won" || this.state.phase === "lost" ? "ended" : "playing";

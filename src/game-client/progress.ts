@@ -137,6 +137,7 @@ export const VERSION_NOTES: ChangeEntry[] = [
       "Due percorsi per gli ultimi due miglioramenti, la scelta al livello 4 resta per il livello 5",
       "La Famiglia, poi La Cupola: scagnozzi molto più frequenti, arriva il Sicario, abilità Taglia (20 s di ricarica)",
       "Il Boss, poi Il Don: il Kingpin spara molto più forte, gli scagnozzi valgono meno",
+      "Gli scagnozzi hanno una vita fissa: chi gli va addosso la perde tutta; il Portavalori dà cash quando si schianta",
     ],
   },
   {

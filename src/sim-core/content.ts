@@ -610,7 +610,7 @@ export const UNIT_ORDER: UnitKind[] = ["scagnozzo", "portavalori", "buttafuori",
 export const KINGPIN_QUEUE = 4;
 export interface UnitDef {
   name: string;
-  hp: number;
+  hp: number; // vita fissa: è anche il danno che fa al nemico che gli va addosso
   speed: number; // unità per tick, verso il mare
   range: number;
   damage: number;
@@ -619,10 +619,10 @@ export interface UnitDef {
   pay?: number; // cash al proprietario quando esce di scena
 }
 export const UNITS: Record<UnitKind, UnitDef> = {
-  scagnozzo: { name: "Scagnozzo", hp: 140, speed: 40, range: 2200, damage: 16, cooldown: 4 },
-  portavalori: { name: "Portavalori", hp: 90, speed: 55, range: 0, damage: 0, cooldown: 0, pay: 35 },
-  buttafuori: { name: "Buttafuori", hp: 480, speed: 34, range: 700, damage: 80, cooldown: 8 },
-  sicario: { name: "Sicario", hp: 160, speed: 30, range: 6000, damage: 210, cooldown: 25, strong: true },
+  scagnozzo: { name: "Scagnozzo", hp: 160, speed: 40, range: 2200, damage: 16, cooldown: 4 },
+  portavalori: { name: "Portavalori", hp: 120, speed: 55, range: 0, damage: 0, cooldown: 0, pay: 35 },
+  buttafuori: { name: "Buttafuori", hp: 650, speed: 34, range: 700, damage: 80, cooldown: 8 },
+  sicario: { name: "Sicario", hp: 220, speed: 30, range: 6000, damage: 210, cooldown: 25, strong: true },
 };
 
 export const ADMIN_ONLY: TowerKind[] = ["custode", "campana"];

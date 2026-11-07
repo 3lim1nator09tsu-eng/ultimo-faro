@@ -239,6 +239,7 @@ export type GameEvent =
   | { e: "split"; x: number; y: number }
   | { e: "unit"; x: number; y: number; kind: UnitKind }
   | { e: "bounty"; x: number; y: number }
+  | { e: "crash"; x: number; y: number }
   | { e: "kill"; x: number; y: number; bounty: number; boss: boolean }
   | { e: "leak"; damage: number }
   | { e: "income"; amount: number; lives: number; amounts?: number[] }
@@ -1264,7 +1265,8 @@ function kingpins(state: GameState, events: GameEvent[]): void {
     const lane = lanes[(t.id + t.spawnN) % lanes.length];
     const dist = geo.lengths[lane] - 300;
     const p = lanePoint(level, lane, dist);
-    const hp = hpForWave(UNITS[kind].hp, Math.max(1, state.wave), s.unitBp);
+    // Vita fissa: dipende solo dall'unità e dalla forza del Kingpin, non dall'ondata.
+    const hp = Math.floor((UNITS[kind].hp * s.unitBp) / 10000);
     state.units.push({ id: state.nextId++, owner: t.owner, tower: t.id, kind, lane, dist, x: p.x, y: p.y, hp, maxHp: hp, cd: 0, power: s.unitBp });
     t.spawnN += 1;
     t.spawnCd = s.spawnEvery;
@@ -1275,9 +1277,17 @@ function kingpins(state: GameState, events: GameEvent[]): void {
   for (const u of state.units) {
     const def = UNITS[u.kind];
     const tower = state.towers.find((t) => t.id === u.tower);
-    // Chi si trova a contatto con un nemico perde vita: l'1% della vita del nemico a ogni tick.
+    // Scontro: un nemico che gli va addosso perde tanta vita quanta ne ha l'unità, e l'unità perde la sua.
+    let crashed = false;
     for (const e of state.enemies) {
-      if (e.hp > 0 && inRange(u.x, u.y, e.x, e.y, 450)) u.hp -= Math.max(1, Math.floor(e.hp / 100));
+      if (u.hp <= 0) break;
+      if (e.hp <= 0 || !inRange(u.x, u.y, e.x, e.y, 420)) continue;
+      const before = e.hp + e.shield;
+      const dealt = applyDamage(e, u.hp);
+      if (tower) tower.damageDone += dealt;
+      u.hp -= before;
+      crashed = true;
+      events.push({ e: "crash", x: u.x, y: u.y });
     }
     let target: Enemy | null = null;
     if (def.range > 0) {
@@ -1299,7 +1309,8 @@ function kingpins(state: GameState, events: GameEvent[]): void {
     if (!target) u.dist -= def.speed;
     const gone = u.hp <= 0 || u.dist <= 0 || !tower;
     if (gone) {
-      if (def.pay && tower) {
+      // Il Portavalori paga quando si schianta contro un nemico.
+      if (def.pay && tower && crashed) {
         const pay = Math.floor((def.pay * u.power * (tower.branch === "A" ? 2 : 1)) / 10000);
         addCash(state, u.owner, pay);
         events.push({ e: "kill", x: u.x, y: u.y, bounty: pay, boss: false });

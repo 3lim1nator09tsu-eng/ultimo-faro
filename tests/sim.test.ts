@@ -287,6 +287,7 @@ test("ogni livello è vincibile da un bot con buone torri", () => {
 import { HARDCORE_LENGTH, hardcoreWaves } from "../src/sim-core/content";
 import { apexBlock, perleFor, modBit } from "../src/sim-core/sim";
 import { HARDCORE, NIGHTS, SURVIVAL, disgeloFor, modeWaves } from "../src/sim-core/modes";
+import { UNITS } from "../src/sim-core/content";
 import { waveCount } from "../src/sim-core/sim";
 
 const spawnOne = (s: ReturnType<typeof createGame>, enemy: any, mods: any[] = [], extra: Record<string, unknown> = {}) => {
@@ -667,4 +668,37 @@ test("Kingpin: spara, costa 800, coda da 1 a 4 posti, scagnozzi gratis, due perc
   step(g, [{ t: "unqueue", id: g.towers[0].id, index: 0 }, { t: "skip" }]);
   for (let i = 0; i < 300; i++) step(g, []);
   assert.ok(g.towers[0].damageDone > 0 && g.units.length === 0, "spara anche con la coda vuota");
+});
+
+test("Kingpin: gli scagnozzi hanno vita fissa e la tolgono a chi gli va addosso; il Portavalori paga schiantandosi", () => {
+  const s = createGame(12, { mode: "easy", allowed: ["kingpin"] });
+  s.cash = 5000;
+  step(s, [{ t: "build", kind: "kingpin", cx: 2, cy: 2 }]);
+  const k = s.towers[0];
+  step(s, [{ t: "upgrade", id: k.id }, { t: "unqueue", id: k.id, index: 0 }, { t: "queue", id: k.id, unit: "portavalori" }]);
+  step(s, [{ t: "skip" }]);
+  // Aspetta il primo Portavalori.
+  let u = s.units[0];
+  for (let i = 0; i < 200 && !u; i++) {
+    step(s, []);
+    u = s.units[0];
+  }
+  assert.ok(u, "il Portavalori parte");
+  assert.equal(u.maxHp, Math.floor((UNITS.portavalori.hp * towerStats(k).unitBp) / 10000), "vita fissa, non dipende dall'ondata");
+  // Mette un nemico addosso al Portavalori.
+  const cash0 = s.cash;
+  step(s, [{ t: "adminSpawn", enemy: "bruto", count: 1, hpMulBp: 100000 }]);
+  step(s, []);
+  const e = s.enemies.find((x) => x.kind === "bruto")!;
+  const hp0 = e.hp;
+  e.dist = u.dist;
+  e.lane = u.lane;
+  e.x = u.x;
+  e.y = u.y;
+  const uhp = u.hp;
+  const ev = step(s, []);
+  assert.ok(ev.some((x) => x.e === "crash"), "si scontrano");
+  assert.equal(e.hp, hp0 - uhp, "il nemico perde la vita del Portavalori");
+  assert.ok(!s.units.some((x) => x.id === u.id), "il Portavalori si schianta");
+  assert.ok(s.cash > cash0, "e porta cash");
 });

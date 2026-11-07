@@ -624,7 +624,7 @@ function statsLine(kind: TowerKind, level: number, branch: Branch | null, rank =
   if (kind === "medico") return `Libera le torri stordite, poi le protegge ${num(s.immune / TICKS_PER_SECOND)} s. Raggio ${range}.`;
   if (kind === "kingpin") {
     const who = UNIT_ORDER.filter((_, i) => s.unitSet & (1 << i)).map((u) => UNITS[u].name).join(", ");
-    return `Spara: danno ${s.damage}, ${num(TICKS_PER_SECOND / s.cooldown)} colpi/s, gittata ${range}${s.pierce ? ", ignora l'armatura" : ""}. Coda di ${s.queueSlots} ${s.queueSlots === 1 ? "posto" : "posti"} (${who}), uno ogni ${num(s.spawnEvery / TICKS_PER_SECOND)} s, fino a ${s.spawnMax} in campo, forza ${pct(s.unitBp)}.${s.abilityCooldown ? " Abilità Taglia." : ""} Tutti vedono gli invisibili.`;
+    return `Spara: danno ${s.damage}, ${num(TICKS_PER_SECOND / s.cooldown)} colpi/s, gittata ${range}${s.pierce ? ", ignora l'armatura" : ""}. Coda di ${s.queueSlots} ${s.queueSlots === 1 ? "posto" : "posti"} (${who}), uno ogni ${num(s.spawnEvery / TICKS_PER_SECOND)} s, fino a ${s.spawnMax} in campo, vita x${num(s.unitBp / 10000)}. Chi si scontra con uno scagnozzo perde la sua vita.${s.abilityCooldown ? " Abilità Taglia." : ""}`;
   }
   if (kind === "campana") return `+${pct(s.auraBp)} danno, +${pct(s.hasteBp)} cadenza, +${pct(s.rangeBuffBp)} gittata, vista sugli invisibili e niente stordimenti. Raggio ${range}.`;
   if (s.pulseAll) return `Ogni secondo ${s.damage} danni a tutti i nemici nel raggio e toglie i modificatori${s.bossBp > 10000 ? `, x${s.bossBp / 10000} sui boss` : ""}. Raggio ${range}.`;
@@ -818,7 +818,8 @@ function updateExtra(t: GameState["towers"][number]) {
         const b = document.createElement("button");
         b.className = `kpUnit kp-${u}`;
         b.dataset.unit = u;
-        const note = !ok ? (u === "sicario" ? "La Famiglia" : "livello più alto") : UNITS[u].pay ? `porta ${UNITS[u].pay} cash` : u === "buttafuori" ? "corpo a corpo" : u === "sicario" ? "da lontano" : "mitra";
+        const hpU = Math.floor((UNITS[u].hp * s.unitBp) / 10000);
+        const note = !ok ? (u === "sicario" ? "La Famiglia" : "livello più alto") : UNITS[u].pay ? `vita ${hpU}, schianto: cash` : `vita ${hpU}`;
         b.innerHTML = `<b>${UNITS[u].name}</b><small>${note}</small>`;
         b.disabled = !ok || !mineT || t.queue.length >= open;
         b.addEventListener("click", () => send({ t: "queue", id: t.id, unit: u }));
@@ -960,6 +961,10 @@ function handleEvents(events: GameEvent[]) {
       case "frost":
         fx.push({ kind: "ring", x: ev.x, y: ev.y, r: ev.radius, color: "#e9fbff", born: now, life: 600 });
         sfx.freeze();
+        break;
+      case "crash":
+        fx.push({ kind: "blast", x: ev.x, y: ev.y, r: 500, born: now, life: 260 });
+        sfx.thump();
         break;
       case "bounty":
         fx.push({ kind: "ring", x: ev.x, y: ev.y, r: 9000, color: COLORS.brass, born: now, life: 700 });

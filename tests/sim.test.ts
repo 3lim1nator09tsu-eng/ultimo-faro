@@ -702,3 +702,32 @@ test("Kingpin: gli scagnozzi hanno vita fissa e la tolgono a chi gli va addosso;
   assert.ok(!s.units.some((x) => x.id === u.id), "il Portavalori si schianta");
   assert.ok(s.cash > cash0, "e porta cash");
 });
+
+test("Kingpin: Buttafuori da 900 contro nemico da 500, il nemico muore e il Buttafuori resta con 400", () => {
+  const s = createGame(13, { mode: "easy", allowed: ["kingpin"] });
+  s.cash = 9000;
+  step(s, [{ t: "build", kind: "kingpin", cx: 2, cy: 2 }]);
+  const k = s.towers[0];
+  step(s, [{ t: "upgrade", id: k.id }, { t: "upgrade", id: k.id }, { t: "unqueue", id: k.id, index: 0 }, { t: "queue", id: k.id, unit: "buttafuori" }]);
+  step(s, [{ t: "skip" }]);
+  let u = s.units[0];
+  for (let i = 0; i < 200 && !u; i++) {
+    step(s, []);
+    u = s.units[0];
+  }
+  s.enemies = [];
+  s.spawns = [];
+  u.hp = 900;
+  step(s, [{ t: "adminSpawn", enemy: "bruto", count: 1 }]);
+  step(s, []);
+  const e = s.enemies[0];
+  e.hp = 500;
+  e.maxHp = 500;
+  e.dist = u.dist;
+  e.lane = u.lane;
+  e.x = u.x;
+  e.y = u.y;
+  step(s, []);
+  assert.ok(!s.enemies.some((x) => x.id === e.id), "il nemico muore sul colpo");
+  assert.equal(s.units.find((x) => x.id === u.id)?.hp, 400, "il Buttafuori resta con 400");
+});

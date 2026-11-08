@@ -41,6 +41,7 @@ export interface ModeDef {
   maps: string[];
   mapHpBp?: Record<string, number>; // correzione in più per mappa, solo in questa modalità
   countBp?: number; // quantità di nemici rispetto alla ricetta (pannello admin), 10000 = invariata
+  rampBp?: number; // vita in più che cresce ondata dopo ondata fino all'ultima, 10000 = niente
 }
 
 export interface NightDef extends ModeDef {
@@ -68,7 +69,8 @@ export const SURVIVAL: ModeDef[] = [
     bonusCash: 0,
     curveA: 700,
     curveB: 25,
-    hpBp: 8000,
+    hpBp: 15100,
+    rampBp: 14000,
     pool: [e("risacca", 1, 8, 80, 10), e("corridore", 3, 6, 60, 8), e("bruto", 5, 2, 35, 22), e("sabotatore", 12, 2, 15, 30)],
     maxGroups: 3,
     modsFrom: 0,
@@ -91,7 +93,8 @@ export const SURVIVAL: ModeDef[] = [
     bonusCash: 0,
     curveA: 900,
     curveB: 35,
-    hpBp: 9000,
+    hpBp: 18200,
+    rampBp: 16000,
     pool: [e("risacca", 1, 9, 90, 9), e("corridore", 2, 6, 70, 8), e("bruto", 4, 2, 40, 20), e("sabotatore", 6, 2, 20, 28)],
     maxGroups: 3,
     modsFrom: 15,
@@ -117,7 +120,8 @@ export const SURVIVAL: ModeDef[] = [
     bonusCash: 100,
     curveA: 1000,
     curveB: 40,
-    hpBp: 10000,
+    hpBp: 14600,
+    rampBp: 17000,
     pool: [e("risacca", 1, 8, 80, 9), e("tizzone", 1, 5, 70, 8), e("corridore", 3, 6, 60, 8), e("magmatico", 6, 2, 30, 24), e("bruto", 8, 2, 35, 20), e("sabotatore", 10, 2, 20, 26)],
     maxGroups: 3,
     modsFrom: 12,
@@ -143,7 +147,8 @@ export const SURVIVAL: ModeDef[] = [
     bonusCash: 150,
     curveA: 1100,
     curveB: 45,
-    hpBp: 10500,
+    hpBp: 12900,
+    rampBp: 17000,
     pool: [e("risacca", 1, 9, 80, 9), e("spettro", 3, 3, 50, 12), e("cavaliere", 6, 2, 30, 24), e("bruto", 5, 2, 35, 20), e("sabotatore", 8, 2, 20, 26), e("tizzone", 10, 5, 60, 8), e("magmatico", 14, 2, 25, 24)],
     maxGroups: 3,
     modsFrom: 8,
@@ -169,7 +174,8 @@ export const SURVIVAL: ModeDef[] = [
     bonusCash: 200,
     curveA: 1200,
     curveB: 50,
-    hpBp: 11800,
+    hpBp: 16900,
+    rampBp: 18000,
     pool: [e("risacca", 1, 9, 80, 9), e("brinato", 2, 3, 50, 14), e("corridore", 3, 6, 60, 8), e("orso", 6, 1, 25, 30), e("spettro", 8, 3, 45, 12), e("sabotatore", 10, 2, 20, 26), e("cavaliere", 12, 2, 25, 24)],
     maxGroups: 3,
     modsFrom: 6,
@@ -198,6 +204,7 @@ export const HARDCORE: ModeDef = {
   curveA: 1300,
   curveB: 70,
   hpBp: 14000,
+  rampBp: 18000,
   pool: [
     e("risacca", 1, 9, 80, 9), e("corridore", 2, 6, 60, 8), e("bruto", 4, 2, 35, 20), e("sabotatore", 6, 2, 20, 26),
     e("tizzone", 8, 5, 60, 8), e("magmatico", 12, 2, 25, 24), e("spettro", 16, 3, 45, 12), e("cavaliere", 20, 2, 25, 24),
@@ -227,7 +234,7 @@ const NIGHT_POOL: PoolEntry[] = [
   e("orso", 6, 1, 25, 28), e("spettro", 8, 3, 45, 11), e("cavaliere", 10, 2, 25, 22), e("sabotatore", 12, 2, 20, 24),
 ];
 // hpBp tarato con i bot sulla mappa di ogni Notte: gli anelli aiutano le torri, quindi lì i nemici sono più duri.
-const night = (n: number, map: string, waves: number, boss: BossStep, minis: BossStep[], name: string, sub: string, hpBp: number): NightDef => ({
+const night = (n: number, map: string, waves: number, boss: BossStep, minis: BossStep[], name: string, sub: string, hpBp: number, rampBp = 10000): NightDef => ({
   id: "natale",
   night: n,
   map,
@@ -240,6 +247,7 @@ const night = (n: number, map: string, waves: number, boss: BossStep, minis: Bos
   curveA: 800 + 40 * n,
   curveB: 70 + 8 * n,
   hpBp,
+  rampBp,
   pool: NIGHT_POOL,
   maxGroups: 3 + (n >= 4 ? 1 : 0),
   modsFrom: 3,
@@ -254,16 +262,16 @@ const night = (n: number, map: string, waves: number, boss: BossStep, minis: Bos
 });
 
 export const NIGHTS: NightDef[] = [
-  night(1, "vigilia", 20, { wave: 20, kind: "folletto", hpBp: 150000 }, [{ wave: 10, kind: "pupazzetto", hpBp: 50000 }], "Notte 1 · La Vigilia Rubata", "Il Folletto Ladro ruba il cash mentre avanza.", 16500),
-  night(2, "anelli", 25, { wave: 25, kind: "renna", hpBp: 65000 }, [{ wave: 12, kind: "folletto", hpBp: 60000 }], "Notte 2 · Zoccoli sul Ghiaccio", "La Renna Nera scatta all'improvviso.", 15000),
-  night(3, "spirale", 30, { wave: 30, kind: "pupazzo", hpBp: 480000 }, [{ wave: 15, kind: "renna", hpBp: 70000 }], "Notte 3 · Neve che Cammina", "Il Pupazzo Colossale si spezza in sei.", 14500),
-  night(4, "gemelle", 35, { wave: 35, kind: "befana", hpBp: 620000 }, [{ wave: 17, kind: "pupazzo", hpBp: 70000 }, { wave: 28, kind: "folletto", hpBp: 90000 }], "Notte 4 · Scope nel Buio", "La Befana vola invisibile: serve chi la vede.", 12900),
+  night(1, "vigilia", 20, { wave: 20, kind: "folletto", hpBp: 150000 }, [{ wave: 10, kind: "pupazzetto", hpBp: 50000 }], "Notte 1 · La Vigilia Rubata", "Il Folletto Ladro ruba il cash mentre avanza.", 19000, 16000),
+  night(2, "anelli", 25, { wave: 25, kind: "renna", hpBp: 65000 }, [{ wave: 12, kind: "folletto", hpBp: 60000 }], "Notte 2 · Zoccoli sul Ghiaccio", "La Renna Nera scatta all'improvviso.", 15000, 13000),
+  night(3, "spirale", 30, { wave: 30, kind: "pupazzo", hpBp: 480000 }, [{ wave: 15, kind: "renna", hpBp: 70000 }], "Notte 3 · Neve che Cammina", "Il Pupazzo Colossale si spezza in sei.", 14500, 13000),
+  night(4, "gemelle", 35, { wave: 35, kind: "befana", hpBp: 620000 }, [{ wave: 17, kind: "pupazzo", hpBp: 70000 }, { wave: 28, kind: "folletto", hpBp: 90000 }], "Notte 4 · Scope nel Buio", "La Befana vola invisibile: serve chi la vede.", 12900, 13000),
   night(5, "crocevia", 40, { wave: 40, kind: "krampus", hpBp: 500000 }, [
     { wave: 10, kind: "folletto", hpBp: 80000 },
     { wave: 20, kind: "renna", hpBp: 90000 },
     { wave: 28, kind: "pupazzo", hpBp: 90000 },
     { wave: 34, kind: "befana", hpBp: 100000 },
-  ], "Notte 5 · Il Gran Finale", "Krampus, e tutti quelli che lo hanno preceduto.", 12000),
+  ], "Notte 5 · Il Gran Finale", "Krampus, e tutti quelli che lo hanno preceduto.", 12000, 13000),
 ];
 
 export const SURVIVAL_IDS: GameMode[] = SURVIVAL.map((m) => m.id);
@@ -303,7 +311,9 @@ export function disgeloFor(year: number, month: number, day: number): { bp: numb
 const growth = (w: number) => 10000 + RULES.hpGrowthA * w + RULES.hpGrowthB * w * w;
 const target = (m: ModeDef, w: number) => 10000 + m.curveA * w + m.curveB * w * w;
 /** Moltiplicatore da dare allo spawn perché la vita segua la curva della modalità. */
-export const hpMulFor = (m: ModeDef, w: number, bp: number) => Math.max(1000, Math.floor((Math.floor((bp * target(m, w)) / growth(w)) * m.hpBp) / 10000));
+/** Vita della modalità all'ondata w: la base, più la rampa che arriva piena all'ultima ondata. */
+const rampFor = (m: ModeDef, w: number) => (m.rampBp && m.waves > 1 ? Math.floor((m.hpBp * (10000 + Math.floor(((m.rampBp - 10000) * Math.min(w, m.waves - 1)) / (m.waves - 1)))) / 10000) : m.hpBp);
+export const hpMulFor = (m: ModeDef, w: number, bp: number) => Math.max(1000, Math.floor((Math.floor((bp * target(m, w)) / growth(w)) * rampFor(m, w)) / 10000));
 
 const cache = new Map<string, WaveGroup[][]>();
 

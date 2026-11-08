@@ -128,6 +128,18 @@ export const MEDALS: Array<{ id: string; name: string; text: string; ok: (m: Med
 
 export const VERSION_NOTES: ChangeEntry[] = [
   {
+    date: "2026-11-08",
+    title: "Versione 0.11: modalità molto più dure",
+    kind: "versione",
+    items: [
+      "Vita dei nemici rifatta in tutte le modalità: prima era tarata sui bot, che giocano peggio delle persone",
+      "La vita sale ondata dopo ondata: le ultime ondate sono le più dure (fino a +80% in Frost e Hardcore)",
+      "Easy ×1,9 all'inizio; Medium ×2; Molten ×1,5; Fallen ×1,2; Frost ×1,4, poi la crescita",
+      "Notte 1 molto più dura, Notti 2–5 più dure verso la fine",
+      "La Campagna resta com'era",
+    ],
+  },
+  {
     date: "2026-11-07",
     title: "Versione 0.10.1: prezzi dell'Arsenale",
     kind: "versione",

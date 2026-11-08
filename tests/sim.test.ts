@@ -752,7 +752,7 @@ test("Bilanciamento: modalità, mappe e torri si applicano e si annullano", asyn
   const hp0 = base[4][0].hpMulBp;
   const n0 = base[4][0].count;
   const boss0 = base[19].find((g) => g.boss)!.hpMulBp;
-  B.applyBalance({ towers: [{ kind: "balestra", lvl: "1", field: "damage", value: 99 }], modes: [{ mode: "easy", field: "hpBp", value: 16000 }, { mode: "easy", field: "countBp", value: 20000 }, { mode: "easy", field: "bossHpBp", value: 200000 }, { mode: "easy", field: "lives", value: 7 }, { mode: "easy", field: "bonusCash", value: 500 }], maps: [{ map: "porto", field: "startCash", value: 999 }] });
+  B.applyBalance({ towers: [{ kind: "balestra", lvl: "1", field: "damage", value: 99 }], modes: [{ mode: "easy", field: "hpBp", value: M.SURVIVAL[0].hpBp * 2 }, { mode: "easy", field: "countBp", value: 20000 }, { mode: "easy", field: "bossHpBp", value: 200000 }, { mode: "easy", field: "lives", value: 7 }, { mode: "easy", field: "bonusCash", value: 500 }], maps: [{ map: "porto", field: "startCash", value: 999 }] });
   const w = M.modeWaves(M.SURVIVAL[0], lvl);
   assert.ok(Math.abs(w[4][0].hpMulBp - hp0 * 2) <= 2, `vita ${hp0} → ${w[4][0].hpMulBp}`);
   assert.equal(w[4][0].count, n0 * 2);
@@ -793,7 +793,7 @@ test("Bilanciamento: i dati sporchi vengono scartati e i livelli si uniscono", a
   assert.equal(clean.maps.length, 1);
   const merged = B.mergeBalance({ ...B.emptyBalance(), modes: [{ mode: "easy", field: "hpBp", value: 12000 }] }, { ...B.emptyBalance(), modes: [{ mode: "easy", field: "hpBp", value: 9000 }] });
   assert.deepEqual(merged.modes, [{ mode: "easy", field: "hpBp", value: 9000 }]);
-  const pruned = B.pruneBalance({ towers: [{ kind: "balestra", lvl: "1", field: "damage", value: TOWERS.balestra.levels[0].damage }], modes: [{ mode: "easy", field: "hpBp", value: 8000 }], maps: [] });
+  const pruned = B.pruneBalance({ towers: [{ kind: "balestra", lvl: "1", field: "damage", value: TOWERS.balestra.levels[0].damage }], modes: [{ mode: "easy", field: "hpBp", value: (await import("../src/sim-core/modes")).SURVIVAL[0].hpBp }], maps: [] });
   assert.equal(B.balanceSize(pruned), 0);
   assert.equal(B.balanceSig(merged), B.balanceSig(B.mergeBalance(merged)));
 });

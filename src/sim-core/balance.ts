@@ -83,6 +83,7 @@ export const TOWER_FIELDS: Array<{ field: TowerOv["field"]; label: string; unit:
 /** Campi delle modalità. "bp" si mostra in percentuale (10000 = 100%). */
 export const MODE_FIELDS: Array<{ field: string; label: string; unit: Unit; max: number }> = [
   { field: "hpBp", label: "Vita dei nemici (%)", unit: "bp", max: 1000000 },
+  { field: "rampBp", label: "Vita all'ultima ondata, rispetto alla prima (%)", unit: "bp", max: 100000 },
   { field: "countBp", label: "Quantità di nemici (%)", unit: "bp", max: 100000 },
   { field: "curveA", label: "Crescita lineare della vita", unit: "n", max: 100000 },
   { field: "curveB", label: "Crescita quadratica della vita", unit: "n", max: 10000 },
@@ -142,7 +143,7 @@ interface ModeSnap {
   perle: { perWave: number; win: number; boss: number };
   mapHpBp?: Record<string, number>;
 }
-const SCALARS = ["hpBp", "countBp", "curveA", "curveB", "maxGroups", "modsFrom", "doubleModsFrom", "lives", "bonusCash"] as const;
+const SCALARS = ["hpBp", "rampBp", "countBp", "curveA", "curveB", "maxGroups", "modsFrom", "doubleModsFrom", "lives", "bonusCash"] as const;
 const MODE_BASE = new Map<ModeDef, ModeSnap>(
   ALL_MODES.map((m) => [
     m,
@@ -181,6 +182,8 @@ export function modeValue(m: ModeDef, field: string): number {
       return m.perle.boss;
     case "countBp":
       return m.countBp ?? 10000;
+    case "rampBp":
+      return m.rampBp ?? 10000;
     default:
       return (m as unknown as Record<string, number>)[field] ?? 0;
   }
@@ -207,6 +210,8 @@ export function modeBaseValue(m: ModeDef, field: string): number {
       return b.perle.boss;
     case "countBp":
       return b.scalars.countBp ?? 10000;
+    case "rampBp":
+      return b.scalars.rampBp ?? 10000;
     default:
       return b.scalars[field] ?? 0;
   }

@@ -12,10 +12,10 @@ export type EnemyKind =
   | "spettro" | "cavaliere" | "recaduto"
   | "brinato" | "orso" | "regina"
   | "elfo" | "pupazzetto" | "folletto" | "renna" | "pupazzo" | "befana" | "krampus"
-  | "dohoter";
+  | "dohoter" | "risvegliato";
 export type TowerKind =
   | "balestra" | "mortaio" | "soffio" | "cecchino" | "bobina" | "officina" | "grammofono" | "capitano" | "medico" | "arpione" | "mitragliera" | "purificatore"
-  | "custode" | "campana" | "cometa" | "kingpin";
+  | "custode" | "campana" | "cometa" | "kingpin" | "sledger" | "executioner";
 export type Branch = "A" | "B";
 export type EnemyClass = "carne" | "corazza" | "meccanico";
 export type DamageType = "cinetico" | "gelo" | "elettrico" | "nessuno";
@@ -124,6 +124,11 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
   // ---- Fallen ----
   spettro: { name: "Spettro", plural: "Spettri", cls: "carne", hp: 58, speed: 112, armor: 0, bounty: 9, lifeDamage: 1, hidden: true },
   cavaliere: { name: "Cavaliere Caduto", plural: "Cavalieri Caduti", cls: "corazza", hp: 250, speed: 55, armor: 55, bounty: 26, lifeDamage: 3 },
+  // Onda nascosta di Fallen: arriva solo se il Re Caduto cade in fretta.
+  risvegliato: {
+    name: "Re Risvegliato", plural: "Re Risvegliati", cls: "corazza", hp: 150, speed: 26, armor: 60, bounty: 80, lifeDamage: 1000, regenBp: 3, slowImmune: true,
+    summon: { kind: "cavaliere", count: 2, every: 100 }, song: { range: 3600, every: 120, stun: 35 }, phases: [8000, 6000, 4000, 2000], phaseShieldBp: 2500,
+  },
   recaduto: {
     name: "Re Caduto", plural: "Re Caduti", cls: "corazza", hp: 150, speed: 32, armor: 50, bounty: 50, lifeDamage: 20, regenBp: 2,
     summon: { kind: "cavaliere", count: 1, every: 120 }, song: { range: 3200, every: 140, stun: 30 }, phases: [7500, 5000, 2500], phaseShieldBp: 2000,
@@ -221,6 +226,17 @@ export interface TowerStats {
   unitSet: number; // quali unità: un bit per voce di UNIT_ORDER
   unitBp: number; // forza delle unità
   queueSlots: number; // posti nella coda del Kingpin
+  // Sledger: martellata a cono che rallenta e poi congela
+  coneDeg: number; // ampiezza del cono; 0 = niente cono
+  maxTargets: number; // nemici colpiti a ogni martellata
+  chillBp: number; // rallentamento aggiunto a ogni colpo
+  chillMax: number; // rallentamento massimo; oltre, il nemico si congela
+  freezeTicks: number; // durata del congelamento; 0 = non congela
+  iceBreaker: boolean; // danno doppio a chi è congelato o rallentato
+  aftershockBp: number; // seconda scossa sugli stessi nemici, in % del danno
+  // Executioner: ascia che rimbalza senza perdere forza
+  bounceRange: number; // distanza massima del rimbalzo; 0 = quella del fulmine
+  executeBp: number; // finisce i nemici (non boss) scesi sotto questa % di vita
 }
 
 export interface TowerLevel extends TowerStats {
@@ -288,6 +304,15 @@ const base: TowerStats = {
   unitSet: 0,
   unitBp: 10000,
   queueSlots: 0,
+  coneDeg: 0,
+  maxTargets: 0,
+  chillBp: 0,
+  chillMax: 0,
+  freezeTicks: 0,
+  iceBreaker: false,
+  aftershockBp: 0,
+  bounceRange: 0,
+  executeBp: 0,
 };
 
 export const TOWERS = {
@@ -379,6 +404,44 @@ export const TOWERS = {
     branches: {
       A: { ...base, name: "Catena lunga", summary: "Il fulmine salta su 10 nemici", cost: 320, damage: 40, cooldown: 11, range: 3300, chains: 10, chainBp: 8500 },
       B: { ...base, name: "Sovraccarico", summary: "Ogni salto può stordire", cost: 340, damage: 50, cooldown: 11, range: 3300, chains: 5, stunTicks: 6, stunChanceBp: 3500 },
+    },
+  },
+  sledger: {
+    apex: "Martello del Permafrost",
+    name: "Sledger",
+    role: "Martellate a cono che rallentano e poi congelano",
+    family: "attacco",
+    damageType: "cinetico",
+    target: "first",
+    unlock: 900,
+    maxPerPlayer: 6,
+    levels: [
+      { ...base, cost: 300, damage: 22, cooldown: 14, range: 1800, coneDeg: 60, maxTargets: 3, chillBp: 1500, chillMax: 4500 },
+      { ...base, cost: 220, damage: 34, cooldown: 13, range: 1900, coneDeg: 60, maxTargets: 4, chillBp: 2000, chillMax: 5000 },
+      { ...base, cost: 380, damage: 48, cooldown: 13, range: 2000, coneDeg: 60, maxTargets: 5, chillBp: 2500, chillMax: 6000, freezeTicks: 15 },
+    ],
+    branches: {
+      A: { ...base, name: "Rompighiaccio", summary: "Danno doppio a chi è congelato o rallentato", cost: 600, damage: 70, cooldown: 12, range: 2100, coneDeg: 60, maxTargets: 6, chillBp: 3000, chillMax: 7000, freezeTicks: 15, iceBreaker: true },
+      B: { ...base, name: "Scossa artica", summary: "Una seconda scossa colpisce di nuovo", cost: 650, damage: 80, cooldown: 12, range: 2200, coneDeg: 70, maxTargets: 7, chillBp: 3000, chillMax: 7000, freezeTicks: 18, aftershockBp: 4000 },
+    },
+  },
+  executioner: {
+    apex: "Il Patibolo",
+    name: "Executioner",
+    role: "Ascia che rimbalza tra i nemici senza perdere forza",
+    family: "attacco",
+    damageType: "cinetico",
+    target: "first",
+    unlock: 1100,
+    maxPerPlayer: 8,
+    levels: [
+      { ...base, cost: 350, damage: 20, cooldown: 26, range: 5000, chains: 3, chainBp: 10000, bounceRange: 3000 },
+      { ...base, cost: 280, damage: 20, cooldown: 18, range: 5000, chains: 3, chainBp: 10000, bounceRange: 3000 },
+      { ...base, cost: 520, damage: 36, cooldown: 24, range: 6000, chains: 5, chainBp: 10000, bounceRange: 3400, detect: true },
+    ],
+    branches: {
+      A: { ...base, name: "Boia", summary: "Finisce chi scende sotto il 12% di vita", cost: 900, damage: 90, cooldown: 22, range: 6000, chains: 5, chainBp: 10000, bounceRange: 3400, detect: true, executeBp: 1200 },
+      B: { ...base, name: "Tempesta d'asce", summary: "L'ascia rimbalza su 9 nemici", cost: 950, damage: 60, cooldown: 22, range: 6500, chains: 9, chainBp: 10000, bounceRange: 3800, detect: true },
     },
   },
   officina: {
@@ -644,7 +707,7 @@ for (const k of DETECTORS) {
   TOWERS[k].branches = { A: { ...TOWERS[k].branches.A, detect: true }, B: { ...TOWERS[k].branches.B, detect: true } };
 }
 
-export const TOWER_ORDER: TowerKind[] = ["balestra", "mortaio", "soffio", "cecchino", "bobina", "officina", "grammofono", "capitano", "medico", "kingpin", "arpione", "mitragliera", "purificatore", "cometa", "custode", "campana"];
+export const TOWER_ORDER: TowerKind[] = ["balestra", "mortaio", "soffio", "cecchino", "bobina", "officina", "grammofono", "capitano", "medico", "kingpin", "sledger", "executioner", "arpione", "mitragliera", "purificatore", "cometa", "custode", "campana"];
 export const HARDCORE_TOWERS: TowerKind[] = ["arpione", "mitragliera", "purificatore"];
 
 // Apex: il livello 6 della torre, uno per tipo e per partita, con il rango permanente almeno 3.
@@ -670,6 +733,11 @@ export function apexStats(s: TowerStats): TowerStats {
     spawnMax: s.spawnMax ? s.spawnMax + 2 : 0,
     unitSet: s.unitSet ? s.unitSet | 1 : 0,
     unitBp: s.unitSet ? up(s.unitBp, 22000) : s.unitBp,
+    maxTargets: s.maxTargets ? s.maxTargets + 2 : 0,
+    freezeTicks: s.freezeTicks ? up(s.freezeTicks, 13000) : 0,
+    chillMax: s.chillMax ? Math.min(9000, up(s.chillMax, 11500)) : 0,
+    executeBp: s.executeBp ? s.executeBp + 300 : 0,
+    aftershockBp: s.aftershockBp ? s.aftershockBp + 1000 : 0,
   };
 }
 export const STARTER_TOWERS: TowerKind[] = TOWER_ORDER.filter((k) => TOWERS[k].unlock === 0 && !TOWERS[k].perle && !TOWERS[k].exclusive);

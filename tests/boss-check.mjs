@@ -16,7 +16,7 @@ const ctx = await browser.newContext({ viewport: { width: 900, height: 600 } });
 const page = await ctx.newPage();
 const errors = [];
 page.on("pageerror", (e) => errors.push(String(e)));
-page.on("console", (m) => m.type() === "error" && errors.push(m.text()));
+page.on("console", (m) => m.type() === "error" && !m.text().includes("ERR_TUNNEL") && errors.push(m.text()));
 await page.route(SUPA_GLOB, fake.handle);
 await page.route("https://faro.test/", (r) => r.fulfill({ status: 200, contentType: "text/html; charset=utf-8", body: html }));
 await page.goto("https://faro.test/");

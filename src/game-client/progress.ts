@@ -122,11 +122,28 @@ export const MEDALS: Array<{ id: string; name: string; text: string; ok: (m: Med
   { id: "inverno", name: "Fine dell'inverno", text: "Vinci Frost", ok: (m) => (m.modeWins.frost ?? 0) > 0 },
   { id: "vigilia", name: "Spirito della Vigilia", text: "Vinci una Notte di Natale", ok: (m) => Object.values(m.nightWins).some((v) => v > 0) },
   { id: "krampus", name: "Krampusnacht", text: "Vinci la Notte 5", ok: (m) => (m.nightWins["5"] ?? 0) > 0 },
+  { id: "nascosta", name: "Il Re si risveglia", text: "Batti il Re Caduto entro 45 secondi in Fallen e supera l'onda nascosta", ok: (m) => (m.modeWins.nascosta ?? 0) > 0 },
 ];
 
 // ---------- bacheca ----------
 
+/** Versione del gioco: chi ospita la comunica all'admin, che vede se i comandi nuovi possono funzionare. */
+export const GAME_VERSION = "0.12";
+
 export const VERSION_NOTES: ChangeEntry[] = [
+  {
+    date: "2026-11-09",
+    title: "Versione 0.12: Sledger, Executioner, Cannone Stellare e onda nascosta",
+    kind: "versione",
+    items: [
+      "Sledger: martellate a cono che rallentano; dal livello 3 congela chi non resiste al gelo (i boss no). Rami Rompighiaccio e Scossa artica",
+      "Executioner: un'ascia che rimbalza tra i nemici senza perdere forza; il ramo Boia finisce chi resta sotto il 12% di vita",
+      "Cannone Stellare: dall'ondata 7 lo monti pezzo per pezzo, raccogli 3 stelle che cadono sulla carta e spari al nemico più grosso",
+      "Fallen: batti il Re Caduto entro 45 secondi e arriva l'onda nascosta con il Re Risvegliato. Premio: 1.500 Schegge e 25 Perle",
+      "Vita dei nemici -10% in tutte le modalità e le Notti",
+      "Comandi dell'admin alle stanze: ora l'admin vede se chi ospita li ha applicati e con quale versione del gioco",
+    ],
+  },
   {
     date: "2026-11-09",
     title: "Versione 0.11.1: Dohoter Gang",

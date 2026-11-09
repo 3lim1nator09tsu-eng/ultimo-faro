@@ -1,7 +1,8 @@
 // Client del prototipo: disegna lo stato, raccoglie i tocchi, non decide mai le regole.
 import { ADMIN_ONLY, EVENT_TOWER, KINGPIN_QUEUE, SURVIVAL_MAPS, UNITS, UNIT_ORDER, ABILITIES, APEX_RANK, AbilityId, ENEMIES, GameMode, HARDCORE_TOWERS, LEVELS, MODS, LOADOUT_SIZE, MAP_H, MAP_W, MAX_RANK, RANK_COSTS, RULES, STARTER_TOWERS, TICKS_PER_SECOND, TILE, TOWERS, TOWER_ORDER, TRACKS, TowerKind, Track, Branch, levelById } from "../sim-core/content";
-import { Command, GameEvent, GameOptions, GameState, modBit, playerCount, abilityCdOf, allowedOf, cashOf, apexBlock, apexPrice, applyCommands, modsOf, perleFor, cellEmerged, createGame, effStats, hashState, isBuildable, laneIsOpen, levelOf, rankedStats, restore, rewardFor, sellValue, specPrice, statsIn, snapshot, starsFor, step, upgradePrice, waveCount, wavePreview } from "../sim-core/sim";
+import { Command, GameEvent, GameOptions, GameState, modBit, playerCount, hiddenWon, starEnabled, starPartCost, abilityCdOf, allowedOf, cashOf, apexBlock, apexPrice, applyCommands, modsOf, perleFor, cellEmerged, createGame, effStats, hashState, isBuildable, laneIsOpen, levelOf, rankedStats, restore, rewardFor, sellValue, specPrice, statsIn, snapshot, starsFor, step, upgradePrice, waveCount, wavePreview } from "../sim-core/sim";
 import { playBot } from "../sim-core/bot";
+import { STAR } from "../sim-core/twists";
 import { drawTwist, qteKey, renderAim, renderChoice, renderQte, renderTwist, twistToast } from "./twist-ui";
 import { HARDCORE, ModeDef, NIGHTS, SURVIVAL, disgeloFor, modeDef } from "../sim-core/modes";
 import { GrantPayload, LocalTransport, Net, RealtimeTransport, Transport, roomCode } from "./net";
@@ -9,7 +10,7 @@ import { NetMatch, Player, Setup } from "./netplay";
 import { renderLobby, renderOnline } from "./online-ui";
 import { AdminApi, BalanceEntry, BalanceKind, describeAll, describeEntry, renderAdminDrawer, renderAdminPanel } from "./admin";
 import { Balance, applyBalance, balanceSize, cleanBalance, emptyBalance, mergeBalance, pruneBalance } from "../sim-core/balance";
-import { ChangeEntry, MEDALS, MISSIONS, MissionSlot, Totals, VERSION_NOTES, emptyTotals, levelFromXp, levelReward, missionProgress, missionTarget, missionText, newSlot } from "./progress";
+import { ChangeEntry, MEDALS, MISSIONS, MissionSlot, Totals, GAME_VERSION, VERSION_NOTES, emptyTotals, levelFromXp, levelReward, missionProgress, missionTarget, missionText, newSlot } from "./progress";
 import { COLORS, enemySize, applyMap, drawEnemy, drawFaro, drawShoal, drawTide, drawTowerShape, mapToScreen, renderBackground, toPx } from "./draw";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -103,6 +104,34 @@ let bgKey = "";
 let inMenu = true;
 let aiming = false;
 let brazierMode = false; // Frost: il prossimo tocco sulla carta sposta un braciere
+/** Tasto del Cannone Stellare: compra i pezzi, mostra le stelle raccolte, spara. */
+function updateStarButton() {
+  const b = $("starBtn") as HTMLButtonElement;
+  const on = starEnabled(state) && state.phase !== "won" && state.phase !== "lost" && state.wave >= STAR.from - 1;
+  b.hidden = !on;
+  if (!on) return;
+  const st = state.star;
+  let text: string;
+  let fire = false;
+  let dis = false;
+  if (!st || st.parts < STAR.parts) {
+    text = state.wave < STAR.from ? `★ Cannone Stellare dall'ondata ${STAR.from}` : `★ Pezzo ${(st?.parts ?? 0) + 1}/${STAR.parts} · ${fmt(starPartCost(state))}`;
+    dis = state.wave < STAR.from || myCash() < starPartCost(state);
+  } else if (st.charges < STAR.charges) {
+    text = `★ Stelle ${st.charges}/${STAR.charges}: toccale quando cadono`;
+    dis = true;
+  } else if (state.tick < st.ready) {
+    text = `★ Si raffredda: ${Math.ceil((st.ready - state.tick) / TICKS_PER_SECOND)} s`;
+    dis = true;
+  } else {
+    text = "★ SPARA";
+    fire = true;
+  }
+  if (b.textContent !== text) b.textContent = text;
+  b.disabled = dis;
+  b.classList.toggle("fire", fire);
+}
+
 function toggleBrazier() {
   brazierMode = !brazierMode;
   if (brazierMode) {
@@ -130,7 +159,9 @@ const drawnAt = new Map<number, { x: number; y: number }>();
 const aim = new Map<number, number>();
 
 interface Fx {
-  kind: "tracer" | "blast" | "float" | "zap" | "beam" | "ring";
+  kind: "tracer" | "blast" | "float" | "zap" | "beam" | "ring" | "cone" | "axe";
+  a?: number; // direzione del cono, in radianti
+  w?: number; // ampiezza del cono, in radianti
   pts?: number[];
   x: number;
   y: number;
@@ -732,6 +763,11 @@ function statsLine(kind: TowerKind, level: number, branch: Branch | null, rank =
     const who = UNIT_ORDER.filter((_, i) => s.unitSet & (1 << i)).map((u) => UNITS[u].name).join(", ");
     return `Spara: danno ${s.damage}, ${num(TICKS_PER_SECOND / s.cooldown)} colpi/s, gittata ${range}${s.pierce ? ", ignora l'armatura" : ""}. Coda di ${s.queueSlots} ${s.queueSlots === 1 ? "posto" : "posti"} (${who}), uno ogni ${num(s.spawnEvery / TICKS_PER_SECOND)} s, fino a ${s.spawnMax} in campo, vita x${num(s.unitBp / 10000)}. Chi si scontra con uno scagnozzo perde la sua vita.${s.abilityCooldown ? " Abilità Taglia." : ""}`;
   }
+  if (kind === "sledger") {
+    const ice = s.freezeTicks ? ` Oltre il ${pct(s.chillMax)} di rallentamento congela per ${num(s.freezeTicks / TICKS_PER_SECOND)} s (non i boss né chi resiste al gelo).` : "";
+    return `Martellata a cono: ${s.damage} danni a ${s.maxTargets} nemici, ${num(TICKS_PER_SECOND / s.cooldown)} colpi/s, portata ${range}. Ogni colpo rallenta del ${pct(s.chillBp)} fino al ${pct(s.chillMax)}.${ice}${s.iceBreaker ? " Danno doppio a chi è gelato." : ""}${s.aftershockBp ? ` Seconda scossa del ${pct(s.aftershockBp)}.` : ""}`;
+  }
+  if (kind === "executioner") return `Ascia: ${s.damage} danni, ${num(TICKS_PER_SECOND / s.cooldown)} lanci/s, gittata ${range}; rimbalza su ${s.chains} nemici senza perdere forza.${s.detect ? " Vede gli invisibili." : ""}${s.executeBp ? ` Finisce chi scende sotto il ${pct(s.executeBp)} di vita.` : ""}`;
   if (kind === "campana") return `+${pct(s.auraBp)} danno, +${pct(s.hasteBp)} cadenza, +${pct(s.rangeBuffBp)} gittata, vista sugli invisibili e niente stordimenti. Raggio ${range}.`;
   if (s.pulseAll) return `Ogni secondo ${s.damage} danni a tutti i nemici nel raggio e toglie i modificatori${s.bossBp > 10000 ? `, x${s.bossBp / 10000} sui boss` : ""}. Raggio ${range}.`;
   if (s.markTicks) return `Danno ${s.damage} ogni ${num(s.cooldown / TICKS_PER_SECOND)} s, ignora l'armatura e marchia: +${pct(s.markBp - 10000)} di danno subito. Gittata ${range}.`;
@@ -809,6 +845,7 @@ function updatePanel() {
     go.hidden = true;
   }
   renderChoice($("choice"), state, send, playerCount(state) > 1);
+  updateStarButton();
   renderQte($("qte"), state, send);
   if (brazierMode && state.phase !== "prep") brazierMode = false;
   renderTwist($("twist"), $("twbar"), state, send, brazierMode, toggleBrazier);
@@ -999,7 +1036,7 @@ function send(cmd: Command) {
     if (match.isHost) match.hostSubmit({ ...cmd, p: 0 });
     else if (admin) {
       // Chi partecipa non può mandare comandi admin nel canale: passano dal database, che controlla il ruolo.
-      if (net.session?.isAdmin) net.adminCommand(match.code, cmd).then(() => toast("Comando admin inviato"), (e) => toast((e as Error).message));
+      if (net.session?.isAdmin) void remoteAdmin(match.code, cmd);
       else toast("Solo l'admin");
     } else match.guestSubmit(cmd);
     return;
@@ -1023,6 +1060,33 @@ function handleEvents(events: GameEvent[]) {
       case "zap":
         fx.push({ kind: "zap", x: ev.points[0], y: ev.points[1], pts: ev.points, born: now, life: 160 });
         sfx.zap();
+        break;
+      case "axe":
+        fx.push({ kind: "axe", x: ev.points[0], y: ev.points[1], pts: ev.points, born: now, life: 140 + 70 * (ev.points.length / 2 - 1) });
+        sfx.shot();
+        break;
+      case "swing":
+        fx.push({ kind: "cone", x: ev.x, y: ev.y, r: ev.range, a: Math.atan2(ev.ty - ev.y, ev.tx - ev.x), w: (ev.cone * Math.PI) / 180, born: now, life: 240 });
+        sfx.blast();
+        break;
+      case "iced":
+        fx.push({ kind: "ring", x: ev.x, y: ev.y, r: 600, color: "#bfe8ff", born: now, life: 420 });
+        break;
+      case "execute":
+        fx.push({ kind: "float", x: ev.x, y: ev.y - 400, text: "Giustiziato", color: COLORS.coral, born: now, life: 900 });
+        break;
+      case "starDrop":
+        sfx.coin();
+        break;
+      case "starShot":
+        fx.push({ kind: "beam", x: ev.x, y: ev.y, r: 1800, born: now, life: 900 });
+        sfx.beam();
+        toast("Cannone Stellare!");
+        break;
+      case "hidden":
+        toast("Il Re Caduto si risveglia: onda nascosta!");
+        sfx.roar();
+        iceFlash = 1;
         break;
       case "beam":
         fx.push({ kind: "beam", x: ev.x, y: ev.y, r: ev.radius, born: now, life: 520 });
@@ -1268,6 +1332,10 @@ function award(): AwardResult {
   if (modeDef(state.mode) && state.mode !== "natale") {
     meta.modeBest[state.mode] = Math.max(meta.modeBest[state.mode] ?? 0, state.cleared);
     if (won) meta.modeWins[state.mode] = (meta.modeWins[state.mode] ?? 0) + 1;
+    if (hiddenWon(state)) {
+      meta.modeWins.nascosta = (meta.modeWins.nascosta ?? 0) + 1;
+      out.medals.push("Onda nascosta superata: +1.500 Schegge e +25 Perle");
+    }
   }
   if (state.mode === "natale") {
     const k = String(state.night);
@@ -1866,6 +1934,30 @@ async function joinRoom(code: string, local: boolean) {
   showLobby();
 }
 
+/** Comando admin a una stanza: lo manda e controlla che chi ospita lo applichi davvero. */
+async function remoteAdmin(code: string, cmd: Command): Promise<void> {
+  let id = 0;
+  try {
+    id = await net.adminCommand(code, cmd);
+  } catch (e) {
+    toast((e as Error).message);
+    return;
+  }
+  toast("Comando inviato: aspetto la conferma di chi ospita…");
+  for (let i = 0; i < 6; i++) {
+    await new Promise((r) => setTimeout(r, 2000));
+    const room = await net.room(code).catch(() => null);
+    const info = (room?.info ?? {}) as { ack?: number; ver?: string; phase?: string };
+    if (room?.status === "ended") return toast(`La stanza ${code} è chiusa: il comando non è arrivato`);
+    if (room?.status !== "playing") return toast(`La stanza ${code} non è ancora in partita: i comandi valgono solo durante la partita`);
+    if ((info.ack ?? 0) >= id) {
+      if (info.ver && info.ver !== GAME_VERSION) return toast(`Arrivato, ma chi ospita ha la versione ${info.ver} (tu la ${GAME_VERSION}): i comandi nuovi potrebbero non funzionare. Deve ricaricare la pagina.`);
+      return toast("Comando applicato nella stanza");
+    }
+  }
+  toast("Chi ospita non ha confermato: forse ha una versione vecchia del gioco o la connessione è lenta. Fagli ricaricare la pagina.");
+}
+
 function startHostTimers(m: NetMatch, local: boolean) {
   clearInterval(hostTimer);
   if (local) return;
@@ -1884,6 +1976,8 @@ function startHostTimers(m: NetMatch, local: boolean) {
             toast("L'admin è intervenuto nella partita");
           }
         }
+        // Conferma subito all'admin che i comandi sono entrati.
+        if (rows.length) beat = 0;
       } catch {
         /* si riprova al prossimo giro */
       }
@@ -1898,6 +1992,8 @@ function startHostTimers(m: NetMatch, local: boolean) {
         cash: st?.cash ?? 0,
         phase: st?.phase ?? "lobby",
         tick: st?.tick ?? 0,
+        ack: lastAdminCmd, // ultimo comando admin applicato
+        ver: GAME_VERSION, // versione del gioco di chi ospita
       };
       net.updateRoom(m.code, { status: m.status, info }).catch(() => {});
     }
@@ -2110,7 +2206,7 @@ const adminApi: AdminApi = {
     if (!net.session?.isAdmin) return undefined;
     return {
       rooms: () => net.activeRooms(),
-      command: (code: string, cmd: Command) => net.adminCommand(code, cmd),
+      command: (code: string, cmd: Command) => remoteAdmin(code, cmd),
     };
   },
   get grants() {
@@ -2280,6 +2376,16 @@ function bindPointer() {
     wakeAudio();
     if (dialogQueue.length || isOver()) return;
     ev.preventDefault();
+    // Stelle cadute del Cannone Stellare: si raccolgono toccandole.
+    const drops = state.star?.drops ?? [];
+    if (drops.length) {
+      const u = pointerUnits(ev);
+      const d = drops.find((x) => (x.x - u.x) ** 2 + (x.y - u.y) ** 2 <= 800 * 800);
+      if (d) {
+        send({ t: "starGrab", id: d.id });
+        return;
+      }
+    }
     if (aiming) {
       const p = pointerUnits(ev);
       send({ t: "ability", id: "fascio", x: p.x, y: p.y });
@@ -2438,6 +2544,10 @@ function bindButtons() {
     toast(gfx === "leggera" ? "Grafica leggera: meno pixel e animazioni, consuma molto meno" : "Grafica alta");
     renderMenu();
   });
+  $("starBtn").addEventListener("click", () => {
+    const st = state.star;
+    send(st && st.parts >= STAR.parts ? { t: "starFire" } : { t: "starPart" });
+  });
   $("adminBtn").addEventListener("click", () => {
     const d = $("adminDrawer");
     d.hidden = !d.hidden;
@@ -2533,10 +2643,40 @@ function render(now: number) {
     const lane = e.boss ? 0 : e.offset;
     const p = S(ux + lane * 0.5, uy + lane);
     drawEnemy(ctx, e, p.x, p.y, pxT, now, reducedMotion);
+    if (e.frozen || e.chill) {
+      // Gelo dello Sledger: velo azzurro, pieno se congelato.
+      ctx.save();
+      ctx.fillStyle = e.frozen ? "rgba(200,238,255,.55)" : `rgba(170,215,255,${Math.min(0.35, (e.chill ?? 0) / 20000)})`;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, pxT * (e.boss ? 0.6 : 0.3), 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
     if (e.mods || e.shield || e.mark || e.bounty) enemyMarks(e, p.x, p.y, pxT, now);
     drawnAt.set(e.id, p);
   }
   for (const u of state.units) drawUnit(u, pxT, now);
+  for (const d of state.star?.drops ?? []) {
+    // Stella caduta: pulsa e sbiadisce quando sta per sparire.
+    const p = S(d.x, d.y);
+    const left = Math.max(0, d.until - state.tick) / STAR.dropLife;
+    const r = pxT * (0.28 + (reducedMotion ? 0 : 0.05 * Math.sin(now * 0.012)));
+    ctx.save();
+    ctx.globalAlpha = 0.4 + 0.6 * left;
+    ctx.fillStyle = "#ffd86b";
+    ctx.strokeStyle = "#fff6cf";
+    ctx.lineWidth = Math.max(1, pxT * 0.03);
+    ctx.beginPath();
+    for (let i = 0; i < 10; i++) {
+      const a = -Math.PI / 2 + (i * Math.PI) / 5;
+      const rr = i % 2 ? r * 0.45 : r;
+      ctx.lineTo(p.x + Math.cos(a) * rr, p.y + Math.sin(a) * rr);
+    }
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+  }
 
   const faro = S(level.map.faro[0] * TILE + TILE / 2, level.map.faro[1] * TILE + TILE / 2);
   drawFaro(ctx, pxT, now, state.lives, reducedMotion, faro.x, faro.y);
@@ -2589,6 +2729,36 @@ function render(now: number) {
         ctx.lineTo(q.x, q.y);
       }
       ctx.stroke();
+    } else if (f.kind === "cone") {
+      // Martellata dello Sledger: un ventaglio di ghiaccio che svanisce.
+      const r = toPx(f.r!, pxT);
+      ctx.globalAlpha = (1 - k) * 0.55;
+      ctx.fillStyle = "#cfeeff";
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y);
+      ctx.arc(p.x, p.y, r * (0.6 + 0.4 * k), f.a! - f.w! / 2, f.a! + f.w! / 2);
+      ctx.closePath();
+      ctx.fill();
+    } else if (f.kind === "axe") {
+      // L'ascia vola da un bersaglio all'altro girando su sé stessa.
+      const pts = f.pts!;
+      const legs = pts.length / 2 - 1;
+      const pos = Math.min(legs - 0.001, k * legs);
+      const i = Math.floor(pos);
+      const a = S(pts[i * 2], pts[i * 2 + 1]);
+      const b = S(pts[i * 2 + 2], pts[i * 2 + 3]);
+      const u = pos - i;
+      ctx.translate(a.x + (b.x - a.x) * u, a.y + (b.y - a.y) * u);
+      ctx.rotate(clock * 0.03);
+      ctx.fillStyle = "#d6dde0";
+      ctx.beginPath();
+      ctx.moveTo(0, -pxT * 0.05);
+      ctx.quadraticCurveTo(pxT * 0.28, -pxT * 0.22, pxT * 0.18, 0);
+      ctx.quadraticCurveTo(pxT * 0.28, pxT * 0.22, 0, pxT * 0.05);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = "#6b4a2e";
+      ctx.fillRect(-pxT * 0.16, -pxT * 0.02, pxT * 0.18, pxT * 0.04);
     } else if (f.kind === "ring") {
       ctx.globalAlpha = (1 - k) * 0.9;
       ctx.strokeStyle = f.color!;

@@ -1,6 +1,7 @@
 // Sim.Core del prototipo: stessa partita su ogni dispositivo a parità di seed e comandi.
 // Regole: solo numeri interi nello stato, nessun Math.random, nessun orologio, nessuna funzione
 // trigonometrica. Le divisioni tra interi passano sempre da Math.floor.
+import { HIDDEN, STAR } from "./twists";
 import { AIMS, Aim, BLIZZARD, CONTRACTS, CONTRACT_IDS, LAVA, MERCHANT_IDS, ORDER_IDS, Order, POISONS, QTE, QTE_SYMBOLS, RELIC_IDS, OfferKind, Twist, contractReward, merchantGold, newTwist } from "./twists";
 import {
   ABILITIES,
@@ -72,6 +73,26 @@ export interface Enemy {
   bounty?: number; // tick di Taglia rimasti
   bountyOwner?: number;
   bountyBp?: number;
+  chill?: number; // rallentamento dello Sledger, in bp
+  chillT?: number; // tick prima che il rallentamento svanisca
+  frozen?: number; // tick di congelamento rimasti
+}
+
+/** Seconda scossa dello Sledger (ramo B): colpisce di nuovo gli stessi nemici. */
+export interface Quake {
+  tick: number;
+  towerId: number;
+  ids: number[];
+  amount: number;
+}
+
+/** Cannone Stellare: si monta a pezzi, si carica raccogliendo le stelle che cadono, poi spara. */
+export interface StarCannon {
+  parts: number;
+  charges: number;
+  drops: Array<{ id: number; x: number; y: number; until: number }>;
+  nextDrop: number;
+  ready: number; // tick da cui può sparare di nuovo
 }
 
 export interface Tower {
@@ -179,6 +200,9 @@ export interface GameState {
   shells: Shell[];
   spawns: Spawn[];
   units: Unit[];
+  quakes?: Quake[];
+  star?: StarCannon;
+  hidden?: { bossAt: number; bossId: number; on: boolean; lostInHidden?: boolean }; // Fallen: onda nascosta
   tw: Twist; // scelte della modalità: offerte, contratti, reliquie, bracieri, momenti rapidi
 }
 
@@ -216,6 +240,9 @@ type CommandBody =
   | { t: "queue"; id: number; unit: UnitKind }
   | { t: "unqueue"; id: number; index: number }
   | { t: "aim"; id: number; aim: Aim }
+  | { t: "starPart" }
+  | { t: "starGrab"; id: number }
+  | { t: "starFire" }
   | { t: "choose"; offer: number; pick: number }
   | { t: "order"; order: Order | "" }
   | { t: "brazier"; cx: number; cy: number }
@@ -265,6 +292,13 @@ export type GameEvent =
   | { e: "chosen"; kind: string; pick: string }
   | { e: "contract"; ok: boolean; amount: number }
   | { e: "eruption" }
+  | { e: "swing"; from: number; x: number; y: number; tx: number; ty: number; range: number; cone: number }
+  | { e: "axe"; from: number; points: number[] }
+  | { e: "execute"; x: number; y: number }
+  | { e: "iced"; x: number; y: number }
+  | { e: "starShot"; x: number; y: number }
+  | { e: "starDrop" }
+  | { e: "hidden" }
   | { e: "blizzard"; on: boolean }
   | { e: "qte"; id: number }
   | { e: "qteEnd"; ok: boolean; x: number; y: number }
@@ -541,7 +575,7 @@ export function wavePreview(state: GameState, waveIndex: number): Array<{ enemy:
 }
 
 export function waveCount(state: GameState): number {
-  return waveTotal(state.mode, levelOf(state), state.night);
+  return waveTotal(state.mode, levelOf(state), state.night) + (state.hidden?.on ? 1 : 0);
 }
 
 export function fascioDamage(state: GameState): number {
@@ -553,7 +587,7 @@ export function rewardFor(state: GameState): number {
   if (state.sandbox) return 0;
   const length = waveCount(state);
   const m = modeDef(state.mode, state.night);
-  if (m) return state.cleared * m.schegge.perWave + (state.phase === "won" ? m.schegge.win + REWARDS.perStar * starsFor(state.lives) : 0);
+  if (m) return state.cleared * m.schegge.perWave + (state.phase === "won" ? m.schegge.win + REWARDS.perStar * starsFor(state.lives) : 0) + (hiddenWon(state) ? HIDDEN.schegge : 0);
   let r = state.cleared * REWARDS.perWave;
   if (state.mode === "infinita") r += Math.max(0, state.cleared - length) * REWARDS.infinitePerWaveBonus;
   if (state.phase === "won") r += REWARDS.win + REWARDS.perStar * starsFor(state.lives);
@@ -563,7 +597,9 @@ export function rewardFor(state: GameState): number {
 /** Perle Nere: solo in Hardcore. */
 export function perleFor(state: GameState): number {
   const m = modeDef(state.mode, state.night);
-  if (state.sandbox || !m || !m.perle.perWave) return 0;
+  if (state.sandbox) return 0;
+  if (hiddenWon(state)) return HIDDEN.perle + (m?.perle.perWave ? state.cleared * m.perle.perWave + state.bossKills * m.perle.boss + m.perle.win : 0);
+  if (!m || !m.perle.perWave) return 0;
   return state.cleared * m.perle.perWave + state.bossKills * m.perle.boss + (state.phase === "won" ? m.perle.win : 0);
 }
 
@@ -771,6 +807,131 @@ export const onLava = (state: GameState, t: Pick<Tower, "cx" | "cy">) => state.t
 export const brazierMax = (state: GameState) => BLIZZARD.braziers + (state.cleared >= BLIZZARD.extraFrom ? 1 : 0);
 export const blizzardNext = (state: GameState) => state.mode === "frost" && (state.wave + 1) % BLIZZARD.every === 0;
 export const eruptionNext = (state: GameState) => state.mode === "molten" && (state.wave + 1) % LAVA.every === 0;
+// ---------- Sledger ----------
+
+/** Coseno al quadrato del mezzo cono, in bp: niente trigonometria, stesso risultato su ogni dispositivo. */
+const CONE_COS2: Record<number, number> = { 60: 7500, 70: 6710, 80: 5868, 90: 5000 };
+
+function swing(state: GameState, t: Tower, s: TowerStats, target: Enemy, events: GameEvent[]) {
+  // Vettori ridotti di 10 per restare negli interi sicuri.
+  const dx = Math.trunc((target.x - t.x) / 10);
+  const dy = Math.trunc((target.y - t.y) / 10);
+  const dd = dx * dx + dy * dy;
+  const cos2 = CONE_COS2[s.coneDeg] ?? 7500;
+  const inCone: Enemy[] = [];
+  for (const e of state.enemies) {
+    if (e.hp <= 0 || !canSee(e, s) || !inRange(t.x, t.y, e.x, e.y, s.range)) continue;
+    if (e !== target) {
+      const ex = Math.trunc((e.x - t.x) / 10);
+      const ey = Math.trunc((e.y - t.y) / 10);
+      const dot = ex * dx + ey * dy;
+      const ee = ex * ex + ey * ey;
+      if (dot <= 0 || dot * dot * 10000 < cos2 * ee * dd) continue;
+    }
+    inCone.push(e);
+  }
+  inCone.sort((a, b) => (a === target ? -1 : b === target ? 1 : b.dist - a.dist || a.id - b.id));
+  const hitList = inCone.slice(0, Math.max(1, s.maxTargets));
+  for (const e of hitList) {
+    const iced = (e.frozen ?? 0) > 0 || (e.chill ?? 0) > 0;
+    hit(state, e, t, s, s.iceBreaker && iced ? s.damage * 2 : s.damage, events);
+    chillEnemy(state, e, s, events);
+  }
+  if (s.aftershockBp > 0) (state.quakes ??= []).push({ tick: state.tick + 4, towerId: t.id, ids: hitList.map((e) => e.id), amount: Math.floor((s.damage * s.aftershockBp) / 10000) });
+  events.push({ e: "swing", from: t.id, x: t.x, y: t.y, tx: target.x, ty: target.y, range: s.range, cone: s.coneDeg });
+}
+
+function chillEnemy(state: GameState, e: Enemy, s: TowerStats, events: GameEvent[]) {
+  if (e.hp <= 0 || ENEMIES[e.kind].slowImmune || s.chillBp <= 0) return;
+  const add = e.boss ? Math.floor(s.chillBp / 3) : s.chillBp;
+  const next = (e.chill ?? 0) + add;
+  e.chillT = 30;
+  if (next > s.chillMax && s.freezeTicks > 0 && !e.boss) {
+    // Oltre il massimo il nemico si congela; i boss non si congelano mai.
+    e.frozen = s.freezeTicks;
+    e.stun = Math.max(e.stun, s.freezeTicks);
+    e.chill = 0;
+    events.push({ e: "iced", x: e.x, y: e.y });
+  } else e.chill = Math.min(next, e.boss ? Math.floor(s.chillMax / 3) : s.chillMax);
+}
+
+function quakesDue(state: GameState, events: GameEvent[]) {
+  if (!state.quakes?.length) return;
+  const keep: Quake[] = [];
+  for (const q of state.quakes) {
+    if (q.tick > state.tick) {
+      keep.push(q);
+      continue;
+    }
+    const t = state.towers.find((x) => x.id === q.towerId);
+    if (!t) continue;
+    const s = effStats(state, t);
+    for (const id of q.ids) {
+      const e = state.enemies.find((x) => x.id === id && x.hp > 0);
+      if (e) hit(state, e, t, s, q.amount, events);
+    }
+  }
+  state.quakes = keep;
+}
+
+// ---------- Cannone Stellare ----------
+
+export const starEnabled = (s: GameState) => s.mode !== "campagna" && s.mode !== "infinita";
+export const starPartCost = (s: GameState) => STAR.partCost * ((s.star?.parts ?? 0) + 1);
+const newStar = (): StarCannon => ({ parts: 0, charges: 0, drops: [], nextDrop: 0, ready: 0 });
+
+function starTick(state: GameState, events: GameEvent[]) {
+  const st = state.star;
+  if (!st || st.parts < STAR.parts) return;
+  if (st.drops.length) st.drops = st.drops.filter((d) => d.until > state.tick);
+  if (state.phase !== "wave" || state.tick < st.nextDrop || st.charges + st.drops.length >= STAR.charges) return;
+  const level = levelOf(state);
+  const geo = geometry(level);
+  const lane = randomInt(state, level.map.lanes.length);
+  const len = geo.lengths[lane];
+  const p = lanePoint(level, lane, Math.floor(len / 5) + randomInt(state, Math.max(1, Math.floor((len * 3) / 5))));
+  st.drops.push({ id: state.nextId++, x: p.x + randomInt(state, 1201) - 600, y: p.y + randomInt(state, 1201) - 600, until: state.tick + STAR.dropLife });
+  st.nextDrop = state.tick + STAR.dropEvery;
+  events.push({ e: "starDrop" });
+}
+
+function starFire(state: GameState, events: GameEvent[]): string | null {
+  const st = state.star;
+  if (!st || st.parts < STAR.parts) return "Il Cannone Stellare non è ancora montato";
+  if (st.charges < STAR.charges) return `Servono ${STAR.charges} stelle: raccoglile quando cadono`;
+  if (state.tick < st.ready) return "Il Cannone Stellare si sta raffreddando";
+  let target: Enemy | null = null;
+  for (const e of state.enemies) if (e.hp > 0 && (!target || e.maxHp > target.maxHp || (e.maxHp === target.maxHp && e.dist > target.dist))) target = e;
+  if (!target) return "Nessun bersaglio";
+  const dmg = Math.max(STAR.minDamage, Math.floor((target.maxHp * STAR.bpOfMax) / 10000));
+  applyDamage(target, dmg);
+  target.stun = Math.max(target.stun, target.boss ? Math.floor(STAR.stun / 2) : STAR.stun);
+  for (const e of state.enemies) if (e !== target && e.hp > 0 && inRange(e.x, e.y, target.x, target.y, STAR.splash)) applyDamage(e, Math.floor((dmg * STAR.splashBp) / 10000));
+  st.charges = 0;
+  st.ready = state.tick + STAR.cd;
+  events.push({ e: "starShot", x: target.x, y: target.y });
+  return null;
+}
+
+// ---------- Fallen: onda nascosta ----------
+
+function startHidden(state: GameState, king: Enemy, events: GameEvent[]) {
+  const level = levelOf(state);
+  state.hidden!.on = true;
+  state.wave += 1;
+  state.spawns.push({ tick: state.tick + 40, enemy: "risvegliato", lane: 0, mods: 0, hpMulBp: 10000, lifeDamage: 1000, boss: true, fixedHp: king.maxHp * HIDDEN.hpMul });
+  // La scorta: i nemici dell'ultima ondata, di nuovo.
+  for (const g of waveFor(state.mode, level, waveCount(state) - 2, state.night)) {
+    if (g.boss) continue;
+    const lane = g.lane < level.map.lanes.length && laneIsOpen(state, g.lane) ? g.lane : 0;
+    for (let i = 0; i < g.count; i++)
+      state.spawns.push({ tick: state.tick + 60 + g.delay + i * g.interval, enemy: g.enemy, lane, mods: modsToBits(g.mods), hpMulBp: g.hpMulBp ?? 10000, lifeDamage: g.lifeDamage ?? ENEMIES[g.enemy].lifeDamage, boss: false });
+  }
+  state.spawns.sort((a, b) => a.tick - b.tick || a.lane - b.lane);
+  events.push({ e: "hidden" });
+}
+export const hiddenWon = (s: GameState) => !!s.hidden?.on && !s.hidden.lostInHidden && s.phase === "won";
+
 export const hasAttack = (t: Pick<Tower, "kind" | "level" | "branch">) => {
   const s = towerStats(t);
   return s.damage > 0 && s.cooldown > 0 && !s.pulseAll;
@@ -972,6 +1133,30 @@ function applyCommand(state: GameState, cmd: Command, events: GameEvent[]): void
         if (e.hp > 0 && inRange(cmd.x, cmd.y, e.x, e.y, radius)) applyDamage(e, enemyDamage(e, dmg, "nessuno", true, 10000));
       }
       events.push({ e: "beam", x: cmd.x, y: cmd.y, radius });
+      return;
+    }
+    case "starPart": {
+      if (!starEnabled(state)) return reject("Il Cannone Stellare non c'è in questa modalità");
+      if (state.wave < STAR.from) return reject(`Il Cannone Stellare si monta dall'ondata ${STAR.from}`);
+      const st = (state.star ??= newStar());
+      if (st.parts >= STAR.parts) return reject("Il Cannone Stellare è già montato");
+      const cost = starPartCost(state);
+      if (cashOf(state, p) < cost) return reject(`Servono ${cost} cash`);
+      addCash(state, p, -cost);
+      st.parts += 1;
+      return;
+    }
+    case "starGrab": {
+      const st = state.star;
+      const d = st?.drops.find((x) => x.id === cmd.id);
+      if (!st || !d) return;
+      st.drops = st.drops.filter((x) => x !== d);
+      st.charges = Math.min(STAR.charges, st.charges + 1);
+      return;
+    }
+    case "starFire": {
+      const why = starFire(state, events);
+      if (why) return reject(why);
       return;
     }
     case "aim": {
@@ -1179,6 +1364,8 @@ function spawnDue(state: GameState, events: GameEvent[]): void {
       chargeLeft: 0,
     });
     // Notte 5: ogni mini-boss apre un momento rapido.
+    if (s.boss && state.mode === "fallen" && s.enemy === "recaduto" && !state.hidden && !state.sandbox && state.wave >= waveTotal(state.mode, levelOf(state), state.night))
+      state.hidden = { bossAt: state.tick, bossId: state.enemies[state.enemies.length - 1].id, on: false };
     if (s.boss && isNight5(state) && s.enemy !== "krampus" && !ADMIN_BOSSES.includes(s.enemy) && !state.tw.qte) openQte(state, state.enemies[state.enemies.length - 1], events);
   }
   if (n > 0) state.spawns.splice(0, n);
@@ -1215,7 +1402,9 @@ function hit(state: GameState, enemy: Enemy, t: Tower, stats: TowerStats, amount
   const type = TOWERS[t.kind].damageType;
   // Combo tra torri: colpi cinetici su nemici fermi, fulmini su nemici rallentati dal gelo.
   let combo = "";
-  if (type === "cinetico" && enemy.stun > 0) {
+  if (stats.coneDeg > 0) {
+    // Lo Sledger ha il suo bonus sui nemici gelati (Rompighiaccio): niente combo in più.
+  } else if (type === "cinetico" && enemy.stun > 0) {
     amount = Math.floor((amount * 15000) / 10000);
     combo = "Frantumazione";
   } else if (type === "elettrico" && enemy.speedBp < 10000) {
@@ -1228,6 +1417,11 @@ function hit(state: GameState, enemy: Enemy, t: Tower, stats: TowerStats, amount
   }
   const dmg = applyDamage(enemy, enemyDamage(enemy, amount, type, stats.pierce, stats.bossBp));
   t.damageDone += dmg;
+  if (stats.executeBp > 0 && !enemy.boss && enemy.hp > 0 && enemy.hp * 10000 < enemy.maxHp * stats.executeBp) {
+    t.damageDone += enemy.hp;
+    enemy.hp = 0;
+    events?.push({ e: "execute", x: enemy.x, y: enemy.y });
+  }
   if (stats.markTicks > 0) {
     for (const o of state.enemies) {
       if (o === enemy || (stats.markRadius > 0 && o.hp > 0 && inRange(o.x, o.y, enemy.x, enemy.y, stats.markRadius))) {
@@ -1304,6 +1498,7 @@ function clearDead(state: GameState, events: GameEvent[]): void {
       events.push({ e: "kill", x: e.x, y: e.y - 300, bounty: extra, boss: false });
     }
     state.kills += 1;
+    if (state.hidden && !state.hidden.on && e.id === state.hidden.bossId && state.tick - state.hidden.bossAt <= HIDDEN.window) startHidden(state, e, events);
     if (e.boss && !ADMIN_BOSSES.includes(e.kind)) {
       state.bossKills += 1;
       // Fallen: ogni mini-boss abbattuto lascia una reliquia da scegliere.
@@ -1684,6 +1879,16 @@ export function step(state: GameState, commands: Command[] = []): GameEvent[] {
     }
   }
 
+  // Gelo dello Sledger: rallenta finché dura, il congelamento ferma.
+  for (const e of state.enemies) {
+    if (e.frozen) e.frozen -= 1;
+    if (e.chillT) {
+      e.chillT -= 1;
+      e.speedBp = Math.min(e.speedBp, 10000 - (e.chill ?? 0));
+      if (!e.chillT) e.chill = 0;
+    }
+  }
+
   // Movimento dei nemici.
   const survivors: Enemy[] = [];
   for (const e of state.enemies) {
@@ -1731,6 +1936,10 @@ export function step(state: GameState, commands: Command[] = []): GameEvent[] {
     const target = pickTarget(state, t, s);
     if (!target) continue;
     t.cooldown = s.cooldown;
+    if (s.coneDeg > 0) {
+      swing(state, t, s, target, events);
+      continue;
+    }
     if (s.radius > 0) {
       // Il colpo cade dove sarà il bersaglio all'atterraggio.
       const lead = Math.floor((ENEMIES[target.kind].speed * target.speedBp) / 10000) * RULES.shellFlightTicks;
@@ -1745,6 +1954,7 @@ export function step(state: GameState, commands: Command[] = []): GameEvent[] {
       let amount = s.damage;
       hit(state, target, t, s, amount, events);
       let current = target;
+      const jump = s.bounceRange || CHAIN_JUMP;
       for (let j = 0; j < s.chains; j++) {
         let next: Enemy | null = null;
         let bestD = 0;
@@ -1753,7 +1963,7 @@ export function step(state: GameState, commands: Command[] = []): GameEvent[] {
           const dx = e.x - current.x;
           const dy = e.y - current.y;
           const d = dx * dx + dy * dy;
-          if (d > CHAIN_JUMP * CHAIN_JUMP) continue;
+          if (d > jump * jump) continue;
           if (!next || d < bestD || (d === bestD && e.id < next.id)) {
             next = e;
             bestD = d;
@@ -1766,7 +1976,7 @@ export function step(state: GameState, commands: Command[] = []): GameEvent[] {
         points.push(next.x, next.y);
         current = next;
       }
-      events.push({ e: "zap", from: t.id, points });
+      events.push(s.bounceRange ? { e: "axe", from: t.id, points } : { e: "zap", from: t.id, points });
     } else {
       hit(state, target, t, s, s.damage, events);
       events.push({ e: "shot", from: t.id, to: target.id, x: t.x, y: t.y, tx: target.x, ty: target.y });
@@ -1774,6 +1984,8 @@ export function step(state: GameState, commands: Command[] = []): GameEvent[] {
   }
 
   kingpins(state, events);
+  quakesDue(state, events);
+  starTick(state, events);
 
   // Atterraggio dei colpi di mortaio.
   const flying: Shell[] = [];
@@ -1797,6 +2009,17 @@ export function step(state: GameState, commands: Command[] = []): GameEvent[] {
 
   // Fine ondata, fine partita.
   if (state.lives <= 0) {
+    if (state.hidden?.on) {
+      // L'onda nascosta è un extra: chi cade lì ha comunque vinto Fallen, ma senza il premio nascosto.
+      state.hidden.lostInHidden = true;
+      state.lives = 1;
+      state.enemies = [];
+      state.spawns = [];
+      state.cleared = state.wave - 1;
+      state.phase = "won";
+      events.push({ e: "end", phase: "won" });
+      return events;
+    }
     state.phase = "lost";
     events.push({ e: "end", phase: "lost" });
     return events;
@@ -1855,6 +2078,29 @@ export function hashState(state: GameState): string {
   };
   mix(state.rng);
   str(state.mode);
+  for (const q of state.quakes ?? []) {
+    mix(q.tick);
+    mix(q.towerId);
+    mix(q.amount);
+    for (const id of q.ids) mix(id);
+  }
+  if (state.star) {
+    mix(state.star.parts);
+    mix(state.star.charges);
+    mix(state.star.nextDrop);
+    mix(state.star.ready);
+    for (const d of state.star.drops) {
+      mix(d.id);
+      mix(d.x);
+      mix(d.y);
+      mix(d.until);
+    }
+  }
+  if (state.hidden) {
+    mix(state.hidden.bossAt);
+    mix(state.hidden.bossId);
+    mix(state.hidden.on ? 1 : 0);
+  }
   const tw = state.tw;
   if (tw) {
     mix(tw.offer?.id ?? 0);
@@ -1918,6 +2164,9 @@ export function hashState(state: GameState): string {
     mix(e.id);
     str(e.kind);
     mix(e.hp);
+    mix(e.chill ?? 0);
+    mix(e.chillT ?? 0);
+    mix(e.frozen ?? 0);
     mix(e.lane);
     mix(e.dist);
     mix(e.stun);

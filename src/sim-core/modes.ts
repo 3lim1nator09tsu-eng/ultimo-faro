@@ -69,7 +69,7 @@ export const SURVIVAL: ModeDef[] = [
     bonusCash: 0,
     curveA: 700,
     curveB: 25,
-    hpBp: 15100,
+    hpBp: 13600,
     rampBp: 14000,
     pool: [e("risacca", 1, 8, 80, 10), e("corridore", 3, 6, 60, 8), e("bruto", 5, 2, 35, 22), e("sabotatore", 12, 2, 15, 30)],
     maxGroups: 3,
@@ -93,7 +93,7 @@ export const SURVIVAL: ModeDef[] = [
     bonusCash: 0,
     curveA: 900,
     curveB: 35,
-    hpBp: 18200,
+    hpBp: 16400,
     rampBp: 16000,
     pool: [e("risacca", 1, 9, 90, 9), e("corridore", 2, 6, 70, 8), e("bruto", 4, 2, 40, 20), e("sabotatore", 6, 2, 20, 28)],
     maxGroups: 3,
@@ -120,7 +120,7 @@ export const SURVIVAL: ModeDef[] = [
     bonusCash: 100,
     curveA: 1000,
     curveB: 40,
-    hpBp: 14600,
+    hpBp: 13100,
     rampBp: 17000,
     pool: [e("risacca", 1, 8, 80, 9), e("tizzone", 1, 5, 70, 8), e("corridore", 3, 6, 60, 8), e("magmatico", 6, 2, 30, 24), e("bruto", 8, 2, 35, 20), e("sabotatore", 10, 2, 20, 26)],
     maxGroups: 3,
@@ -147,7 +147,7 @@ export const SURVIVAL: ModeDef[] = [
     bonusCash: 150,
     curveA: 1100,
     curveB: 45,
-    hpBp: 12900,
+    hpBp: 11600,
     rampBp: 17000,
     pool: [e("risacca", 1, 9, 80, 9), e("spettro", 3, 3, 50, 12), e("cavaliere", 6, 2, 30, 24), e("bruto", 5, 2, 35, 20), e("sabotatore", 8, 2, 20, 26), e("tizzone", 10, 5, 60, 8), e("magmatico", 14, 2, 25, 24)],
     maxGroups: 3,
@@ -174,7 +174,7 @@ export const SURVIVAL: ModeDef[] = [
     bonusCash: 200,
     curveA: 1200,
     curveB: 50,
-    hpBp: 16900,
+    hpBp: 15200,
     rampBp: 18000,
     pool: [e("risacca", 1, 9, 80, 9), e("brinato", 2, 3, 50, 14), e("corridore", 3, 6, 60, 8), e("orso", 6, 1, 25, 30), e("spettro", 8, 3, 45, 12), e("sabotatore", 10, 2, 20, 26), e("cavaliere", 12, 2, 25, 24)],
     maxGroups: 3,
@@ -203,7 +203,7 @@ export const HARDCORE: ModeDef = {
   bonusCash: RULES.hardcoreCash,
   curveA: 1300,
   curveB: 70,
-  hpBp: 14000,
+  hpBp: 12600,
   rampBp: 18000,
   pool: [
     e("risacca", 1, 9, 80, 9), e("corridore", 2, 6, 60, 8), e("bruto", 4, 2, 35, 20), e("sabotatore", 6, 2, 20, 26),
@@ -262,16 +262,16 @@ const night = (n: number, map: string, waves: number, boss: BossStep, minis: Bos
 });
 
 export const NIGHTS: NightDef[] = [
-  night(1, "vigilia", 20, { wave: 20, kind: "folletto", hpBp: 150000 }, [{ wave: 10, kind: "pupazzetto", hpBp: 50000 }], "Notte 1 · La Vigilia Rubata", "Il Folletto Ladro ruba il cash mentre avanza.", 19000, 16000),
-  night(2, "anelli", 25, { wave: 25, kind: "renna", hpBp: 65000 }, [{ wave: 12, kind: "folletto", hpBp: 60000 }], "Notte 2 · Zoccoli sul Ghiaccio", "La Renna Nera scatta all'improvviso.", 15000, 13000),
-  night(3, "spirale", 30, { wave: 30, kind: "pupazzo", hpBp: 480000 }, [{ wave: 15, kind: "renna", hpBp: 70000 }], "Notte 3 · Neve che Cammina", "Il Pupazzo Colossale si spezza in sei.", 14500, 13000),
-  night(4, "gemelle", 35, { wave: 35, kind: "befana", hpBp: 620000 }, [{ wave: 17, kind: "pupazzo", hpBp: 70000 }, { wave: 28, kind: "folletto", hpBp: 90000 }], "Notte 4 · Scope nel Buio", "La Befana vola invisibile: serve chi la vede.", 12900, 13000),
+  night(1, "vigilia", 20, { wave: 20, kind: "folletto", hpBp: 150000 }, [{ wave: 10, kind: "pupazzetto", hpBp: 50000 }], "Notte 1 · La Vigilia Rubata", "Il Folletto Ladro ruba il cash mentre avanza.", 17100, 16000),
+  night(2, "anelli", 25, { wave: 25, kind: "renna", hpBp: 65000 }, [{ wave: 12, kind: "folletto", hpBp: 60000 }], "Notte 2 · Zoccoli sul Ghiaccio", "La Renna Nera scatta all'improvviso.", 13500, 13000),
+  night(3, "spirale", 30, { wave: 30, kind: "pupazzo", hpBp: 480000 }, [{ wave: 15, kind: "renna", hpBp: 70000 }], "Notte 3 · Neve che Cammina", "Il Pupazzo Colossale si spezza in sei.", 13100, 13000),
+  night(4, "gemelle", 35, { wave: 35, kind: "befana", hpBp: 620000 }, [{ wave: 17, kind: "pupazzo", hpBp: 70000 }, { wave: 28, kind: "folletto", hpBp: 90000 }], "Notte 4 · Scope nel Buio", "La Befana vola invisibile: serve chi la vede.", 11600, 13000),
   night(5, "crocevia", 40, { wave: 40, kind: "krampus", hpBp: 500000 }, [
     { wave: 10, kind: "folletto", hpBp: 80000 },
     { wave: 20, kind: "renna", hpBp: 90000 },
     { wave: 28, kind: "pupazzo", hpBp: 90000 },
     { wave: 34, kind: "befana", hpBp: 100000 },
-  ], "Notte 5 · Il Gran Finale", "Krampus, e tutti quelli che lo hanno preceduto.", 12000, 13000),
+  ], "Notte 5 · Il Gran Finale", "Krampus, e tutti quelli che lo hanno preceduto.", 10800, 13000),
 ];
 
 export const SURVIVAL_IDS: GameMode[] = SURVIVAL.map((m) => m.id);

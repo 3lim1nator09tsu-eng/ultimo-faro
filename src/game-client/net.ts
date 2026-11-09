@@ -268,8 +268,10 @@ export class Net {
     return this.json<RoomRow[]>(`/rest/v1/rooms?select=*&status=neq.ended&updated_at=gt.${encodeURIComponent(since)}&order=updated_at.desc`);
   }
 
-  async adminCommand(room: string, cmd: unknown): Promise<void> {
-    await this.json("/rest/v1/admin_commands", { method: "POST", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ room, cmd }) });
+  /** Manda un comando admin a una stanza; restituisce il numero del comando, per sapere quando chi ospita l'ha applicato. */
+  async adminCommand(room: string, cmd: unknown): Promise<number> {
+    const rows = await this.json<Array<{ id: number }>>("/rest/v1/admin_commands?select=id", { method: "POST", headers: { Prefer: "return=representation" }, body: JSON.stringify({ room, cmd }) });
+    return rows[0]?.id ?? 0;
   }
 
   async commandsAfter(room: string, afterId: number): Promise<Array<{ id: number; cmd: unknown }>> {

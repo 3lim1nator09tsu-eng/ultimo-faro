@@ -323,7 +323,7 @@ for (const vp of [{ width: 390, height: 700 }, { width: 844, height: 390 }]) {
   await page.waitForTimeout(200);
   while (await page.locator("#dialog").isVisible()) await page.locator("#dialog").tap();
   let st = await page.evaluate(() => window.__faro.state);
-  check(`${tag}: la prova ha tutte le 16 torri e niente premi`, st.sandbox && st.allowed.length === 16 && (await page.locator(".card").count()) === 16);
+  check(`${tag}: la prova ha tutte le 18 torri e niente premi`, st.sandbox && st.allowed.length === 18 && (await page.locator(".card").count()) === 18);
   const dmg = await page.evaluate(() => {
     const f = window.__faro;
     f.debug.send({ t: "build", kind: "balestra", cx: 5, cy: 3 });
@@ -473,10 +473,10 @@ for (const vp of [{ width: 390, height: 760 }, { width: 844, height: 390 }]) {
   await page.screenshot({ path: `${outDir}/12-menu.png` });
   check("il menu compare all'avvio", await page.locator("#menu").isVisible());
   check("Infinita è chiusa finché non si vince", await page.locator("#mInfinita").isDisabled());
-  check("l'Arsenale elenca 14 torri (le 2 admin restano nascoste)", (await page.locator("#arsenal .row").count()) === 14);
+  check("l'Arsenale elenca 16 torri (le 2 admin restano nascoste)", (await page.locator("#arsenal .row").count()) === 16);
   check("la Stella Cometa si ottiene solo vincendo la Notte 5", (await page.locator('#arsenal button[data-kind="cometa"]').textContent()) === "Vinci la Notte 5");
   check("ci sono tre missioni attive", (await page.locator("#missions .mission").count()) === 3);
-  check("le medaglie sono 17", (await page.locator("#medals .medal").count()) === 17);
+  check("le medaglie sono 18", (await page.locator("#medals .medal").count()) === 18);
   check("Easy aperta, Medium e Hardcore chiuse", !(await page.locator('[data-survival="easy"]').isDisabled()) && (await page.locator('[data-survival="medium"]').isDisabled()) && (await page.locator('[data-survival="hardcore"]').isDisabled()));
   check("Notte 1 aperta, Notte 2 chiusa", !(await page.locator('[data-night="1"]').isDisabled()) && (await page.locator('[data-night="2"]').isDisabled()));
   check("il Disgelo è indicato nel menu", /forza \d+%/.test(await page.locator("#disgelo").textContent()));

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { CAMPAIGN_LENGTH, ENEMIES, LEVELS, RULES, STARTER_TOWERS, TOWERS, levelById, waveAt } from "../src/sim-core/content";
 import { POISONS } from "../src/sim-core/twists";
-import { Command, GameEvent, lanePoint, wavePreview, allIntegers, buildCost, createGame, damageAgainst, effStats, hashState, hpForWave, isBuildable, laneIsOpen, rankedStats, restore, rewardFor, sellValue, snapshot, step, towerStats } from "../src/sim-core/sim";
+import { Command, GameEvent, hiddenWon, lanePoint, perleFor, waveCount, wavePreview, allIntegers, buildCost, createGame, damageAgainst, effStats, hashState, hpForWave, isBuildable, laneIsOpen, rankedStats, restore, rewardFor, sellValue, snapshot, step, towerStats } from "../src/sim-core/sim";
 import { playBot } from "../src/sim-core/bot";
 
 const toWave = (s: ReturnType<typeof createGame>) => {
@@ -499,7 +499,7 @@ test("divisione, gelo alla morte, furto e immunità al rallentamento", () => {
 
 test("sandbox e comandi admin: tutte le torri, nessun premio, vite infinite, salto d'ondata", () => {
   const s = createGame(1, { sandbox: true, allowed: ["balestra"] });
-  assert.equal(s.allowed.length, 16);
+  assert.equal(s.allowed.length, 18);
   assert.ok(s.cash >= 100000);
   step(s, [{ t: "adminGod", on: true }, { t: "adminSpawn", enemy: "corridore", count: 5, mods: ["agile"] }]);
   for (let i = 0; i < 600; i++) step(s, []);
@@ -1077,4 +1077,178 @@ test("Dohoter Gang: boss dell'admin con 67.000 di vita, premi salvi", () => {
   const s = createGame(32, { mode: "easy", level: "porto" });
   assert.ok(step(s, [{ t: "adminBoss", enemy: "krampus" }]).some((e) => e.e === "reject"));
   assert.equal(s.spawns.length, 0);
+});
+
+test("Sledger: martellata a cono, rallenta, congela dal livello 3, i boss non si congelano", () => {
+  const s = createGame(41, { mode: "campagna", level: "porto", allowed: ["sledger"] });
+  s.cash = 50000;
+  toWave(s);
+  s.spawns = [];
+  s.enemies = [];
+  // Una torre accanto al percorso e tre nemici davanti a lei.
+  let spot: [number, number] | null = null;
+  const lvl = levelById("porto");
+  for (let d = 2000; d < 30000 && !spot; d += 250) {
+    const p = lanePoint(lvl, 0, d);
+    const cx = Math.floor(p.x / 1000);
+    for (const [ox, oy] of [[0, 1], [0, -1], [1, 0], [-1, 0]]) if (!spot && isBuildable(s, cx + ox, Math.floor(p.y / 1000) + oy)) spot = [cx + ox, Math.floor(p.y / 1000) + oy];
+  }
+  step(s, [{ t: "build", kind: "sledger", cx: spot![0], cy: spot![1] }]);
+  const t = s.towers[0];
+  const near = (k: number) => {
+    let best = 0;
+    let bd = 1e18;
+    for (let d = 0; d < 40000; d += 100) {
+      const p = lanePoint(lvl, 0, d);
+      const dd = (p.x - t.x) ** 2 + (p.y - t.y) ** 2;
+      if (dd < bd) {
+        bd = dd;
+        best = d;
+      }
+    }
+    return best + k;
+  };
+  const mk = (dist: number, boss = false) => {
+    const e = { ...newTestEnemy(s), id: s.nextId++, dist, hp: 100000, maxHp: 100000, stun: 0, boss };
+    const p = lanePoint(lvl, 0, dist);
+    e.x = p.x;
+    e.y = p.y;
+    s.enemies.push(e);
+    return e;
+  };
+  const a = mk(near(0));
+  const b = mk(near(150));
+  const c = mk(near(-150));
+  t.cooldown = 0;
+  const ev = step(s, []);
+  assert.ok(ev.some((x) => x.e === "swing"), "martellata");
+  const hitCount = [a, b, c].filter((e) => e.hp < 100000).length;
+  assert.ok(hitCount >= 2, `colpisce più nemici nel cono: ${hitCount}`);
+  assert.ok((a.chill ?? 0) > 0 && (a.chillT ?? 0) > 0, "rallenta");
+  // Livello 3: dopo qualche colpo il nemico si congela.
+  step(s, [{ t: "upgrade", id: t.id }]);
+  step(s, [{ t: "upgrade", id: t.id }]);
+  for (let i = 0; i < 6 && !(a.frozen ?? 0); i++) {
+    t.cooldown = 0;
+    step(s, []);
+  }
+  assert.ok((a.frozen ?? 0) > 0 && a.stun > 0, "congelato");
+  // Un boss si rallenta poco e non si congela mai.
+  const boss = mk(near(50), true);
+  for (let i = 0; i < 8; i++) {
+    t.cooldown = 0;
+    step(s, []);
+  }
+  assert.equal(boss.frozen ?? 0, 0);
+  assert.ok((boss.chill ?? 0) <= Math.floor(towerStats(t).chillMax / 3));
+});
+
+test("Executioner: l'ascia rimbalza senza perdere forza; il Boia finisce i deboli", () => {
+  const s = createGame(42, { mode: "campagna", level: "porto", allowed: ["executioner"] });
+  s.cash = 50000;
+  step(s, [{ t: "build", kind: "executioner", cx: 5, cy: 3 }]);
+  const t = s.towers[0];
+  toWave(s);
+  s.spawns = [];
+  s.enemies = [];
+  const lvl = levelById("porto");
+  const ds: number[] = [];
+  for (let d = 0; d < 40000 && ds.length < 4; d += 200) {
+    const p = lanePoint(lvl, 0, d);
+    if ((p.x - t.x) ** 2 + (p.y - t.y) ** 2 <= towerStats(t).range ** 2 && (!ds.length || d - ds[ds.length - 1] >= 600)) ds.push(d);
+  }
+  const es = ds.map((d) => {
+    const e = { ...newTestEnemy(s), id: s.nextId++, dist: d, hp: 1000, maxHp: 1000, stun: 999, kind: "bruto" as const };
+    const p = lanePoint(lvl, 0, d);
+    e.x = p.x;
+    e.y = p.y;
+    s.enemies.push(e);
+    return e;
+  });
+  t.cooldown = 0;
+  const ev = step(s, []);
+  assert.ok(ev.some((x) => x.e === "axe"));
+  const lost = es.map((e) => 1000 - e.hp).filter((x) => x > 0);
+  assert.ok(lost.length >= 3, `rimbalzi: ${lost.length}`);
+  assert.ok(Math.max(...lost) === Math.min(...lost), `stesso danno a ogni rimbalzo: ${lost}`);
+  // Ramo A: chi resta sotto il 12% viene giustiziato.
+  step(s, [{ t: "upgrade", id: t.id }]);
+  step(s, [{ t: "upgrade", id: t.id }]);
+  step(s, [{ t: "spec", id: t.id, branch: "A" }]);
+  for (const e of es) e.hp = 140;
+  t.cooldown = 0;
+  const ev2 = step(s, []);
+  assert.ok(ev2.some((x) => x.e === "execute"));
+});
+
+test("Cannone Stellare: pezzi dall'ondata 7, stelle da raccogliere, colpo sul nemico più grosso", () => {
+  const s = createGame(43, { mode: "easy", level: "porto" });
+  s.cash = 100000;
+  assert.ok(step(s, [{ t: "starPart" }]).some((e) => e.e === "reject"), "non prima dell'ondata 7");
+  s.wave = 7;
+  for (let i = 0; i < 8; i++) step(s, [{ t: "starPart" }]);
+  assert.equal(s.star!.parts, 8);
+  assert.ok(s.cash < 100000 - 5000);
+  assert.ok(step(s, [{ t: "starFire" }]).some((e) => e.e === "reject"), "senza stelle non spara");
+  runTo(s, (x) => x.phase === "wave");
+  runTo(s, (x) => (x.star?.drops.length ?? 0) > 0, 3000);
+  const d = s.star!.drops[0];
+  step(s, [{ t: "starGrab", id: d.id }]);
+  assert.equal(s.star!.charges, 1);
+  s.star!.charges = 3;
+  runTo(s, (x) => x.enemies.length > 0);
+  const big = [...s.enemies].sort((a, b) => b.maxHp - a.maxHp)[0];
+  const hp = big.hp;
+  const ev = step(s, [{ t: "starFire" }]);
+  assert.ok(ev.some((e) => e.e === "starShot"));
+  assert.ok(big.hp < hp || big.hp <= 0);
+  assert.equal(s.star!.charges, 0);
+  assert.equal(createGame(1, { mode: "campagna", level: "porto" }).star, undefined);
+});
+
+test("Fallen: il Re Caduto battuto in fretta apre l'onda nascosta, con premio a parte", () => {
+  const s = createGame(44, { mode: "fallen", level: "porto" });
+  for (let w = 0; w < 34; w++) clearWave(s);
+  runTo(s, (x) => x.phase === "wave");
+  runTo(s, (x) => x.enemies.some((e) => e.kind === "recaduto"), 5000);
+  assert.ok(s.hidden && !s.hidden.on, "il gioco ha notato il Re");
+  const king = s.enemies.find((e) => e.kind === "recaduto")!;
+  king.hp = -1e9;
+  const ev = step(s, []);
+  assert.ok(ev.some((e) => e.e === "hidden"));
+  assert.equal(waveCount(s), 36);
+  runTo(s, (x) => x.enemies.some((e) => e.kind === "risvegliato"), 200);
+  const w = s.enemies.find((e) => e.kind === "risvegliato")!;
+  assert.equal(w.maxHp, king.maxHp * 3);
+  // Vincerla dà il premio nascosto.
+  for (let i = 0; i < 30 && s.phase === "wave"; i++) {
+    s.spawns = [];
+    for (const e of s.enemies) e.hp = -1e9;
+    step(s, []);
+  }
+  assert.equal(s.phase, "won");
+  assert.ok(hiddenWon(s));
+  const base = rewardFor({ ...s, hidden: undefined } as never);
+  assert.equal(rewardFor(s) - base, 1500);
+  assert.ok(perleFor(s) >= 25);
+  // Re battuto con calma: niente onda nascosta.
+  const slow = createGame(44, { mode: "fallen", level: "porto" });
+  for (let w = 0; w < 34; w++) clearWave(slow);
+  runTo(slow, (x) => x.enemies.some((e) => e.kind === "recaduto"), 5000);
+  for (let i = 0; i < 460; i++) step(slow, []);
+  const k2 = slow.enemies.find((e) => e.kind === "recaduto");
+  if (k2) {
+    k2.hp = -1e9;
+    assert.ok(!step(slow, []).some((e) => e.e === "hidden"));
+  }
+  // Perdere nell'onda nascosta conta comunque come vittoria di Fallen, senza premio nascosto.
+  const lose = createGame(44, { mode: "fallen", level: "porto" });
+  for (let w = 0; w < 34; w++) clearWave(lose);
+  runTo(lose, (x) => x.enemies.some((e) => e.kind === "recaduto"), 5000);
+  lose.enemies.find((e) => e.kind === "recaduto")!.hp = -1e9;
+  step(lose, []);
+  lose.lives = 0;
+  step(lose, []);
+  assert.equal(lose.phase, "won");
+  assert.ok(!hiddenWon(lose));
 });

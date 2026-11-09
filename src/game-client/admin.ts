@@ -682,26 +682,21 @@ function onlineTab(body: HTMLElement, api: AdminApi) {
       list.innerHTML = "";
       if (!rooms.length) list.append(el("p", { class: "note", text: "Nessuna stanza attiva negli ultimi 15 minuti." }));
       for (const r of rooms) {
-        const i = r.info as { players?: string[]; wave?: number; waves?: number; lives?: number; cash?: number };
+        const i = r.info as { players?: string[]; wave?: number; waves?: number; lives?: number; cash?: number; ver?: string };
         const what = r.mode === "natale" ? `Notte ${r.night}` : `${r.mode} · ${r.level}`;
         const line = `${r.code} · ${what} · ${r.status === "playing" ? `ondata ${i.wave ?? 0}/${i.waves ?? "?"}, ${i.lives ?? "?"} vite, ${i.cash ?? "?"} cash` : "in attesa"}`;
         list.append(
           el("button", {
             class: "adRoom",
             "data-room": r.code,
-            text: `${line}\n${(i.players ?? []).join(", ")}`,
+            text: `${line}\n${(i.players ?? []).join(", ")}${i.ver ? ` · versione ${i.ver}` : " · versione vecchia (senza conferme)"}`,
             onclick: () => {
               controls.innerHTML = "";
               const fake: AdminApi = {
                 ...api,
                 state: () => ({ levelId: r.level, wave: i.wave ?? 0, god: false }) as unknown as GameState,
                 players: () => i.players ?? [],
-                send: (cmd) => {
-                  on.command(r.code, cmd).then(
-                    () => api.toast(`Inviato alla stanza ${r.code}`),
-                    (e) => api.toast((e as Error).message),
-                  );
-                },
+                send: (cmd) => void on.command(r.code, cmd),
               };
               renderAdminDrawer(controls, fake, true);
             },

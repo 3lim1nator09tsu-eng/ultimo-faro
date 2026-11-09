@@ -586,6 +586,37 @@ export function drawTowerShape(ctx: CanvasRenderingContext2D, kind: TowerKind, x
     ctx.beginPath();
     ctx.arc(0, 0, T * 0.1, 0, Math.PI * 2);
     ctx.fill();
+  } else if (kind === "sledger") {
+    // Sledger: martello pesante con la testa di ghiaccio, girato verso il bersaglio.
+    ctx.rotate(angle);
+    ctx.fillStyle = "#5a4330";
+    ctx.fillRect(-T * 0.26, -T * 0.035, T * 0.42, T * 0.07);
+    ctx.fillStyle = branch === "A" ? "#bfe8ff" : branch === "B" ? "#8fd0ff" : "#c7d2d8";
+    ctx.strokeStyle = "#e9f6ff";
+    ctx.lineWidth = Math.max(1, T * 0.025);
+    ctx.beginPath();
+    ctx.rect(T * 0.12, -T * 0.2, T * 0.2, T * 0.4);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = "rgba(255,255,255,.55)";
+    ctx.fillRect(T * 0.15, -T * 0.16, T * 0.05, T * 0.32);
+  } else if (kind === "executioner") {
+    // Executioner: ascia a mezzaluna sopra un ceppo scuro.
+    ctx.fillStyle = "#2b2422";
+    ctx.beginPath();
+    ctx.ellipse(0, T * 0.18, T * 0.28, T * 0.1, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.rotate(angle);
+    ctx.fillStyle = "#6b4a2e";
+    ctx.fillRect(-T * 0.2, -T * 0.03, T * 0.42, T * 0.06);
+    ctx.fillStyle = branch === "A" ? COLORS.coral : branch === "B" ? "#c9b8ff" : "#d6dde0";
+    ctx.beginPath();
+    ctx.moveTo(T * 0.12, -T * 0.04);
+    ctx.quadraticCurveTo(T * 0.42, -T * 0.32, T * 0.3, -T * 0.04);
+    ctx.lineTo(T * 0.3, T * 0.04);
+    ctx.quadraticCurveTo(T * 0.42, T * 0.32, T * 0.12, T * 0.04);
+    ctx.closePath();
+    ctx.fill();
   } else if (kind === "kingpin") {
     // Kingpin: cilindro e fascia d'oro, gessato scuro.
     ctx.fillStyle = "#14181b";
@@ -722,7 +753,7 @@ export function drawTowerShape(ctx: CanvasRenderingContext2D, kind: TowerKind, x
 export function enemySize(e: Pick<Enemy, "kind" | "boss">): number {
   const base: Partial<Record<string, number>> = {
     risacca: 0.22, corridore: 0.2, sabotatore: 0.25, bruto: 0.33, annegato: 0.52, sirena: 0.5, leviatano: 0.78,
-    tizzone: 0.2, magmatico: 0.34, colosso: 0.66, spettro: 0.24, cavaliere: 0.34, recaduto: 0.62, brinato: 0.27, orso: 0.38, regina: 0.62,
+    tizzone: 0.2, magmatico: 0.34, colosso: 0.66, spettro: 0.24, cavaliere: 0.34, recaduto: 0.62, risvegliato: 0.8, brinato: 0.27, orso: 0.38, regina: 0.62,
     elfo: 0.19, pupazzetto: 0.28, folletto: 0.48, renna: 0.55, pupazzo: 0.7, befana: 0.56, krampus: 0.8,
     dohoter: 0.74,
   };
@@ -730,7 +761,7 @@ export function enemySize(e: Pick<Enemy, "kind" | "boss">): number {
   return e.kind === "bruto" && e.boss ? 0.53 : r;
 }
 
-const NEW_KINDS = new Set(["tizzone", "magmatico", "colosso", "spettro", "cavaliere", "recaduto", "brinato", "orso", "regina", "elfo", "pupazzetto", "folletto", "renna", "pupazzo", "befana", "krampus", "dohoter"]);
+const NEW_KINDS = new Set(["tizzone", "magmatico", "colosso", "spettro", "cavaliere", "recaduto", "brinato", "orso", "regina", "elfo", "pupazzetto", "folletto", "renna", "pupazzo", "befana", "krampus", "dohoter", "risvegliato"]);
 
 function poly(ctx: CanvasRenderingContext2D, n: number, r: number, inner: number, spin: number) {
   ctx.beginPath();
@@ -823,10 +854,19 @@ function drawNewKind(ctx: CanvasRenderingContext2D, e: Enemy, T: number, time: n
       ctx.fillRect(-r * 0.5, -r * 0.35, r, r * 0.14);
       break;
     case "recaduto":
+    case "risvegliato":
     case "regina": {
       const ice = e.kind === "regina";
-      ctx.fillStyle = ice ? "#123a46" : "#1a1622";
-      ctx.strokeStyle = ice ? COLORS.ice : "#c9b8ff";
+      const woke = e.kind === "risvegliato";
+      if (woke) {
+        // Il Re Risvegliato: alone rosso che pulsa.
+        ctx.fillStyle = `rgba(255,70,70,${0.18 + 0.12 * Math.sin(t * 0.01)})`;
+        ctx.beginPath();
+        ctx.arc(0, r * 0.1, r * 1.25, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.fillStyle = ice ? "#123a46" : woke ? "#2a0d12" : "#1a1622";
+      ctx.strokeStyle = ice ? COLORS.ice : woke ? "#ff6b6b" : "#c9b8ff";
       ctx.beginPath();
       if (ice) {
         ctx.moveTo(0, -r * 0.6);
@@ -847,7 +887,7 @@ function drawNewKind(ctx: CanvasRenderingContext2D, e: Enemy, T: number, time: n
       }
       ctx.closePath();
       ctx.fill();
-      eyes(ctx, r, ice ? "#e9fbff" : "#c9b8ff", ice ? 0.15 : 0, 0.28, 0.1);
+      eyes(ctx, r, ice ? "#e9fbff" : woke ? "#ff6b6b" : "#c9b8ff", ice ? 0.15 : 0, 0.28, 0.1);
       break;
     }
     case "brinato":

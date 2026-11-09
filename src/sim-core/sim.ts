@@ -4,6 +4,7 @@
 import { AIMS, Aim, BLIZZARD, CONTRACTS, CONTRACT_IDS, LAVA, MERCHANT_IDS, ORDER_IDS, Order, POISONS, QTE, QTE_SYMBOLS, RELIC_IDS, OfferKind, Twist, contractReward, merchantGold, newTwist } from "./twists";
 import {
   ABILITIES,
+  ADMIN_BOSSES,
   APEX_COST_BP,
   APEX_RANK,
   MOD_ORDER,
@@ -138,6 +139,7 @@ export interface Spawn {
   hpMulBp: number;
   lifeDamage: number;
   boss: boolean;
+  fixedHp?: number; // vita esatta, senza scalare (boss dell'admin)
 }
 
 export type Phase = "prep" | "wave" | "won" | "lost";
@@ -220,6 +222,7 @@ type CommandBody =
   | { t: "qte"; id: number; pick: number }
   | { t: "adminCash"; amount: number; to?: number }
   | { t: "adminSpawn"; enemy: EnemyKind; count: number; lane?: number; mods?: Mod[]; boss?: boolean; hpMulBp?: number }
+  | { t: "adminBoss"; enemy: EnemyKind; lane?: number }
   | { t: "adminLives"; lives: number }
   | { t: "adminGod"; on: boolean }
   | { t: "adminWave"; wave: number }
@@ -1037,6 +1040,16 @@ function applyCommand(state: GameState, cmd: Command, events: GameEvent[]): void
       state.adminTouched = true;
       return;
     }
+    case "adminBoss": {
+      // Boss speciale dell'admin: non segna la partita come modificata, i premi restano.
+      if (!ADMIN_BOSSES.includes(cmd.enemy)) return reject("Non è un boss dell'admin");
+      const lanes = levelOf(state).map.lanes.length;
+      const lane = cmd.lane !== undefined && cmd.lane >= 0 ? Math.min(cmd.lane | 0, lanes - 1) : 0;
+      const def = ENEMIES[cmd.enemy];
+      state.spawns.push({ tick: state.tick + 1, enemy: cmd.enemy, lane, mods: 0, hpMulBp: 10000, lifeDamage: def.lifeDamage, boss: true, fixedHp: def.hp });
+      state.spawns.sort((a, b) => a.tick - b.tick || a.lane - b.lane);
+      return;
+    }
     case "adminLives": {
       state.lives = Math.max(1, Math.min(999, cmd.lives | 0));
       state.adminTouched = true;
@@ -1130,10 +1143,10 @@ function spawnDue(state: GameState, events: GameEvent[]): void {
   while (n < state.spawns.length && state.spawns[n].tick <= state.tick) n++;
   for (const s of state.spawns.slice(0, n)) {
     const def = ENEMIES[s.enemy];
-    let hp = hpForWave(def.hp, Math.max(1, state.wave), s.hpMulBp);
-    if (state.hpScaleBp !== 10000) hp = Math.floor((hp * state.hpScaleBp) / 10000);
+    let hp = s.fixedHp ?? hpForWave(def.hp, Math.max(1, state.wave), s.hpMulBp);
+    if (s.fixedHp === undefined && state.hpScaleBp !== 10000) hp = Math.floor((hp * state.hpScaleBp) / 10000);
     if (s.mods & modBit("gonfio")) hp *= 2;
-    if (state.tw.relics.length) {
+    if (s.fixedHp === undefined && state.tw.relics.length) {
       if (hasRelic(state, "lama")) hp = Math.floor((hp * 11500) / 10000);
       if (s.boss && hasRelic(state, "furia")) hp = Math.floor((hp * 12500) / 10000);
     }
@@ -1166,7 +1179,7 @@ function spawnDue(state: GameState, events: GameEvent[]): void {
       chargeLeft: 0,
     });
     // Notte 5: ogni mini-boss apre un momento rapido.
-    if (s.boss && isNight5(state) && s.enemy !== "krampus" && !state.tw.qte) openQte(state, state.enemies[state.enemies.length - 1], events);
+    if (s.boss && isNight5(state) && s.enemy !== "krampus" && !ADMIN_BOSSES.includes(s.enemy) && !state.tw.qte) openQte(state, state.enemies[state.enemies.length - 1], events);
   }
   if (n > 0) state.spawns.splice(0, n);
 }
@@ -1291,7 +1304,7 @@ function clearDead(state: GameState, events: GameEvent[]): void {
       events.push({ e: "kill", x: e.x, y: e.y - 300, bounty: extra, boss: false });
     }
     state.kills += 1;
-    if (e.boss) {
+    if (e.boss && !ADMIN_BOSSES.includes(e.kind)) {
       state.bossKills += 1;
       // Fallen: ogni mini-boss abbattuto lascia una reliquia da scegliere.
       if (state.mode === "fallen" && !state.sandbox && state.wave < waveCount(state) && !state.tw.offer) {
@@ -1962,6 +1975,7 @@ export function hashState(state: GameState): string {
     str(s.enemy);
     mix(s.lane);
     mix(s.mods);
+    mix(s.fixedHp ?? 0);
   }
   return (h >>> 0).toString(16).padStart(8, "0");
 }

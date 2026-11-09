@@ -1,7 +1,7 @@
 // Pannello admin: prova delle torri, comandi in partita, progressi, bilanciamento e premi ai giocatori.
 // Le prove di bilanciamento valgono su questo dispositivo; pubblicate, valgono per tutti dal server.
 import { NIGHTS, SURVIVAL } from "../sim-core/modes";
-import { ADMIN_ONLY, EVENT_LEVELS, levelById, ENEMIES, EnemyKind, GameMode, LEVELS, MAX_RANK, MOD_ORDER, MODS, Mod, SURVIVAL_MAPS, TOWERS, TOWER_ORDER, TowerKind } from "../sim-core/content";
+import { ADMIN_BOSSES, ADMIN_ONLY, EVENT_LEVELS, levelById, ENEMIES, EnemyKind, GameMode, LEVELS, MAX_RANK, MOD_ORDER, MODS, Mod, SURVIVAL_MAPS, TOWERS, TOWER_ORDER, TowerKind } from "../sim-core/content";
 import { ShopOv, shopValue } from "../sim-core/balance";
 import { ALL_MODES, Balance, LevelKey, MAP_FIELDS, MODE_FIELDS, MapOv, ModeOv, TOWER_FIELDS, TowerOv, Unit, balanceSize, fromShown, levelRef, mapBaseValue, mapValue, modeBaseValue, modeByKey, modeKey, modeValue, toShown, towerBaseValue } from "../sim-core/balance";
 import { Command, GameState } from "../sim-core/sim";
@@ -603,7 +603,7 @@ export function renderAdminDrawer(host: HTMLElement, api: AdminApi, remote = fal
   host.innerHTML = "";
   const s = api.state();
   const btn = (text: string, onclick: () => void, extra: Record<string, unknown> = {}) => el("button", { text, onclick, ...extra });
-  const enemy = el("select", { id: "adEnemy" }, ...(Object.keys(ENEMIES) as EnemyKind[]).map((k) => el("option", { value: k, text: ENEMIES[k].name })));
+  const enemy = el("select", { id: "adEnemy" }, ...(Object.keys(ENEMIES) as EnemyKind[]).filter((k) => !ADMIN_BOSSES.includes(k)).map((k) => el("option", { value: k, text: ENEMIES[k].name })));
   const count = el("input", { id: "adCount", type: "number", value: "5", min: "1", max: "200" }) as HTMLInputElement;
   const lanes = levelById(s.levelId).map.lanes.length;
   const lane = el("select", { id: "adLane" }, el("option", { value: "-1", text: "Tutte le corsie" }), ...Array.from({ length: lanes }, (_, i) => el("option", { value: String(i), text: `Corsia ${i + 1}` })));
@@ -645,7 +645,19 @@ export function renderAdminDrawer(host: HTMLElement, api: AdminApi, remote = fal
           ]),
     ),
     el("div", { class: "adRowWave" }, el("span", { text: "Vai all'ondata" }), wave, btn("Vai", () => api.send({ t: "adminWave", wave: Number(wave.value) || 1 }))),
-    el("h3", { text: "Genera nemici" }),
+    el("h3", { text: "Boss dell'admin" }),
+    el("p", { class: "note", text: "Vita fissa e premi salvi: la partita conta come normale per chi gioca." }),
+    el(
+      "div",
+      { class: "adGrid" },
+      ...ADMIN_BOSSES.map((k) =>
+        btn(`Evoca ${ENEMIES[k].name} · ${ENEMIES[k].hp.toLocaleString("it-IT")} vita`, () => {
+          api.send({ t: "adminBoss", enemy: k, lane: Number(lane.value) });
+          api.toast(`${ENEMIES[k].name} sta arrivando`);
+        }, { class: "mode", "data-boss": k }),
+      ),
+    ),
+    el("h3", { text: "Genera nemici (la partita perde i premi)" }),
     el("div", { class: "adSpawn" }, enemy, count, lane, hp, el("label", {}, boss, "Boss")),
     mods,
     btn("Genera", () => {

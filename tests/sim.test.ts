@@ -1057,3 +1057,24 @@ test("Bilanciamento: prezzi dell'Arsenale in Schegge e Perle", async () => {
   assert.equal(C.RANK_COSTS[2], 200);
   assert.equal(B.balanceSize(B.pruneBalance({ towers: [], modes: [], maps: [], shop: [{ key: "kingpin.perle", value: 40 }] })), 0);
 });
+
+test("Dohoter Gang: boss dell'admin con 67.000 di vita, premi salvi", () => {
+  for (const players of [1, 3]) {
+    const s = createGame(31, { mode: "fallen", level: "porto", players: Array.from({ length: players }, () => ({ allowed: ["balestra"] as never, ranks: {} })) });
+    toWave(s);
+    step(s, [{ t: "adminBoss", enemy: "dohoter" }]);
+    runTo(s, (x) => x.enemies.some((e) => e.kind === "dohoter"));
+    const d = s.enemies.find((e) => e.kind === "dohoter")!;
+    assert.equal(d.maxHp, 67000, `${players} giocatori`);
+    assert.ok(d.boss);
+    assert.equal(s.adminTouched, false, "la partita resta valida per i premi");
+    d.hp = -1;
+    const ev = step(s, []);
+    assert.ok(ev.some((e) => e.e === "kill"));
+    assert.equal(s.bossKills, 0, "non conta come boss per missioni e reliquie");
+    assert.equal(s.tw.offer?.kind === "reliquia", false);
+  }
+  const s = createGame(32, { mode: "easy", level: "porto" });
+  assert.ok(step(s, [{ t: "adminBoss", enemy: "krampus" }]).some((e) => e.e === "reject"));
+  assert.equal(s.spawns.length, 0);
+});

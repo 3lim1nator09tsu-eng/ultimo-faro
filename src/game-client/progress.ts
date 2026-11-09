@@ -128,6 +128,15 @@ export const MEDALS: Array<{ id: string; name: string; text: string; ok: (m: Med
 
 export const VERSION_NOTES: ChangeEntry[] = [
   {
+    date: "2026-11-09",
+    title: "Versione 0.11.1: Dohoter Gang",
+    kind: "versione",
+    items: [
+      "Nuovo boss che solo l'admin può evocare in partita: Dohoter Gang, con 67.000 di vita",
+      "Se l'admin lo evoca, la partita resta valida: premi, missioni e classifica non si perdono",
+    ],
+  },
+  {
     date: "2026-11-08",
     title: "Versione 0.11: modalità molto più dure",
     kind: "versione",

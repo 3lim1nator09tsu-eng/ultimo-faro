@@ -1,3 +1,4 @@
+import { DOHOTER_FACE } from "./assets/dohoter";
 // Disegno su canvas. Tutto è in coordinate della mappa: T è il lato di una casella in pixel.
 import { Branch, ENEMIES, MAP_H, MAP_W, MapDef, TILE, TowerKind, Track } from "../sim-core/content";
 import { Enemy, isHidden } from "../sim-core/sim";
@@ -723,12 +724,13 @@ export function enemySize(e: Pick<Enemy, "kind" | "boss">): number {
     risacca: 0.22, corridore: 0.2, sabotatore: 0.25, bruto: 0.33, annegato: 0.52, sirena: 0.5, leviatano: 0.78,
     tizzone: 0.2, magmatico: 0.34, colosso: 0.66, spettro: 0.24, cavaliere: 0.34, recaduto: 0.62, brinato: 0.27, orso: 0.38, regina: 0.62,
     elfo: 0.19, pupazzetto: 0.28, folletto: 0.48, renna: 0.55, pupazzo: 0.7, befana: 0.56, krampus: 0.8,
+    dohoter: 0.74,
   };
   const r = base[e.kind] ?? 0.3;
   return e.kind === "bruto" && e.boss ? 0.53 : r;
 }
 
-const NEW_KINDS = new Set(["tizzone", "magmatico", "colosso", "spettro", "cavaliere", "recaduto", "brinato", "orso", "regina", "elfo", "pupazzetto", "folletto", "renna", "pupazzo", "befana", "krampus"]);
+const NEW_KINDS = new Set(["tizzone", "magmatico", "colosso", "spettro", "cavaliere", "recaduto", "brinato", "orso", "regina", "elfo", "pupazzetto", "folletto", "renna", "pupazzo", "befana", "krampus", "dohoter"]);
 
 function poly(ctx: CanvasRenderingContext2D, n: number, r: number, inner: number, spin: number) {
   ctx.beginPath();
@@ -746,6 +748,16 @@ function eyes(ctx: CanvasRenderingContext2D, r: number, color: string, dy = -0.1
   ctx.arc(-r * gap, r * dy, r * size, 0, Math.PI * 2);
   ctx.arc(r * gap, r * dy, r * size, 0, Math.PI * 2);
   ctx.fill();
+}
+
+let faceImg: HTMLImageElement | null = null;
+/** Foto del Dohoter Gang, caricata una volta sola al primo disegno. */
+function dohoterFace(): HTMLImageElement {
+  if (!faceImg) {
+    faceImg = new Image();
+    faceImg.src = DOHOTER_FACE;
+  }
+  return faceImg;
 }
 
 function drawNewKind(ctx: CanvasRenderingContext2D, e: Enemy, T: number, time: number, still: boolean, phase: number) {
@@ -998,6 +1010,71 @@ function drawNewKind(ctx: CanvasRenderingContext2D, e: Enemy, T: number, time: n
       ctx.lineTo(r * 0.35, r * 0.3);
       ctx.stroke();
       break;
+    case "dohoter": {
+      const sway = still ? 0 : Math.sin(t * 0.006 + phase) * 0.08;
+      if (dohoterFace().complete && dohoterFace().naturalWidth) {
+        // Il volto del boss, in un medaglione viola con la catena d'oro.
+        ctx.save();
+        ctx.rotate(sway);
+        ctx.beginPath();
+        ctx.arc(0, -r * 0.05, r * 0.92, 0, Math.PI * 2);
+        ctx.save();
+        ctx.clip();
+        ctx.drawImage(dohoterFace(), -r * 0.92, -r * 0.97, r * 1.84, r * 1.84);
+        ctx.restore();
+        ctx.strokeStyle = "#b07cff";
+        ctx.lineWidth = lw * 1.6;
+        ctx.stroke();
+        ctx.restore();
+        ctx.strokeStyle = "#ffd24a";
+        ctx.lineWidth = lw * 1.6;
+        ctx.beginPath();
+        ctx.moveTo(-r * 0.62, r * 0.62);
+        ctx.quadraticCurveTo(sway * r * 4, r * 1.12, r * 0.62, r * 0.62);
+        ctx.stroke();
+        ctx.fillStyle = "#ffd24a";
+        ctx.beginPath();
+        ctx.arc(sway * r * 4, r * 1.03, r * 0.15, 0, Math.PI * 2);
+        ctx.fill();
+        break;
+      }
+      // Finché la foto non è pronta: capo della gang con cappuccio e catena.
+      ctx.fillStyle = "#1c1030";
+      ctx.strokeStyle = "#b07cff";
+      ctx.lineWidth = lw;
+      ctx.beginPath();
+      ctx.moveTo(-r * 0.95, r * 0.85);
+      ctx.quadraticCurveTo(-r * 1.0, -r * 0.55, 0, -r * 1.0);
+      ctx.quadraticCurveTo(r * 1.0, -r * 0.55, r * 0.95, r * 0.85);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = "#3a2a20";
+      ctx.beginPath();
+      ctx.ellipse(0, -r * 0.12, r * 0.48, r * 0.44, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#0a0a0a";
+      ctx.fillRect(-r * 0.46, -r * 0.3, r * 0.92, r * 0.17);
+      ctx.fillStyle = "rgba(176,124,255,.8)";
+      ctx.fillRect(-r * 0.36, -r * 0.27, r * 0.14, r * 0.05);
+      ctx.fillRect(r * 0.1, -r * 0.27, r * 0.14, r * 0.05);
+      ctx.strokeStyle = "#ffd24a";
+      ctx.lineWidth = lw * 1.6;
+      ctx.beginPath();
+      ctx.moveTo(-r * 0.5, r * 0.22);
+      ctx.quadraticCurveTo(sway * r * 4, r * 0.75, r * 0.5, r * 0.22);
+      ctx.stroke();
+      ctx.fillStyle = "#ffd24a";
+      ctx.beginPath();
+      ctx.arc(sway * r * 4, r * 0.66, r * 0.14, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#1c1030";
+      ctx.font = `700 ${Math.max(8, r * 0.18)}px sans-serif`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText("D", sway * r * 4, r * 0.67);
+      break;
+    }
   }
 }
 

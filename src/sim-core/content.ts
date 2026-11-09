@@ -11,7 +11,8 @@ export type EnemyKind =
   | "tizzone" | "magmatico" | "colosso"
   | "spettro" | "cavaliere" | "recaduto"
   | "brinato" | "orso" | "regina"
-  | "elfo" | "pupazzetto" | "folletto" | "renna" | "pupazzo" | "befana" | "krampus";
+  | "elfo" | "pupazzetto" | "folletto" | "renna" | "pupazzo" | "befana" | "krampus"
+  | "dohoter";
 export type TowerKind =
   | "balestra" | "mortaio" | "soffio" | "cecchino" | "bobina" | "officina" | "grammofono" | "capitano" | "medico" | "arpione" | "mitragliera" | "purificatore"
   | "custode" | "campana" | "cometa" | "kingpin";
@@ -158,7 +159,12 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
     summon: { kind: "orso", count: 1, every: 100 }, song: { range: 4500, every: 100, stun: 40 }, steal: { every: 60, amount: 40 },
     phases: [8000, 6000, 4000, 2000], phaseShieldBp: 2500,
   },
+  // Boss dell'admin: vita fissa, non dipende da modalità, ondata o numero di giocatori. Non toglie i premi.
+  dohoter: { name: "Dohoter Gang", plural: "Dohoter Gang", cls: "corazza", hp: 67000, speed: 22, armor: 30, bounty: 40, lifeDamage: 10 },
 };
+
+/** Boss evocabili solo dall'admin, con vita fissa; la partita resta valida per premi e classifiche. */
+export const ADMIN_BOSSES: EnemyKind[] = ["dohoter"];
 
 /** Nemici che fanno da boss (anche se compaiono come rinforzi). */
 export const BOSS_KINDS: EnemyKind[] = ["annegato", "sirena", "leviatano", "colosso", "recaduto", "regina", "folletto", "renna", "pupazzo", "befana", "krampus"];

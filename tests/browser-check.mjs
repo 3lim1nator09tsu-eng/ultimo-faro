@@ -340,6 +340,7 @@ for (const vp of [{ width: 390, height: 700 }, { width: 844, height: 390 }]) {
   await page.locator('#adminDrawer .adMods input[value="schermato"]').check();
   await page.screenshot({ path: `${outDir}/21-admin-drawer-${tag}.png` });
   await page.locator("#adSpawnGo").click();
+  await page.locator('#adminDrawer button[data-boss="dohoter"]').click();
   await page.locator('#adminDrawer button:has-text("DPS")').click();
   await page.locator('#adminDrawer button:has-text("Chiudi")').click();
   await page.waitForTimeout(1500);
@@ -347,6 +348,8 @@ for (const vp of [{ width: 390, height: 700 }, { width: 844, height: 390 }]) {
   const lev = st.enemies.find((e) => e.kind === "leviatano");
   check(`${tag}: il pannello genera un boss con modificatori`, !!lev && lev.boss && lev.shield > 0 && st.cash >= 109000, JSON.stringify({ n: st.enemies.length, cash: st.cash }));
   check(`${tag}: la barra del boss compare`, await page.locator("#bossBar").isVisible());
+  const doh = st.enemies.find((e) => e.kind === "dohoter");
+  check(`${tag}: Dohoter Gang arriva con 67.000 di vita`, !!doh && doh.maxHp === 67000 && doh.boss, JSON.stringify(doh && { hp: doh.maxHp }));
   await page.screenshot({ path: `${outDir}/22-sandbox-boss-${tag}.png` });
   check(`${tag}: nessun errore di pagina nel pannello admin`, errors.length === 0, errors.join(" | "));
   await context.close();

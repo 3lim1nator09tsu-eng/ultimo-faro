@@ -1,7 +1,7 @@
 // Sim.Core del prototipo: stessa partita su ogni dispositivo a parità di seed e comandi.
 // Regole: solo numeri interi nello stato, nessun Math.random, nessun orologio, nessuna funzione
 // trigonometrica. Le divisioni tra interi passano sempre da Math.floor.
-import { HIDDEN, STAR } from "./twists";
+import { HIDDEN } from "./twists";
 import { AIMS, Aim, BLIZZARD, CONTRACTS, CONTRACT_IDS, LAVA, MERCHANT_IDS, ORDER_IDS, Order, POISONS, QTE, QTE_SYMBOLS, RELIC_IDS, OfferKind, Twist, contractReward, merchantGold, newTwist } from "./twists";
 import {
   ABILITIES,
@@ -86,15 +86,6 @@ export interface Quake {
   amount: number;
 }
 
-/** Cannone Stellare: si monta a pezzi, si carica raccogliendo le stelle che cadono, poi spara. */
-export interface StarCannon {
-  parts: number;
-  charges: number;
-  drops: Array<{ id: number; x: number; y: number; until: number }>;
-  nextDrop: number;
-  ready: number; // tick da cui può sparare di nuovo
-}
-
 export interface Tower {
   id: number;
   kind: TowerKind;
@@ -123,6 +114,11 @@ export interface Tower {
   spawnN: number; // Kingpin: unità evocate finora
   queue: UnitKind[]; // Kingpin: la coda che si ripete, fino a 4 posti
   aim?: Aim; // bersaglio scelto dal giocatore; se manca vale quello della torre
+  charge?: number; // Star Cannon: tick di carica accumulati
+  auto?: boolean; // Star Cannon: spara da solo a carica piena (di serie sì)
+  acc?: number; // Accelerator: tick rimasti della fase in corso
+  accOn?: boolean; // Accelerator: true durante la raffica
+  lock?: number; // Accelerator: id del bersaglio agganciato
 }
 
 /** Unità del Kingpin: camminano dal Faro verso il mare e combattono i nemici che incontrano. */
@@ -201,7 +197,6 @@ export interface GameState {
   spawns: Spawn[];
   units: Unit[];
   quakes?: Quake[];
-  star?: StarCannon;
   hidden?: { bossAt: number; bossId: number; on: boolean; lostInHidden?: boolean }; // Fallen: onda nascosta
   tw: Twist; // scelte della modalità: offerte, contratti, reliquie, bracieri, momenti rapidi
 }
@@ -240,9 +235,8 @@ type CommandBody =
   | { t: "queue"; id: number; unit: UnitKind }
   | { t: "unqueue"; id: number; index: number }
   | { t: "aim"; id: number; aim: Aim }
-  | { t: "starPart" }
-  | { t: "starGrab"; id: number }
-  | { t: "starFire" }
+  | { t: "cannon"; id: number }
+  | { t: "cannonAuto"; id: number; on: boolean }
   | { t: "choose"; offer: number; pick: number }
   | { t: "order"; order: Order | "" }
   | { t: "brazier"; cx: number; cy: number }
@@ -296,8 +290,8 @@ export type GameEvent =
   | { e: "axe"; from: number; points: number[] }
   | { e: "execute"; x: number; y: number }
   | { e: "iced"; x: number; y: number }
-  | { e: "starShot"; x: number; y: number }
-  | { e: "starDrop" }
+  | { e: "cannon"; from: number; x: number; y: number; radius: number; power: number }
+  | { e: "laser"; from: number; x: number; y: number; tx: number; ty: number }
   | { e: "hidden" }
   | { e: "blizzard"; on: boolean }
   | { e: "qte"; id: number }
@@ -407,13 +401,26 @@ export function cellEmerged(state: GameState, cx: number, cy: number): boolean {
   return w === undefined || state.wave >= w;
 }
 
+export const sizeOf = (kind: TowerKind) => TOWERS[kind].size ?? 1;
+/** La torre occupa questa casella? Le torri grandi partono dall'angolo in alto a sinistra. */
+export const covers = (t: Pick<Tower, "kind" | "cx" | "cy">, cx: number, cy: number) => {
+  const n = sizeOf(t.kind);
+  return cx >= t.cx && cx < t.cx + n && cy >= t.cy && cy < t.cy + n;
+};
 export function isBuildable(state: GameState, cx: number, cy: number): boolean {
   if (cx < 0 || cy < 0 || cx >= MAP_W || cy >= MAP_H) return false;
   const geo = geometry(levelOf(state));
   if (geo.blocked.has(cellKey(cx, cy))) return false;
   if (!cellEmerged(state, cx, cy)) return false;
-  return !state.towers.some((t) => t.cx === cx && t.cy === cy);
+  return !state.towers.some((t) => covers(t, cx, cy));
 }
+/** Si può piazzare questa torre qui? Per le torri grandi servono tutte le caselle libere. */
+export function canPlace(state: GameState, kind: TowerKind, cx: number, cy: number): boolean {
+  const n = sizeOf(kind);
+  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) if (!isBuildable(state, cx + x, cy + y)) return false;
+  return true;
+}
+const centreOf = (kind: TowerKind, c: number) => c * TILE + (sizeOf(kind) * TILE) / 2;
 
 // ---------- modificatori ----------
 
@@ -511,6 +518,8 @@ export function effStats(state: GameState, t: Tower): TowerStats {
     if (tw.lava.length && onLava(state, t)) dmg += LAVA.damageBp - 10000;
     if (tw.blizzard && cold(state, t)) coldBp = BLIZZARD.slowBp;
   }
+  // Eclissi dell'onda nascosta: le torri vedono meno lontano.
+  if (state.hidden?.on && state.phase === "wave") rng -= 1500;
   if (!dmg && !rng && !haste && !detect && coldBp === 10000) return s;
   return {
     ...s,
@@ -874,59 +883,80 @@ function quakesDue(state: GameState, events: GameEvent[]) {
   state.quakes = keep;
 }
 
-// ---------- Cannone Stellare ----------
+// ---------- Star Cannon e Accelerator ----------
 
-export const starEnabled = (s: GameState) => s.mode !== "campagna" && s.mode !== "infinita";
-export const starPartCost = (s: GameState) => STAR.partCost * ((s.star?.parts ?? 0) + 1);
-const newStar = (): StarCannon => ({ parts: 0, charges: 0, drops: [], nextDrop: 0, ready: 0 });
-
-function starTick(state: GameState, events: GameEvent[]) {
-  const st = state.star;
-  if (!st || st.parts < STAR.parts) return;
-  if (st.drops.length) st.drops = st.drops.filter((d) => d.until > state.tick);
-  if (state.phase !== "wave" || state.tick < st.nextDrop || st.charges + st.drops.length >= STAR.charges) return;
-  const level = levelOf(state);
-  const geo = geometry(level);
-  const lane = randomInt(state, level.map.lanes.length);
-  const len = geo.lengths[lane];
-  const p = lanePoint(level, lane, Math.floor(len / 5) + randomInt(state, Math.max(1, Math.floor((len * 3) / 5))));
-  st.drops.push({ id: state.nextId++, x: p.x + randomInt(state, 1201) - 600, y: p.y + randomInt(state, 1201) - 600, until: state.tick + STAR.dropLife });
-  st.nextDrop = state.tick + STAR.dropEvery;
-  events.push({ e: "starDrop" });
+/** Spara con la carica che c'è: danno e stordimento crescono con la carica. */
+function fireCannon(state: GameState, t: Tower, s: TowerStats, events: GameEvent[]): boolean {
+  const target = pickTarget(state, t, s);
+  if (!target) return false;
+  const c = Math.min(t.charge ?? 0, s.chargeTicks);
+  const dmg = s.cannonMin + Math.floor(((s.cannonMax - s.cannonMin) * c) / s.chargeTicks);
+  const stun = Math.floor((s.cannonStun * c) / s.chargeTicks);
+  for (const e of state.enemies) {
+    if (e.hp <= 0 || !inRange(target.x, target.y, e.x, e.y, s.radius)) continue;
+    hit(state, e, t, s, dmg, events);
+    if (stun > 0) e.stun = Math.max(e.stun, e.boss ? Math.floor(stun / 2) : stun);
+  }
+  t.charge = 0;
+  t.cooldown = s.cooldown;
+  events.push({ e: "cannon", from: t.id, x: target.x, y: target.y, radius: s.radius, power: Math.floor((c * 100) / s.chargeTicks) });
+  return true;
 }
 
-function starFire(state: GameState, events: GameEvent[]): string | null {
-  const st = state.star;
-  if (!st || st.parts < STAR.parts) return "Il Cannone Stellare non è ancora montato";
-  if (st.charges < STAR.charges) return `Servono ${STAR.charges} stelle: raccoglile quando cadono`;
-  if (state.tick < st.ready) return "Il Cannone Stellare si sta raffreddando";
-  let target: Enemy | null = null;
-  for (const e of state.enemies) if (e.hp > 0 && (!target || e.maxHp > target.maxHp || (e.maxHp === target.maxHp && e.dist > target.dist))) target = e;
-  if (!target) return "Nessun bersaglio";
-  const dmg = Math.max(STAR.minDamage, Math.floor((target.maxHp * STAR.bpOfMax) / 10000));
-  applyDamage(target, dmg);
-  target.stun = Math.max(target.stun, target.boss ? Math.floor(STAR.stun / 2) : STAR.stun);
-  for (const e of state.enemies) if (e !== target && e.hp > 0 && inRange(e.x, e.y, target.x, target.y, STAR.splash)) applyDamage(e, Math.floor((dmg * STAR.splashBp) / 10000));
-  st.charges = 0;
-  st.ready = state.tick + STAR.cd;
-  events.push({ e: "starShot", x: target.x, y: target.y });
-  return null;
+/** Accelerator: carica, poi raffica sul bersaglio agganciato finché vive o esce dal raggio. */
+function accelerate(state: GameState, t: Tower, s: TowerStats, events: GameEvent[]) {
+  if (!t.accOn) {
+    if (t.acc === undefined) t.acc = s.accCharge;
+    if (t.acc > 0) {
+      t.acc -= 1;
+      return;
+    }
+    const first = pickTarget(state, t, s);
+    if (!first) return; // carico, aspetta un bersaglio
+    t.accOn = true;
+    t.acc = s.accBurst;
+    t.lock = first.id;
+    t.cooldown = 0;
+  }
+  t.acc = (t.acc ?? 0) - 1;
+  let target = state.enemies.find((e) => e.id === t.lock && e.hp > 0 && canSee(e, s) && inRange(t.x, t.y, e.x, e.y, s.range)) ?? null;
+  if (!target) {
+    target = pickTarget(state, t, s);
+    t.lock = target?.id;
+  }
+  if (target && t.cooldown <= 0) {
+    hit(state, target, t, s, s.damage, events);
+    t.cooldown = s.accTick;
+    events.push({ e: "laser", from: t.id, x: t.x, y: t.y, tx: target.x, ty: target.y });
+  }
+  if (t.acc <= 0) {
+    t.accOn = false;
+    t.acc = s.accCharge;
+    t.lock = undefined;
+  }
 }
 
 // ---------- Fallen: onda nascosta ----------
 
+/** Onda nascosta: un'ondata tutta sua, nell'eclissi, con nemici che non si vedono altrove. */
 function startHidden(state: GameState, king: Enemy, events: GameEvent[]) {
   const level = levelOf(state);
   state.hidden!.on = true;
   state.wave += 1;
-  state.spawns.push({ tick: state.tick + 40, enemy: "risvegliato", lane: 0, mods: 0, hpMulBp: 10000, lifeDamage: 1000, boss: true, fixedHp: king.maxHp * HIDDEN.hpMul });
-  // La scorta: i nemici dell'ultima ondata, di nuovo.
-  for (const g of waveFor(state.mode, level, waveCount(state) - 2, state.night)) {
-    if (g.boss) continue;
-    const lane = g.lane < level.map.lanes.length && laneIsOpen(state, g.lane) ? g.lane : 0;
-    for (let i = 0; i < g.count; i++)
-      state.spawns.push({ tick: state.tick + 60 + g.delay + i * g.interval, enemy: g.enemy, lane, mods: modsToBits(g.mods), hpMulBp: g.hpMulBp ?? 10000, lifeDamage: g.lifeDamage ?? ENEMIES[g.enemy].lifeDamage, boss: false });
-  }
+  // La forza dei nemici è quella dell'ultima ondata di Fallen.
+  const last = waveFor(state.mode, level, waveCount(state) - 2, state.night).find((g) => !g.boss);
+  const m = last?.hpMulBp ?? 10000;
+  const lanes = level.map.lanes.map((_, i) => i).filter((i) => laneIsOpen(state, i));
+  const at = (k: number) => lanes[k % lanes.length] ?? 0;
+  const push = (enemy: EnemyKind, n: number, delay: number, every: number, extra: Partial<Spawn> = {}) => {
+    for (let i = 0; i < n; i++) state.spawns.push({ tick: state.tick + delay + i * every, enemy, lane: at(i), mods: 0, hpMulBp: m, lifeDamage: ENEMIES[enemy].lifeDamage, boss: false, ...extra });
+  };
+  push("ombra", 16, 40, 8);
+  push("araldo", 6, 130, 30);
+  push("lancia", 8, 230, 25);
+  push("risvegliato", 1, 320, 0, { boss: true, fixedHp: king.maxHp * HIDDEN.hpMul, lifeDamage: 1000, hpMulBp: 10000 });
+  push("ombra", 20, 420, 6);
+  push("araldo", 4, 520, 40, { mods: modsToBits(["schermato"]) });
   state.spawns.sort((a, b) => a.tick - b.tick || a.lane - b.lane);
   events.push({ e: "hidden" });
 }
@@ -934,7 +964,7 @@ export const hiddenWon = (s: GameState) => !!s.hidden?.on && !s.hidden.lostInHid
 
 export const hasAttack = (t: Pick<Tower, "kind" | "level" | "branch">) => {
   const s = towerStats(t);
-  return s.damage > 0 && s.cooldown > 0 && !s.pulseAll;
+  return s.chargeTicks > 0 || (s.damage > 0 && s.cooldown > 0 && !s.pulseAll);
 };
 
 // ---------- comandi ----------
@@ -963,7 +993,7 @@ function applyCommand(state: GameState, cmd: Command, events: GameEvent[]): void
       if (!allowedOf(state, p).includes(cmd.kind)) return reject("Torre non in squadra");
       const limit = def.maxPerPlayer;
       if (limit && state.towers.filter((x) => x.kind === cmd.kind && x.owner === p).length >= limit) return reject(`Al massimo ${limit} ${def.name} per giocatore`);
-      if (!isBuildable(state, cmd.cx, cmd.cy)) return reject("Qui non si può costruire");
+      if (!canPlace(state, cmd.kind, cmd.cx, cmd.cy)) return reject(sizeOf(cmd.kind) > 1 ? "Serve un quadrato di 4 caselle libere" : "Qui non si può costruire");
       const cost = buildCost(state, cmd.kind, cmd.cx, cmd.cy);
       if (cash() < cost) return reject("Cash insufficiente");
       addCash(state, p, -cost);
@@ -973,8 +1003,8 @@ function applyCommand(state: GameState, cmd: Command, events: GameEvent[]): void
         kind: cmd.kind,
         cx: cmd.cx,
         cy: cmd.cy,
-        x: centre(cmd.cx),
-        y: centre(cmd.cy),
+        x: centreOf(cmd.kind, cmd.cx),
+        y: centreOf(cmd.kind, cmd.cy),
         level: 1,
         branch: null,
         cooldown: 0,
@@ -1135,28 +1165,21 @@ function applyCommand(state: GameState, cmd: Command, events: GameEvent[]): void
       events.push({ e: "beam", x: cmd.x, y: cmd.y, radius });
       return;
     }
-    case "starPart": {
-      if (!starEnabled(state)) return reject("Il Cannone Stellare non c'è in questa modalità");
-      if (state.wave < STAR.from) return reject(`Il Cannone Stellare si monta dall'ondata ${STAR.from}`);
-      const st = (state.star ??= newStar());
-      if (st.parts >= STAR.parts) return reject("Il Cannone Stellare è già montato");
-      const cost = starPartCost(state);
-      if (cashOf(state, p) < cost) return reject(`Servono ${cost} cash`);
-      addCash(state, p, -cost);
-      st.parts += 1;
+    case "cannon": {
+      const t = mine(cmd.id);
+      if (!t) return;
+      const s = effStats(state, t);
+      if (!s.chargeTicks) return reject("Non è uno Star Cannon");
+      if (t.stun > 0) return reject("Il cannone è stordito");
+      if (t.cooldown > 0) return reject("Il cannone si sta riassestando");
+      if (!(t.charge ?? 0)) return reject("Il cannone è scarico");
+      if (!fireCannon(state, t, s, events)) return reject("Nessun bersaglio nel raggio");
       return;
     }
-    case "starGrab": {
-      const st = state.star;
-      const d = st?.drops.find((x) => x.id === cmd.id);
-      if (!st || !d) return;
-      st.drops = st.drops.filter((x) => x !== d);
-      st.charges = Math.min(STAR.charges, st.charges + 1);
-      return;
-    }
-    case "starFire": {
-      const why = starFire(state, events);
-      if (why) return reject(why);
+    case "cannonAuto": {
+      const t = mine(cmd.id);
+      if (!t || !TOWERS[t.kind].levels[0].chargeTicks) return;
+      t.auto = !!cmd.on;
       return;
     }
     case "aim": {
@@ -1918,6 +1941,16 @@ export function step(state: GameState, commands: Command[] = []): GameEvent[] {
     if (t.cooldown > 0 && t.kind !== "medico") t.cooldown -= 1;
     if (t.stun > 0) continue;
     const s = effStats(state, t);
+    if (s.chargeTicks > 0) {
+      // Star Cannon: la carica sale da sola; spara da solo a carica piena, se chi gioca non lo ferma.
+      t.charge = Math.min(s.chargeTicks, (t.charge ?? 0) + 1);
+      if (t.auto !== false && t.charge >= s.chargeTicks && t.cooldown === 0) fireCannon(state, t, s, events);
+      continue;
+    }
+    if (s.accBurst > 0) {
+      accelerate(state, t, s, events);
+      continue;
+    }
     if (s.cooldown === 0 || t.cooldown > 0) continue;
     if (s.pulseAll) {
       let any = false;
@@ -1985,7 +2018,6 @@ export function step(state: GameState, commands: Command[] = []): GameEvent[] {
 
   kingpins(state, events);
   quakesDue(state, events);
-  starTick(state, events);
 
   // Atterraggio dei colpi di mortaio.
   const flying: Shell[] = [];
@@ -2083,18 +2115,6 @@ export function hashState(state: GameState): string {
     mix(q.towerId);
     mix(q.amount);
     for (const id of q.ids) mix(id);
-  }
-  if (state.star) {
-    mix(state.star.parts);
-    mix(state.star.charges);
-    mix(state.star.nextDrop);
-    mix(state.star.ready);
-    for (const d of state.star.drops) {
-      mix(d.id);
-      mix(d.x);
-      mix(d.y);
-      mix(d.until);
-    }
   }
   if (state.hidden) {
     mix(state.hidden.bossAt);
@@ -2197,6 +2217,11 @@ export function hashState(state: GameState): string {
     mix(t.immune);
     str(t.track);
     str(t.aim ?? "-");
+    mix(t.charge ?? 0);
+    mix(t.auto === false ? 0 : 1);
+    mix(t.acc ?? -1);
+    mix(t.accOn ? 1 : 0);
+    mix(t.lock ?? 0);
     mix(t.abilityCd);
     mix(t.abilityLeft);
     mix(t.owner);

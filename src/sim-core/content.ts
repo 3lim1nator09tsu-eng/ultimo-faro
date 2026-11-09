@@ -12,10 +12,10 @@ export type EnemyKind =
   | "spettro" | "cavaliere" | "recaduto"
   | "brinato" | "orso" | "regina"
   | "elfo" | "pupazzetto" | "folletto" | "renna" | "pupazzo" | "befana" | "krampus"
-  | "dohoter" | "risvegliato";
+  | "dohoter" | "risvegliato" | "ombra" | "araldo" | "lancia";
 export type TowerKind =
   | "balestra" | "mortaio" | "soffio" | "cecchino" | "bobina" | "officina" | "grammofono" | "capitano" | "medico" | "arpione" | "mitragliera" | "purificatore"
-  | "custode" | "campana" | "cometa" | "kingpin" | "sledger" | "executioner";
+  | "custode" | "campana" | "cometa" | "kingpin" | "sledger" | "executioner" | "starcannon" | "accelerator";
 export type Branch = "A" | "B";
 export type EnemyClass = "carne" | "corazza" | "meccanico";
 export type DamageType = "cinetico" | "gelo" | "elettrico" | "nessuno";
@@ -124,11 +124,14 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
   // ---- Fallen ----
   spettro: { name: "Spettro", plural: "Spettri", cls: "carne", hp: 58, speed: 112, armor: 0, bounty: 9, lifeDamage: 1, hidden: true },
   cavaliere: { name: "Cavaliere Caduto", plural: "Cavalieri Caduti", cls: "corazza", hp: 250, speed: 55, armor: 55, bounty: 26, lifeDamage: 3 },
-  // Onda nascosta di Fallen: arriva solo se il Re Caduto cade in fretta.
+  // Onda nascosta di Fallen: arriva solo se il Re Caduto cade in fretta. Nemici che non si vedono altrove.
   risvegliato: {
-    name: "Re Risvegliato", plural: "Re Risvegliati", cls: "corazza", hp: 150, speed: 26, armor: 60, bounty: 80, lifeDamage: 1000, regenBp: 3, slowImmune: true,
-    summon: { kind: "cavaliere", count: 2, every: 100 }, song: { range: 3600, every: 120, stun: 35 }, phases: [8000, 6000, 4000, 2000], phaseShieldBp: 2500,
+    name: "Re Risvegliato", plural: "Re Risvegliati", cls: "corazza", hp: 150, speed: 24, armor: 60, bounty: 80, lifeDamage: 1000, regenBp: 3, slowImmune: true,
+    summon: { kind: "ombra", count: 4, every: 90 }, song: { range: 3600, every: 120, stun: 35 }, phases: [8000, 6000, 4000, 2000], phaseShieldBp: 2500,
   },
+  ombra: { name: "Ombra del Re", plural: "Ombre del Re", cls: "carne", hp: 70, speed: 96, armor: 0, bounty: 8, lifeDamage: 2, hidden: true },
+  araldo: { name: "Araldo Nero", plural: "Araldi Neri", cls: "corazza", hp: 420, speed: 36, armor: 45, bounty: 30, lifeDamage: 6, sabotage: { range: 2600, every: 80, stun: 30 } },
+  lancia: { name: "Lancia Nera", plural: "Lance Nere", cls: "corazza", hp: 260, speed: 48, armor: 35, bounty: 22, lifeDamage: 5, slowImmune: true, charge: { every: 60, ticks: 15, speedBp: 32000 }, split: { kind: "ombra", count: 2 } },
   recaduto: {
     name: "Re Caduto", plural: "Re Caduti", cls: "corazza", hp: 150, speed: 32, armor: 50, bounty: 50, lifeDamage: 20, regenBp: 2,
     summon: { kind: "cavaliere", count: 1, every: 120 }, song: { range: 3200, every: 140, stun: 30 }, phases: [7500, 5000, 2500], phaseShieldBp: 2000,
@@ -237,6 +240,15 @@ export interface TowerStats {
   // Executioner: ascia che rimbalza senza perdere forza
   bounceRange: number; // distanza massima del rimbalzo; 0 = quella del fulmine
   executeBp: number; // finisce i nemici (non boss) scesi sotto questa % di vita
+  // Star Cannon: si carica col tempo, chi gioca decide quando sparare
+  chargeTicks: number; // tick per la carica piena; 0 = non è un cannone
+  cannonMin: number; // danno se spara appena può
+  cannonMax: number; // danno a carica piena
+  cannonStun: number; // stordimento a carica piena, in tick
+  // Accelerator: si carica, poi raffica continua sullo stesso bersaglio
+  accCharge: number; // tick di carica prima della raffica
+  accBurst: number; // durata della raffica, in tick; 0 = non è un Accelerator
+  accTick: number; // tick tra un colpo e l'altro della raffica
 }
 
 export interface TowerLevel extends TowerStats {
@@ -261,6 +273,7 @@ export interface TowerDef {
   perle?: number; // prezzo di sblocco in Perle Nere (torri Hardcore, Kingpin); si somma alle Schegge
   exclusive?: "admin" | "evento"; // solo per gli admin, oppure premio dell'evento
   maxPerPlayer?: number; // quante se ne possono piazzare per giocatore
+  size?: number; // lato in caselle: 2 = occupa un quadrato di 4 caselle
   apex: string; // nome della torre al livello 6
   levels: TowerLevel[]; // livelli 1-3
   branches: Record<Branch, BranchDef>; // livello 4
@@ -313,6 +326,13 @@ const base: TowerStats = {
   aftershockBp: 0,
   bounceRange: 0,
   executeBp: 0,
+  chargeTicks: 0,
+  cannonMin: 0,
+  cannonMax: 0,
+  cannonStun: 0,
+  accCharge: 0,
+  accBurst: 0,
+  accTick: 0,
 };
 
 export const TOWERS = {
@@ -442,6 +462,46 @@ export const TOWERS = {
     branches: {
       A: { ...base, name: "Boia", summary: "Finisce chi scende sotto il 12% di vita", cost: 900, damage: 90, cooldown: 22, range: 6000, chains: 5, chainBp: 10000, bounceRange: 3400, detect: true, executeBp: 1200 },
       B: { ...base, name: "Tempesta d'asce", summary: "L'ascia rimbalza su 9 nemici", cost: 950, damage: 60, cooldown: 22, range: 6500, chains: 9, chainBp: 10000, bounceRange: 3800, detect: true },
+    },
+  },
+  starcannon: {
+    apex: "Stella Cadente",
+    name: "Star Cannon",
+    role: "Cannone enorme (4 caselle): si carica col tempo, spari quando vuoi",
+    family: "attacco",
+    damageType: "cinetico",
+    target: "strong",
+    unlock: 2000,
+    perle: 40,
+    maxPerPlayer: 1,
+    size: 2,
+    levels: [
+      { ...base, cost: 1500, range: 9000, radius: 1200, cooldown: 25, chargeTicks: 200, cannonMin: 300, cannonMax: 6000, cannonStun: 20, pierce: true },
+      { ...base, cost: 2200, range: 9500, radius: 1300, cooldown: 25, chargeTicks: 190, cannonMin: 500, cannonMax: 12000, cannonStun: 25, pierce: true },
+      { ...base, cost: 3500, range: 10000, radius: 1400, cooldown: 25, chargeTicks: 180, cannonMin: 1000, cannonMax: 24000, cannonStun: 30, pierce: true },
+    ],
+    branches: {
+      A: { ...base, name: "Supernova", summary: "Un colpo devastante: fino a 160.000 come Apex", cost: 7000, range: 10500, radius: 1600, cooldown: 25, chargeTicks: 170, cannonMin: 2730, cannonMax: 72730, cannonStun: 45, pierce: true },
+      B: { ...base, name: "Pioggia di stelle", summary: "Carica più veloce e area molto più grande", cost: 7500, range: 10500, radius: 2200, cooldown: 25, chargeTicks: 110, cannonMin: 1500, cannonMax: 36000, cannonStun: 35, pierce: true },
+    },
+  },
+  accelerator: {
+    apex: "Energia dal Vuoto",
+    name: "Accelerator",
+    role: "Si carica, poi un raggio continuo sullo stesso bersaglio",
+    family: "attacco",
+    damageType: "elettrico",
+    target: "first",
+    unlock: 800,
+    perle: 50,
+    levels: [
+      { ...base, cost: 500, damage: 10, range: 4500, accCharge: 40, accBurst: 60, accTick: 2, cooldown: 2 },
+      { ...base, cost: 700, damage: 10, range: 5000, accCharge: 40, accBurst: 65, accTick: 2, cooldown: 2 },
+      { ...base, cost: 1500, damage: 16, range: 5000, accCharge: 40, accBurst: 65, accTick: 2, cooldown: 2 },
+    ],
+    branches: {
+      A: { ...base, name: "Supercarica", summary: "Colpisce due volte più spesso", cost: 3500, damage: 18, range: 5300, accCharge: 40, accBurst: 65, accTick: 1, cooldown: 1, detect: true },
+      B: { ...base, name: "Raffica lunga", summary: "Carica in metà tempo, raffica quasi doppia", cost: 4000, damage: 22, range: 5300, accCharge: 20, accBurst: 120, accTick: 2, cooldown: 2, detect: true },
     },
   },
   officina: {
@@ -707,8 +767,8 @@ for (const k of DETECTORS) {
   TOWERS[k].branches = { A: { ...TOWERS[k].branches.A, detect: true }, B: { ...TOWERS[k].branches.B, detect: true } };
 }
 
-export const TOWER_ORDER: TowerKind[] = ["balestra", "mortaio", "soffio", "cecchino", "bobina", "officina", "grammofono", "capitano", "medico", "kingpin", "sledger", "executioner", "arpione", "mitragliera", "purificatore", "cometa", "custode", "campana"];
-export const HARDCORE_TOWERS: TowerKind[] = ["arpione", "mitragliera", "purificatore"];
+export const TOWER_ORDER: TowerKind[] = ["balestra", "mortaio", "soffio", "cecchino", "bobina", "officina", "grammofono", "capitano", "medico", "kingpin", "sledger", "executioner", "starcannon", "arpione", "mitragliera", "purificatore", "accelerator", "cometa", "custode", "campana"];
+export const HARDCORE_TOWERS: TowerKind[] = ["arpione", "mitragliera", "purificatore", "accelerator"];
 
 // Apex: il livello 6 della torre, uno per tipo e per partita, con il rango permanente almeno 3.
 export const APEX_RANK = 3;
@@ -737,6 +797,13 @@ export function apexStats(s: TowerStats): TowerStats {
     freezeTicks: s.freezeTicks ? up(s.freezeTicks, 13000) : 0,
     chillMax: s.chillMax ? Math.min(9000, up(s.chillMax, 11500)) : 0,
     executeBp: s.executeBp ? s.executeBp + 300 : 0,
+    cannonMin: up(s.cannonMin, 22000),
+    cannonMax: up(s.cannonMax, 22000),
+    cannonStun: s.cannonStun ? Math.min(50, up(s.cannonStun, 11200)) : 0,
+    chargeTicks: s.chargeTicks ? up(s.chargeTicks, 9000) : 0,
+    accBurst: s.accBurst ? up(s.accBurst, 14000) : 0,
+    accCharge: s.accCharge ? Math.max(10, up(s.accCharge, 7000)) : 0,
+    accTick: s.accTick ? 1 : 0,
     aftershockBp: s.aftershockBp ? s.aftershockBp + 1000 : 0,
   };
 }

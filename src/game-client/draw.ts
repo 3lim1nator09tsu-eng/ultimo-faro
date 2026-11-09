@@ -617,6 +617,45 @@ export function drawTowerShape(ctx: CanvasRenderingContext2D, kind: TowerKind, x
     ctx.quadraticCurveTo(T * 0.42, T * 0.32, T * 0.12, T * 0.04);
     ctx.closePath();
     ctx.fill();
+  } else if (kind === "starcannon") {
+    // Star Cannon: canna larga puntata in alto, anelli dorati e una stella sulla bocca.
+    ctx.rotate(angle);
+    ctx.fillStyle = "#1f2a44";
+    ctx.strokeStyle = branch === "A" ? "#ffd86b" : branch === "B" ? "#a5e4ec" : "#c9b8ff";
+    ctx.lineWidth = Math.max(1, T * 0.03);
+    ctx.beginPath();
+    ctx.rect(-T * 0.18, -T * 0.12, T * 0.56, T * 0.24);
+    ctx.fill();
+    ctx.stroke();
+    for (const k of [0.02, 0.18]) {
+      ctx.fillStyle = "#ffd86b";
+      ctx.fillRect(T * k, -T * 0.14, T * 0.05, T * 0.28);
+    }
+    ctx.fillStyle = "#fff1b0";
+    ctx.beginPath();
+    for (let i = 0; i < 10; i++) {
+      const a = (i * Math.PI) / 5;
+      const rr = i % 2 ? T * 0.04 : T * 0.1;
+      ctx.lineTo(T * 0.38 + Math.cos(a) * rr, Math.sin(a) * rr);
+    }
+    ctx.closePath();
+    ctx.fill();
+  } else if (kind === "accelerator") {
+    // Accelerator: anello con un nucleo che si accende e due elettrodi.
+    ctx.rotate(angle);
+    ctx.strokeStyle = branch === "B" ? COLORS.coral : "#7fe3ff";
+    ctx.lineWidth = Math.max(1, T * 0.05);
+    ctx.beginPath();
+    ctx.arc(0, 0, T * 0.2, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.fillStyle = "#d9fbff";
+    ctx.beginPath();
+    ctx.arc(0, 0, T * (0.07 + 0.02 * Math.sin(time * 0.02)), 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#2b3236";
+    ctx.fillRect(T * 0.12, -T * 0.05, T * 0.28, T * 0.1);
+    ctx.fillStyle = "#7fe3ff";
+    ctx.fillRect(T * 0.34, -T * 0.035, T * 0.06, T * 0.07);
   } else if (kind === "kingpin") {
     // Kingpin: cilindro e fascia d'oro, gessato scuro.
     ctx.fillStyle = "#14181b";
@@ -753,7 +792,7 @@ export function drawTowerShape(ctx: CanvasRenderingContext2D, kind: TowerKind, x
 export function enemySize(e: Pick<Enemy, "kind" | "boss">): number {
   const base: Partial<Record<string, number>> = {
     risacca: 0.22, corridore: 0.2, sabotatore: 0.25, bruto: 0.33, annegato: 0.52, sirena: 0.5, leviatano: 0.78,
-    tizzone: 0.2, magmatico: 0.34, colosso: 0.66, spettro: 0.24, cavaliere: 0.34, recaduto: 0.62, risvegliato: 0.8, brinato: 0.27, orso: 0.38, regina: 0.62,
+    tizzone: 0.2, magmatico: 0.34, colosso: 0.66, spettro: 0.24, cavaliere: 0.34, recaduto: 0.62, risvegliato: 0.8, ombra: 0.22, araldo: 0.4, lancia: 0.34, brinato: 0.27, orso: 0.38, regina: 0.62,
     elfo: 0.19, pupazzetto: 0.28, folletto: 0.48, renna: 0.55, pupazzo: 0.7, befana: 0.56, krampus: 0.8,
     dohoter: 0.74,
   };
@@ -761,7 +800,7 @@ export function enemySize(e: Pick<Enemy, "kind" | "boss">): number {
   return e.kind === "bruto" && e.boss ? 0.53 : r;
 }
 
-const NEW_KINDS = new Set(["tizzone", "magmatico", "colosso", "spettro", "cavaliere", "recaduto", "brinato", "orso", "regina", "elfo", "pupazzetto", "folletto", "renna", "pupazzo", "befana", "krampus", "dohoter", "risvegliato"]);
+const NEW_KINDS = new Set(["tizzone", "magmatico", "colosso", "spettro", "cavaliere", "recaduto", "brinato", "orso", "regina", "elfo", "pupazzetto", "folletto", "renna", "pupazzo", "befana", "krampus", "dohoter", "risvegliato", "ombra", "araldo", "lancia"]);
 
 function poly(ctx: CanvasRenderingContext2D, n: number, r: number, inner: number, spin: number) {
   ctx.beginPath();
@@ -1050,6 +1089,76 @@ function drawNewKind(ctx: CanvasRenderingContext2D, e: Enemy, T: number, time: n
       ctx.lineTo(r * 0.35, r * 0.3);
       ctx.stroke();
       break;
+    case "ombra": {
+      // Ombra del Re: fiamma nera con occhi rossi, sfrangiata in basso.
+      const wob = still ? 0 : Math.sin(t * 0.015 + phase) * r * 0.08;
+      ctx.fillStyle = "rgba(14,6,12,.92)";
+      ctx.beginPath();
+      ctx.moveTo(0, -r * 1.05);
+      ctx.quadraticCurveTo(r * 0.95, -r * 0.2, r * 0.6 + wob, r * 0.9);
+      ctx.lineTo(r * 0.2, r * 0.6);
+      ctx.lineTo(-r * 0.15 + wob, r * 0.95);
+      ctx.lineTo(-r * 0.45, r * 0.6);
+      ctx.lineTo(-r * 0.7 - wob, r * 0.9);
+      ctx.quadraticCurveTo(-r * 0.95, -r * 0.2, 0, -r * 1.05);
+      ctx.fill();
+      eyes(ctx, r, "#ff4d4d", 0, 0.25, 0.12);
+      break;
+    }
+    case "araldo": {
+      // Araldo Nero: corazza scura e stendardo rosso che stordisce le torri.
+      ctx.fillStyle = "#1b1418";
+      ctx.strokeStyle = "#8a2b2b";
+      ctx.lineWidth = lw;
+      ctx.beginPath();
+      ctx.moveTo(-r * 0.75, r * 0.85);
+      ctx.lineTo(-r * 0.6, -r * 0.45);
+      ctx.quadraticCurveTo(0, -r * 0.95, r * 0.6, -r * 0.45);
+      ctx.lineTo(r * 0.75, r * 0.85);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      ctx.strokeStyle = "#c9b8ff";
+      ctx.beginPath();
+      ctx.moveTo(r * 0.85, r * 0.9);
+      ctx.lineTo(r * 0.85, -r * 1.2);
+      ctx.stroke();
+      ctx.fillStyle = "#b02a2a";
+      const flap = still ? 0 : Math.sin(t * 0.01 + phase) * r * 0.1;
+      ctx.beginPath();
+      ctx.moveTo(r * 0.85, -r * 1.2);
+      ctx.lineTo(r * 1.45, -r * 1.0 + flap);
+      ctx.lineTo(r * 0.85, -r * 0.75);
+      ctx.closePath();
+      ctx.fill();
+      eyes(ctx, r, "#ff6b6b", 0, 0.2, 0.09);
+      break;
+    }
+    case "lancia": {
+      // Lancia Nera: cavaliere sottile con una lancia lunga puntata avanti.
+      ctx.fillStyle = "#16121a";
+      ctx.strokeStyle = "#ff6b6b";
+      ctx.lineWidth = lw;
+      ctx.beginPath();
+      ctx.ellipse(0, r * 0.1, r * 0.55, r * 0.8, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.strokeStyle = "#d6dde0";
+      ctx.lineWidth = lw * 1.3;
+      ctx.beginPath();
+      ctx.moveTo(-r * 0.9, r * 0.6);
+      ctx.lineTo(r * 1.5, -r * 0.7);
+      ctx.stroke();
+      ctx.fillStyle = "#d6dde0";
+      ctx.beginPath();
+      ctx.moveTo(r * 1.5, -r * 0.7);
+      ctx.lineTo(r * 1.15, -r * 0.62);
+      ctx.lineTo(r * 1.32, -r * 0.4);
+      ctx.closePath();
+      ctx.fill();
+      eyes(ctx, r, "#ff6b6b", 0, 0.15, 0.09);
+      break;
+    }
     case "dohoter": {
       const sway = still ? 0 : Math.sin(t * 0.006 + phase) * 0.08;
       if (dohoterFace().complete && dohoterFace().naturalWidth) {

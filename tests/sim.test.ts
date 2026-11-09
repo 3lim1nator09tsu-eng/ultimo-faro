@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { CAMPAIGN_LENGTH, ENEMIES, LEVELS, RULES, STARTER_TOWERS, TOWERS, levelById, waveAt } from "../src/sim-core/content";
 import { POISONS } from "../src/sim-core/twists";
-import { Command, GameEvent, hiddenWon, lanePoint, perleFor, waveCount, wavePreview, allIntegers, buildCost, createGame, damageAgainst, effStats, hashState, hpForWave, isBuildable, laneIsOpen, rankedStats, restore, rewardFor, sellValue, snapshot, step, towerStats } from "../src/sim-core/sim";
+import { Command, GameEvent, canPlace, hiddenWon, lanePoint, perleFor, waveCount, wavePreview, allIntegers, buildCost, createGame, damageAgainst, effStats, hashState, hpForWave, isBuildable, laneIsOpen, rankedStats, restore, rewardFor, sellValue, snapshot, step, towerStats } from "../src/sim-core/sim";
 import { playBot } from "../src/sim-core/bot";
 
 const toWave = (s: ReturnType<typeof createGame>) => {
@@ -499,7 +499,7 @@ test("divisione, gelo alla morte, furto e immunità al rallentamento", () => {
 
 test("sandbox e comandi admin: tutte le torri, nessun premio, vite infinite, salto d'ondata", () => {
   const s = createGame(1, { sandbox: true, allowed: ["balestra"] });
-  assert.equal(s.allowed.length, 18);
+  assert.equal(s.allowed.length, 20);
   assert.ok(s.cash >= 100000);
   step(s, [{ t: "adminGod", on: true }, { t: "adminSpawn", enemy: "corridore", count: 5, mods: ["agile"] }]);
   for (let i = 0; i < 600; i++) step(s, []);
@@ -1043,7 +1043,7 @@ test("Bilanciamento: prezzi dell'Arsenale in Schegge e Perle", async () => {
   const C = await import("../src/sim-core/content");
   assert.equal(C.TOWERS.kingpin.unlock, 1000);
   assert.equal(C.TOWERS.kingpin.perle, 40);
-  assert.deepEqual(C.HARDCORE_TOWERS, ["arpione", "mitragliera", "purificatore"]);
+  assert.deepEqual(C.HARDCORE_TOWERS, ["arpione", "mitragliera", "purificatore", "accelerator"]);
   const raw = { shop: [{ key: "kingpin.unlock", value: 1500 }, { key: "kingpin.perle", value: 60 }, { key: "rank.3", value: 250 }, { key: "rank.1", value: 5 }, { key: "nessuna.unlock", value: 5 }, { key: "kingpin.cost", value: 5 }] };
   const b = B.cleanBalance(raw);
   assert.equal(b.shop!.length, 3);
@@ -1181,31 +1181,6 @@ test("Executioner: l'ascia rimbalza senza perdere forza; il Boia finisce i debol
   assert.ok(ev2.some((x) => x.e === "execute"));
 });
 
-test("Cannone Stellare: pezzi dall'ondata 7, stelle da raccogliere, colpo sul nemico più grosso", () => {
-  const s = createGame(43, { mode: "easy", level: "porto" });
-  s.cash = 100000;
-  assert.ok(step(s, [{ t: "starPart" }]).some((e) => e.e === "reject"), "non prima dell'ondata 7");
-  s.wave = 7;
-  for (let i = 0; i < 8; i++) step(s, [{ t: "starPart" }]);
-  assert.equal(s.star!.parts, 8);
-  assert.ok(s.cash < 100000 - 5000);
-  assert.ok(step(s, [{ t: "starFire" }]).some((e) => e.e === "reject"), "senza stelle non spara");
-  runTo(s, (x) => x.phase === "wave");
-  runTo(s, (x) => (x.star?.drops.length ?? 0) > 0, 3000);
-  const d = s.star!.drops[0];
-  step(s, [{ t: "starGrab", id: d.id }]);
-  assert.equal(s.star!.charges, 1);
-  s.star!.charges = 3;
-  runTo(s, (x) => x.enemies.length > 0);
-  const big = [...s.enemies].sort((a, b) => b.maxHp - a.maxHp)[0];
-  const hp = big.hp;
-  const ev = step(s, [{ t: "starFire" }]);
-  assert.ok(ev.some((e) => e.e === "starShot"));
-  assert.ok(big.hp < hp || big.hp <= 0);
-  assert.equal(s.star!.charges, 0);
-  assert.equal(createGame(1, { mode: "campagna", level: "porto" }).star, undefined);
-});
-
 test("Fallen: il Re Caduto battuto in fretta apre l'onda nascosta, con premio a parte", () => {
   const s = createGame(44, { mode: "fallen", level: "porto" });
   for (let w = 0; w < 34; w++) clearWave(s);
@@ -1217,7 +1192,8 @@ test("Fallen: il Re Caduto battuto in fretta apre l'onda nascosta, con premio a 
   const ev = step(s, []);
   assert.ok(ev.some((e) => e.e === "hidden"));
   assert.equal(waveCount(s), 36);
-  runTo(s, (x) => x.enemies.some((e) => e.kind === "risvegliato"), 200);
+  s.god = true; // senza torri le Ombre arriverebbero al Faro prima del Re
+  runTo(s, (x) => x.enemies.some((e) => e.kind === "risvegliato"), 500);
   const w = s.enemies.find((e) => e.kind === "risvegliato")!;
   assert.equal(w.maxHp, king.maxHp * 3);
   // Vincerla dà il premio nascosto.
@@ -1251,4 +1227,105 @@ test("Fallen: il Re Caduto battuto in fretta apre l'onda nascosta, con premio a 
   step(lose, []);
   assert.equal(lose.phase, "won");
   assert.ok(!hiddenWon(lose));
+});
+
+test("Star Cannon: occupa 4 caselle, si carica, spara a mano o da solo, 2,5 s di pausa", () => {
+  const s = createGame(51, { mode: "campagna", level: "porto", allowed: ["starcannon", "balestra"] });
+  s.cash = 1e6;
+  let spot: [number, number] | null = null;
+  for (let cy = 0; cy < 8 && !spot; cy++) for (let cx = 0; cx < 15 && !spot; cx++) if (canPlace(s, "starcannon", cx, cy)) spot = [cx, cy];
+  step(s, [{ t: "build", kind: "starcannon", cx: spot![0], cy: spot![1] }]);
+  const t = s.towers[0];
+  assert.equal(t.x, spot![0] * 1000 + 1000, "centro del quadrato");
+  assert.ok(!isBuildable(s, spot![0] + 1, spot![1] + 1), "le 4 caselle sono occupate");
+  assert.ok(step(s, [{ t: "build", kind: "balestra", cx: spot![0] + 1, cy: spot![1] }]).some((e) => e.e === "reject"));
+  assert.ok(step(s, [{ t: "build", kind: "starcannon", cx: spot![0], cy: spot![1] }]).some((e) => e.e === "reject"), "una sola per giocatore");
+  toWave(s);
+  s.spawns = [];
+  s.enemies = [];
+  const lvl = levelById("porto");
+  const mk = (d: number) => {
+    const e = { ...newTestEnemy(s), id: s.nextId++, dist: d, hp: 1e7, maxHp: 1e7, stun: 0 };
+    const p = lanePoint(lvl, 0, d);
+    e.x = p.x;
+    e.y = p.y;
+    s.enemies.push(e);
+    return e;
+  };
+  let d0 = 0;
+  for (let d = 0; d < 40000; d += 200) {
+    const p = lanePoint(lvl, 0, d);
+    if ((p.x - t.x) ** 2 + (p.y - t.y) ** 2 <= towerStats(t).range ** 2) {
+      d0 = d;
+      break;
+    }
+  }
+  const e = mk(d0);
+  // Sparo a metà carica: danno a metà strada tra minimo e massimo.
+  t.auto = false;
+  t.charge = 100;
+  const st = towerStats(t);
+  step(s, [{ t: "cannon", id: t.id }]);
+  const half = 1e7 - e.hp;
+  assert.ok(half >= st.cannonMin && half < st.cannonMax, `metà carica: ${half}`);
+  assert.ok((t.charge ?? 0) <= 1, "carica azzerata");
+  assert.ok(t.cooldown > 0 && t.cooldown <= 25);
+  assert.ok(step(s, [{ t: "cannon", id: t.id }]).some((x) => x.e === "reject"), "pausa di 2,5 s");
+  // Automatico: a carica piena spara da solo col danno massimo e stordisce.
+  e.hp = 1e7;
+  e.stun = 0;
+  step(s, [{ t: "cannonAuto", id: t.id, on: true }]);
+  for (let i = 0; i < st.chargeTicks + 30 && e.hp === 1e7; i++) step(s, []);
+  assert.ok(1e7 - e.hp >= st.cannonMax, `carica piena: ${1e7 - e.hp}`);
+  assert.ok(e.stun > 0);
+  // Apex del ramo A: 160.000 a carica piena, 6.000 al minimo, 5 s di stordimento.
+  const ap = rankedStats({ kind: "starcannon", level: 5, branch: "A" }, 1);
+  assert.ok(Math.abs(ap.cannonMax - 160000) < 100 && Math.abs(ap.cannonMin - 6000) < 50 && ap.cannonStun === 50, JSON.stringify([ap.cannonMax, ap.cannonMin, ap.cannonStun]));
+});
+
+test("Accelerator: carica, poi raffica sullo stesso bersaglio, poi di nuovo carica", () => {
+  const s = createGame(52, { mode: "campagna", level: "porto", allowed: ["accelerator"] });
+  s.cash = 1e6;
+  step(s, [{ t: "build", kind: "accelerator", cx: 5, cy: 3 }]);
+  const t = s.towers[0];
+  toWave(s);
+  s.spawns = [];
+  s.enemies = [];
+  const lvl = levelById("porto");
+  const ds: number[] = [];
+  for (let d = 0; d < 40000 && ds.length < 2; d += 300) {
+    const p = lanePoint(lvl, 0, d);
+    if ((p.x - t.x) ** 2 + (p.y - t.y) ** 2 <= towerStats(t).range ** 2 && (!ds.length || d - ds[0] > 900)) ds.push(d);
+  }
+  const es = ds.map((d) => {
+    const e = { ...newTestEnemy(s), id: s.nextId++, dist: d, hp: 1e6, maxHp: 1e6, stun: 99999 };
+    const p = lanePoint(lvl, 0, d);
+    e.x = p.x;
+    e.y = p.y;
+    s.enemies.push(e);
+    return e;
+  });
+  const st = towerStats(t);
+  for (let i = 0; i < st.accCharge - 2; i++) step(s, []);
+  assert.ok(es.every((e) => e.hp === 1e6), "durante la carica non spara");
+  for (let i = 0; i < st.accBurst + 4; i++) step(s, []);
+  const hitE = es.filter((e) => e.hp < 1e6);
+  assert.equal(hitE.length, 1, "un solo bersaglio agganciato");
+  const shots = (1e6 - hitE[0].hp) / st.damage;
+  assert.ok(shots >= st.accBurst / st.accTick - 4, `colpi nella raffica: ${shots}`);
+  assert.equal(t.accOn, false, "torna a caricare");
+});
+
+test("Onda nascosta: un'ondata nuova con Ombre, Araldi, Lance e il Re Risvegliato, nell'eclissi", () => {
+  const s = createGame(44, { mode: "fallen", level: "porto", allowed: ["balestra"] });
+  s.cash = 5000;
+  step(s, [{ t: "build", kind: "balestra", cx: 5, cy: 3 }]);
+  for (let w = 0; w < 34; w++) clearWave(s);
+  runTo(s, (x) => x.enemies.some((e) => e.kind === "recaduto"), 5000);
+  s.enemies.find((e) => e.kind === "recaduto")!.hp = -1e9;
+  step(s, []);
+  const kinds = new Set(s.spawns.map((x) => x.enemy));
+  for (const k of ["ombra", "araldo", "lancia", "risvegliato"]) assert.ok(kinds.has(k as never), k);
+  const r = effStats(s, s.towers[0]).range;
+  assert.equal(r, Math.floor((towerStats(s.towers[0]).range * 8500) / 10000), "eclissi: gittata -15%");
 });

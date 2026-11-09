@@ -128,9 +128,20 @@ export const MEDALS: Array<{ id: string; name: string; text: string; ok: (m: Med
 // ---------- bacheca ----------
 
 /** Versione del gioco: chi ospita la comunica all'admin, che vede se i comandi nuovi possono funzionare. */
-export const GAME_VERSION = "0.12";
+export const GAME_VERSION = "0.13";
 
 export const VERSION_NOTES: ChangeEntry[] = [
+  {
+    date: "2026-11-09",
+    title: "Versione 0.13: Star Cannon, Accelerator e una vera onda nascosta",
+    kind: "versione",
+    items: [
+      "Star Cannon (torre, 4 caselle): si carica col tempo e spari quando vuoi. Più carica, più danno e stordimento; dopo ogni colpo 2,5 s di pausa. Al massimo (Apex di Supernova) 160.000 danni e 5 s di stordimento a carica piena, 6.000 se spari subito",
+      "Accelerator (torre Hardcore): si carica, poi spara un raggio continuo sullo stesso bersaglio finché vive",
+      "Tolto il Cannone Stellare a pezzi della versione 0.12",
+      "Onda nascosta di Fallen rifatta: eclissi (gittata -15%), Ombre del Re invisibili, Araldi Neri che stordiscono le torri, Lance Nere che scattano e si dividono, e il Re Risvegliato",
+    ],
+  },
   {
     date: "2026-11-09",
     title: "Versione 0.12: Sledger, Executioner, Cannone Stellare e onda nascosta",

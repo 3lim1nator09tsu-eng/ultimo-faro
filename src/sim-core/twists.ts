@@ -78,11 +78,6 @@ export const ORDER_IDS = Object.keys(ORDERS) as Order[];
 export const LAVA = { cells: 6, damageBp: 14000, every: 3, stun: 60 };
 export const BLIZZARD = { every: 4, radius: 3000, slowBp: 14000, braziers: 2, extraFrom: 20 };
 
-// ---------- Cannone Stellare ----------
-
-/** Si monta a pezzi dall'ondata 7, si carica con 3 stelle cadute, poi spara al nemico più grosso. */
-export const STAR = { parts: 8, partCost: 150, from: 7, dropEvery: 120, dropLife: 100, cd: 600, charges: 3, bpOfMax: 1200, minDamage: 3000, splash: 1500, splashBp: 2500, stun: 30 };
-
 // ---------- Fallen: onda nascosta ----------
 
 /** Se il Re Caduto cade entro 45 secondi dalla sua comparsa, si risveglia. */

@@ -1,8 +1,7 @@
 // Client del prototipo: disegna lo stato, raccoglie i tocchi, non decide mai le regole.
 import { ADMIN_ONLY, EVENT_TOWER, KINGPIN_QUEUE, SURVIVAL_MAPS, UNITS, UNIT_ORDER, ABILITIES, APEX_RANK, AbilityId, ENEMIES, GameMode, HARDCORE_TOWERS, LEVELS, MODS, LOADOUT_SIZE, MAP_H, MAP_W, MAX_RANK, RANK_COSTS, RULES, STARTER_TOWERS, TICKS_PER_SECOND, TILE, TOWERS, TOWER_ORDER, TRACKS, TowerKind, Track, Branch, levelById } from "../sim-core/content";
-import { Command, GameEvent, GameOptions, GameState, modBit, playerCount, hiddenWon, starEnabled, starPartCost, abilityCdOf, allowedOf, cashOf, apexBlock, apexPrice, applyCommands, modsOf, perleFor, cellEmerged, createGame, effStats, hashState, isBuildable, laneIsOpen, levelOf, rankedStats, restore, rewardFor, sellValue, specPrice, statsIn, snapshot, starsFor, step, upgradePrice, waveCount, wavePreview } from "../sim-core/sim";
+import { Command, GameEvent, GameOptions, GameState, modBit, playerCount, hiddenWon, canPlace, covers, sizeOf, abilityCdOf, allowedOf, cashOf, apexBlock, apexPrice, applyCommands, modsOf, perleFor, cellEmerged, createGame, effStats, hashState, isBuildable, laneIsOpen, levelOf, rankedStats, restore, rewardFor, sellValue, specPrice, statsIn, snapshot, starsFor, step, upgradePrice, waveCount, wavePreview } from "../sim-core/sim";
 import { playBot } from "../sim-core/bot";
-import { STAR } from "../sim-core/twists";
 import { drawTwist, qteKey, renderAim, renderChoice, renderQte, renderTwist, twistToast } from "./twist-ui";
 import { HARDCORE, ModeDef, NIGHTS, SURVIVAL, disgeloFor, modeDef } from "../sim-core/modes";
 import { GrantPayload, LocalTransport, Net, RealtimeTransport, Transport, roomCode } from "./net";
@@ -104,34 +103,6 @@ let bgKey = "";
 let inMenu = true;
 let aiming = false;
 let brazierMode = false; // Frost: il prossimo tocco sulla carta sposta un braciere
-/** Tasto del Cannone Stellare: compra i pezzi, mostra le stelle raccolte, spara. */
-function updateStarButton() {
-  const b = $("starBtn") as HTMLButtonElement;
-  const on = starEnabled(state) && state.phase !== "won" && state.phase !== "lost" && state.wave >= STAR.from - 1;
-  b.hidden = !on;
-  if (!on) return;
-  const st = state.star;
-  let text: string;
-  let fire = false;
-  let dis = false;
-  if (!st || st.parts < STAR.parts) {
-    text = state.wave < STAR.from ? `★ Cannone Stellare dall'ondata ${STAR.from}` : `★ Pezzo ${(st?.parts ?? 0) + 1}/${STAR.parts} · ${fmt(starPartCost(state))}`;
-    dis = state.wave < STAR.from || myCash() < starPartCost(state);
-  } else if (st.charges < STAR.charges) {
-    text = `★ Stelle ${st.charges}/${STAR.charges}: toccale quando cadono`;
-    dis = true;
-  } else if (state.tick < st.ready) {
-    text = `★ Si raffredda: ${Math.ceil((st.ready - state.tick) / TICKS_PER_SECOND)} s`;
-    dis = true;
-  } else {
-    text = "★ SPARA";
-    fire = true;
-  }
-  if (b.textContent !== text) b.textContent = text;
-  b.disabled = dis;
-  b.classList.toggle("fire", fire);
-}
-
 function toggleBrazier() {
   brazierMode = !brazierMode;
   if (brazierMode) {
@@ -767,6 +738,8 @@ function statsLine(kind: TowerKind, level: number, branch: Branch | null, rank =
     const ice = s.freezeTicks ? ` Oltre il ${pct(s.chillMax)} di rallentamento congela per ${num(s.freezeTicks / TICKS_PER_SECOND)} s (non i boss né chi resiste al gelo).` : "";
     return `Martellata a cono: ${s.damage} danni a ${s.maxTargets} nemici, ${num(TICKS_PER_SECOND / s.cooldown)} colpi/s, portata ${range}. Ogni colpo rallenta del ${pct(s.chillBp)} fino al ${pct(s.chillMax)}.${ice}${s.iceBreaker ? " Danno doppio a chi è gelato." : ""}${s.aftershockBp ? ` Seconda scossa del ${pct(s.aftershockBp)}.` : ""}`;
   }
+  if (kind === "starcannon") return `Si carica in ${num(s.chargeTicks / TICKS_PER_SECOND)} s: a carica piena ${fmt(s.cannonMax)} danni e ${num(s.cannonStun / TICKS_PER_SECOND)} s di stordimento in un'area di ${num(s.radius / TILE)}; se spari prima, da ${fmt(s.cannonMin)} in su. Poi ${num(s.cooldown / TICKS_PER_SECOND)} s di pausa. Gittata ${range}. Occupa 4 caselle.`;
+  if (kind === "accelerator") return `Carica ${num(s.accCharge / TICKS_PER_SECOND)} s, poi raffica di ${num(s.accBurst / TICKS_PER_SECOND)} s: ${s.damage} danni ogni ${num(s.accTick / TICKS_PER_SECOND)} s sullo stesso bersaglio finché vive. Gittata ${range}.${s.detect ? " Vede gli invisibili." : ""}`;
   if (kind === "executioner") return `Ascia: ${s.damage} danni, ${num(TICKS_PER_SECOND / s.cooldown)} lanci/s, gittata ${range}; rimbalza su ${s.chains} nemici senza perdere forza.${s.detect ? " Vede gli invisibili." : ""}${s.executeBp ? ` Finisce chi scende sotto il ${pct(s.executeBp)} di vita.` : ""}`;
   if (kind === "campana") return `+${pct(s.auraBp)} danno, +${pct(s.hasteBp)} cadenza, +${pct(s.rangeBuffBp)} gittata, vista sugli invisibili e niente stordimenti. Raggio ${range}.`;
   if (s.pulseAll) return `Ogni secondo ${s.damage} danni a tutti i nemici nel raggio e toglie i modificatori${s.bossBp > 10000 ? `, x${s.bossBp / 10000} sui boss` : ""}. Raggio ${range}.`;
@@ -845,7 +818,6 @@ function updatePanel() {
     go.hidden = true;
   }
   renderChoice($("choice"), state, send, playerCount(state) > 1);
-  updateStarButton();
   renderQte($("qte"), state, send);
   if (brazierMode && state.phase !== "prep") brazierMode = false;
   renderTwist($("twist"), $("twbar"), state, send, brazierMode, toggleBrazier);
@@ -934,7 +906,7 @@ function updatePanel() {
 function updateExtra(t: GameState["towers"][number]) {
   const host = $("dExtra");
   const def = TOWERS[t.kind];
-  const sig = t.kind === "kingpin" ? `${t.id}:${t.level}:${t.branch}:${t.queue.join(",")}:${t.owner === myP}:${statsIn(state, t).queueSlots}` : `${t.id}:${t.kind}`;
+  const sig = t.kind === "kingpin" ? `${t.id}:${t.level}:${t.branch}:${t.queue.join(",")}:${t.owner === myP}:${statsIn(state, t).queueSlots}` : t.kind === "starcannon" ? `${t.id}:${t.auto !== false}:${t.owner === myP}` : `${t.id}:${t.kind}`;
   if (host.dataset.sig !== sig) {
     host.dataset.sig = sig;
     host.innerHTML = "";
@@ -982,6 +954,24 @@ function updateExtra(t: GameState["towers"][number]) {
         ab.addEventListener("click", () => send({ t: "towerAbility", id: t.id }));
         host.append(ab);
       }
+    } else if (t.kind === "starcannon") {
+      // Star Cannon: barra della carica, sparo a mano, sparo automatico a carica piena.
+      const mineT = t.owner === myP;
+      const fire = document.createElement("button");
+      fire.className = "ab towerAb cannonFire";
+      fire.id = "cannonFire";
+      fire.innerHTML = `Spara<small></small>`;
+      fire.disabled = !mineT;
+      fire.addEventListener("click", () => send({ t: "cannon", id: t.id }));
+      const auto = document.createElement("button");
+      auto.id = "cannonAuto";
+      auto.className = "track";
+      auto.setAttribute("aria-pressed", String(t.auto !== false));
+      auto.textContent = t.auto !== false ? "Automatico: sì" : "Automatico: no";
+      auto.title = "Spara da solo quando la carica è piena";
+      auto.disabled = !mineT;
+      auto.addEventListener("click", () => send({ t: "cannonAuto", id: t.id, on: t.auto === false }));
+      host.append(fire, auto);
     } else if (t.kind === "grammofono") {
       for (const k of Object.keys(TRACKS) as Track[]) {
         const b = document.createElement("button");
@@ -1000,8 +990,17 @@ function updateExtra(t: GameState["towers"][number]) {
     }
   }
   host.hidden = !host.childElementCount;
-  for (const b of host.querySelectorAll<HTMLButtonElement>(".track")) b.setAttribute("aria-pressed", String(b.dataset.track === t.track));
-  const ab = host.querySelector<HTMLElement>(".towerAb");
+  if (t.kind !== "starcannon") for (const b of host.querySelectorAll<HTMLButtonElement>(".track")) b.setAttribute("aria-pressed", String(b.dataset.track === t.track));
+  const cf = host.querySelector<HTMLElement>(".cannonFire");
+  if (cf) {
+    const s = effStats(state, t);
+    const c = Math.min(t.charge ?? 0, s.chargeTicks);
+    const dmg = s.cannonMin + Math.floor(((s.cannonMax - s.cannonMin) * c) / s.chargeTicks);
+    cf.style.setProperty("--p", String(c / s.chargeTicks));
+    cf.classList.toggle("ready", c >= s.chargeTicks);
+    setText(cf.querySelector("small")!, `carica ${Math.floor((c * 100) / s.chargeTicks)}% · ${fmt(dmg)} danni${t.cooldown > 0 ? " · si riassesta" : ""}`);
+  }
+  const ab = host.querySelector<HTMLElement>(".towerAb:not(.cannonFire)");
   if (ab) {
     const full = statsIn(state, t).abilityCooldown;
     ab.style.setProperty("--p", String(1 - t.abilityCd / full));
@@ -1069,19 +1068,20 @@ function handleEvents(events: GameEvent[]) {
         fx.push({ kind: "cone", x: ev.x, y: ev.y, r: ev.range, a: Math.atan2(ev.ty - ev.y, ev.tx - ev.x), w: (ev.cone * Math.PI) / 180, born: now, life: 240 });
         sfx.blast();
         break;
+      case "cannon":
+        fx.push({ kind: "beam", x: ev.x, y: ev.y, r: ev.radius * 1.4, born: now, life: 700 + ev.power * 6 });
+        fx.push({ kind: "ring", x: ev.x, y: ev.y, r: ev.radius, color: "#ffd86b", born: now, life: 600 });
+        if (ev.power >= 100) fx.push({ kind: "float", x: ev.x, y: ev.y - 600, text: "Carica piena!", color: "#ffd86b", born: now, life: 1100 });
+        sfx.beam();
+        break;
+      case "laser":
+        fx.push({ kind: "zap", x: ev.x, y: ev.y, pts: [ev.x, ev.y, ev.tx, ev.ty], color: "#7fe3ff", born: now, life: 90 });
+        break;
       case "iced":
         fx.push({ kind: "ring", x: ev.x, y: ev.y, r: 600, color: "#bfe8ff", born: now, life: 420 });
         break;
       case "execute":
         fx.push({ kind: "float", x: ev.x, y: ev.y - 400, text: "Giustiziato", color: COLORS.coral, born: now, life: 900 });
-        break;
-      case "starDrop":
-        sfx.coin();
-        break;
-      case "starShot":
-        fx.push({ kind: "beam", x: ev.x, y: ev.y, r: 1800, born: now, life: 900 });
-        sfx.beam();
-        toast("Cannone Stellare!");
         break;
       case "hidden":
         toast("Il Re Caduto si risveglia: onda nascosta!");
@@ -2321,6 +2321,9 @@ function pointerCell(ev: PointerEvent, lift: boolean): { cx: number; cy: number 
   const ly = ev.clientY - r.top - (lift && ev.pointerType === "touch" ? T * 0.9 : 0);
   const mx = rot ? ly : lx;
   const my = rot ? MAP_H * T - lx : ly;
+  // Le torri grandi si piazzano col dito al centro del quadrato: si parte dalla casella in alto a sinistra.
+  const n = placing ? sizeOf(placing) : 1;
+  if (n > 1) return { cx: Math.round(mx / T) - n / 2, cy: Math.round(my / T) - n / 2 };
   return { cx: Math.floor(mx / T), cy: Math.floor(my / T) };
 }
 
@@ -2361,7 +2364,7 @@ function insideMap(ev: PointerEvent): boolean {
 
 function tryPlace() {
   if (!placing || !ghost) return;
-  if (!isBuildable(state, ghost.cx, ghost.cy)) {
+  if (!canPlace(state, placing, ghost.cx, ghost.cy)) {
     toast("Qui non si può costruire");
     sfx.deny();
     ghost = null;
@@ -2376,16 +2379,6 @@ function bindPointer() {
     wakeAudio();
     if (dialogQueue.length || isOver()) return;
     ev.preventDefault();
-    // Stelle cadute del Cannone Stellare: si raccolgono toccandole.
-    const drops = state.star?.drops ?? [];
-    if (drops.length) {
-      const u = pointerUnits(ev);
-      const d = drops.find((x) => (x.x - u.x) ** 2 + (x.y - u.y) ** 2 <= 800 * 800);
-      if (d) {
-        send({ t: "starGrab", id: d.id });
-        return;
-      }
-    }
     if (aiming) {
       const p = pointerUnits(ev);
       send({ t: "ability", id: "fascio", x: p.x, y: p.y });
@@ -2410,7 +2403,7 @@ function bindPointer() {
     }
     inspectId = null;
     const c = pointerCell(ev, false);
-    const hit = state.towers.find((t) => t.cx === c.cx && t.cy === c.cy);
+    const hit = state.towers.find((t) => covers(t, c.cx, c.cy));
     selectTower(hit ? hit.id : null);
   });
   window.addEventListener("pointermove", (ev) => {
@@ -2544,10 +2537,6 @@ function bindButtons() {
     toast(gfx === "leggera" ? "Grafica leggera: meno pixel e animazioni, consuma molto meno" : "Grafica alta");
     renderMenu();
   });
-  $("starBtn").addEventListener("click", () => {
-    const st = state.star;
-    send(st && st.parts >= STAR.parts ? { t: "starFire" } : { t: "starPart" });
-  });
   $("adminBtn").addEventListener("click", () => {
     const d = $("adminDrawer");
     d.hidden = !d.hidden;
@@ -2590,6 +2579,11 @@ function render(now: number) {
   for (const e of level.map.emerge) for (const [cx, cy] of e.cells) drawShoal(ctx, pxT, cx, cy, cellEmerged(state, cx, cy), reducedMotion ? 0 : now);
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   drawTwist({ ctx, cellRect, S, px: (u) => toPx(u, pxT), now, calm: reducedMotion || light() }, state, brazierMode);
+  if (state.hidden?.on && state.phase === "wave") {
+    // Eclissi dell'onda nascosta: la carta si fa scura e rossa.
+    ctx.fillStyle = `rgba(40,0,12,${reducedMotion ? 0.3 : 0.26 + 0.06 * Math.sin(now * 0.004)})`;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  }
 
   if (placing) {
     ctx.save();
@@ -2624,7 +2618,7 @@ function render(now: number) {
       ctx.restore();
     }
     const angle = aim.has(t.id) ? aim.get(t.id)! + turn() : -0.6;
-    drawTowerShape(ctx, t.kind, p.x, p.y, pxT, angle, t.level, t.branch, reducedMotion ? 0 : now, t.track);
+    drawTowerShape(ctx, t.kind, p.x, p.y, pxT * sizeOf(t.kind), angle, t.level, t.branch, reducedMotion ? 0 : now, t.track);
     towerStatus(t, p.x, p.y, pxT, now);
     if (t.id === selectedId) {
       const r = cellRect(t.cx, t.cy);
@@ -2656,27 +2650,6 @@ function render(now: number) {
     drawnAt.set(e.id, p);
   }
   for (const u of state.units) drawUnit(u, pxT, now);
-  for (const d of state.star?.drops ?? []) {
-    // Stella caduta: pulsa e sbiadisce quando sta per sparire.
-    const p = S(d.x, d.y);
-    const left = Math.max(0, d.until - state.tick) / STAR.dropLife;
-    const r = pxT * (0.28 + (reducedMotion ? 0 : 0.05 * Math.sin(now * 0.012)));
-    ctx.save();
-    ctx.globalAlpha = 0.4 + 0.6 * left;
-    ctx.fillStyle = "#ffd86b";
-    ctx.strokeStyle = "#fff6cf";
-    ctx.lineWidth = Math.max(1, pxT * 0.03);
-    ctx.beginPath();
-    for (let i = 0; i < 10; i++) {
-      const a = -Math.PI / 2 + (i * Math.PI) / 5;
-      const rr = i % 2 ? r * 0.45 : r;
-      ctx.lineTo(p.x + Math.cos(a) * rr, p.y + Math.sin(a) * rr);
-    }
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
-    ctx.restore();
-  }
 
   const faro = S(level.map.faro[0] * TILE + TILE / 2, level.map.faro[1] * TILE + TILE / 2);
   drawFaro(ctx, pxT, now, state.lives, reducedMotion, faro.x, faro.y);
@@ -2809,8 +2782,12 @@ function render(now: number) {
   }
 
   if (placing && ghost) {
-    const ok = isBuildable(state, ghost.cx, ghost.cy);
-    const r = cellRect(ghost.cx, ghost.cy);
+    const ok = canPlace(state, placing, ghost.cx, ghost.cy);
+    // Le torri grandi coprono un quadrato di caselle: si unisce il primo e l'ultimo rettangolo.
+    const n = sizeOf(placing);
+    const r0 = cellRect(ghost.cx, ghost.cy);
+    const r1 = cellRect(ghost.cx + n - 1, ghost.cy + n - 1);
+    const r = { x: Math.min(r0.x, r1.x), y: Math.min(r0.y, r1.y), w: Math.max(r0.x + r0.w, r1.x + r1.w) - Math.min(r0.x, r1.x), h: Math.max(r0.y + r0.h, r1.y + r1.h) - Math.min(r0.y, r1.y) };
     const x = r.x + r.w / 2;
     const y = r.y + r.h / 2;
     rangeRing(x, y, toPx(TOWERS[placing].levels[0].range, pxT), ok ? COLORS.brass : COLORS.coral);
@@ -2818,7 +2795,7 @@ function render(now: number) {
     ctx.globalAlpha = 0.85;
     ctx.fillStyle = ok ? "rgba(224,179,84,.25)" : "rgba(226,113,79,.35)";
     ctx.fillRect(r.x, r.y, r.w, r.h);
-    drawTowerShape(ctx, placing, x, y, pxT, -0.6);
+    drawTowerShape(ctx, placing, x, y, pxT * n, -0.6);
     ctx.restore();
   }
 

@@ -23,7 +23,7 @@ export interface Setup {
 type Frame = [number, Command[]];
 
 // Comandi che un giocatore può mandare: quelli admin passano solo da chi ospita o dal database.
-const PLAYER_CMDS = new Set(["build", "upgrade", "spec", "sell", "skip", "track", "towerAbility", "ability", "apex", "queue", "unqueue", "aim", "choose", "order", "brazier", "qte", "starPart", "starGrab", "starFire"]);
+const PLAYER_CMDS = new Set(["build", "upgrade", "spec", "sell", "skip", "track", "towerAbility", "ability", "apex", "queue", "unqueue", "aim", "choose", "order", "brazier", "qte"]);
 const HASH_EVERY = 50;
 const FLUSH_EVERY = 2;
 

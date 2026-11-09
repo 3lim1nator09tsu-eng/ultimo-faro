@@ -377,11 +377,7 @@ button:not(:disabled):active { transform: translateY(1px); }
 #detail { min-width: 0; }
 #detail > * { min-width: 0; }
 #stage:has(#detail:not([hidden])) #adminBtn { display: none; }
-#starBtn { position: absolute; right: 8px; bottom: 8px; z-index: 3; min-height: 32px; padding: 2px 10px; font-weight: 700; font-size: 13px; background: rgba(11,23,29,.9); border-color: #ffd86b; color: #ffd86b; line-height: 1.2; }
-#starBtn.fire { background: #ffd86b; color: #1a1406; animation: starPulse 0.8s ease-in-out infinite alternate; }
-@keyframes starPulse { from { box-shadow: 0 0 0 rgba(255,216,107,0); } to { box-shadow: 0 0 16px rgba(255,216,107,.8); } }
-@media (prefers-reduced-motion: reduce) { #starBtn.fire { animation: none; } }
-#stage:has(#detail:not([hidden])) #starBtn { display: none; }
+
 </style>
 <div id="app" class="landscape">
   <div id="stage">
@@ -396,7 +392,6 @@ button:not(:disabled):active { transform: translateY(1px); }
       <small id="bossInfo"></small>
     </div>
     <button id="adminBtn" hidden>Admin</button>
-    <button id="starBtn" hidden></button>
     <div id="adminDrawer" hidden></div>
     <button id="dialog" hidden><span id="dSpeaker"></span><span id="dText"></span><span id="dMore">Tocca per continuare</span></button>
     <div id="pauseLayer" class="layer" hidden>

@@ -460,7 +460,7 @@ export const TOWERS = {
       { ...base, cost: 520, damage: 36, cooldown: 24, range: 6000, chains: 5, chainBp: 10000, bounceRange: 3400, detect: true },
     ],
     branches: {
-      A: { ...base, name: "Boia", summary: "Finisce chi scende sotto il 12% di vita", cost: 900, damage: 90, cooldown: 22, range: 6000, chains: 5, chainBp: 10000, bounceRange: 3400, detect: true, executeBp: 1200 },
+      A: { ...base, name: "Boia", summary: "Finisce chi scende sotto il 5% di vita (non i boss)", cost: 900, damage: 90, cooldown: 22, range: 6000, chains: 5, chainBp: 10000, bounceRange: 3400, detect: true, executeBp: 500 },
       B: { ...base, name: "Tempesta d'asce", summary: "L'ascia rimbalza su 9 nemici", cost: 950, damage: 60, cooldown: 22, range: 6500, chains: 9, chainBp: 10000, bounceRange: 3800, detect: true },
     },
   },
@@ -796,7 +796,6 @@ export function apexStats(s: TowerStats): TowerStats {
     maxTargets: s.maxTargets ? s.maxTargets + 2 : 0,
     freezeTicks: s.freezeTicks ? up(s.freezeTicks, 13000) : 0,
     chillMax: s.chillMax ? Math.min(9000, up(s.chillMax, 11500)) : 0,
-    executeBp: s.executeBp ? s.executeBp + 300 : 0,
     cannonMin: up(s.cannonMin, 22000),
     cannonMax: up(s.cannonMax, 22000),
     cannonStun: s.cannonStun ? Math.min(50, up(s.cannonStun, 11200)) : 0,

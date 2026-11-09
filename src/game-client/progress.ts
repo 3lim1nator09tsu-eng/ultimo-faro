@@ -128,9 +128,15 @@ export const MEDALS: Array<{ id: string; name: string; text: string; ok: (m: Med
 // ---------- bacheca ----------
 
 /** Versione del gioco: chi ospita la comunica all'admin, che vede se i comandi nuovi possono funzionare. */
-export const GAME_VERSION = "0.13";
+export const GAME_VERSION = "0.13.1";
 
 export const VERSION_NOTES: ChangeEntry[] = [
+  {
+    date: "2026-11-10",
+    title: "Versione 0.13.1: Boia più giusto",
+    kind: "versione",
+    items: ["Executioner, ramo Boia: finisce i nemici sotto il 5% di vita (prima 12%), anche da Apex. Mai i boss"],
+  },
   {
     date: "2026-11-09",
     title: "Versione 0.13: Star Cannon, Accelerator e una vera onda nascosta",

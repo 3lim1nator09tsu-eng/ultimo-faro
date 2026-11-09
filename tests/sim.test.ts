@@ -1175,7 +1175,7 @@ test("Executioner: l'ascia rimbalza senza perdere forza; il Boia finisce i debol
   step(s, [{ t: "upgrade", id: t.id }]);
   step(s, [{ t: "upgrade", id: t.id }]);
   step(s, [{ t: "spec", id: t.id, branch: "A" }]);
-  for (const e of es) e.hp = 140;
+  for (const e of es) e.hp = 60;
   t.cooldown = 0;
   const ev2 = step(s, []);
   assert.ok(ev2.some((x) => x.e === "execute"));

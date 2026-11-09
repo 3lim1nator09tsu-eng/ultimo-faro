@@ -110,6 +110,14 @@ const [t2B, h2B, ds] = await B.evaluate(() => [window.__faro.state.tick, window.
 ok(ds >= 1 && t2A === t2B && h2A === h2B, `desincronizzazione rilevata e riallineata (desync ${ds}, tick ${t2A}/${t2B})`);
 await A.screenshot({ path: "dist/shots/40-coop-host.png" });
 await B.screenshot({ path: "dist/shots/41-coop-guest.png" });
+// Boss dell'admin evocato da chi ospita: compare per tutti con 67.000 di vita.
+if (!(await A.evaluate(() => document.getElementById("pauseLayer").hidden))) await A.click("#pause");
+await A.evaluate(() => window.__faro.debug.send({ t: "adminBoss", enemy: "dohoter" }));
+await A.waitForTimeout(1500);
+const bossOn = async (p) => p.evaluate(() => window.__faro.state.enemies.filter((e) => e.kind === "dohoter").map((e) => e.maxHp));
+const ba = await bossOn(A);
+const bb = await bossOn(B);
+ok(ba[0] === 67000 && bb[0] === 67000, `Dohoter Gang in stanza per tutti (${ba} / ${bb})`);
 await B.evaluate(() => window.__faro.debug.match.onClosed("prova finita"));
 await B.waitForTimeout(200);
 const balBack = await B.evaluate(() => JSON.stringify(window.__faro.debug.balance()));

@@ -1,0 +1,43 @@
+// Collaudo del boss dell'admin in una partita vera (non di prova), da solo e in stanza.
+import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import { SUPA_GLOB, fakeSupabase, login } from "./fake-supa.mjs";
+const { chromium } = createRequire("/opt/npm-tools/node_modules/")("playwright");
+const body = readFileSync("dist/ultimo-faro.html", "utf8");
+const html = `<!doctype html><html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"></head><body style="margin:0">${body}</body></html>`;
+let fails = 0;
+const ok = (c, m) => {
+  console.log(`${c ? "ok  " : "FAIL"} ${m}`);
+  if (!c) fails++;
+};
+const fake = fakeSupabase();
+const browser = await chromium.launch();
+const ctx = await browser.newContext({ viewport: { width: 900, height: 600 } });
+const page = await ctx.newPage();
+const errors = [];
+page.on("pageerror", (e) => errors.push(String(e)));
+page.on("console", (m) => m.type() === "error" && errors.push(m.text()));
+await page.route(SUPA_GLOB, fake.handle);
+await page.route("https://faro.test/", (r) => r.fulfill({ status: 200, contentType: "text/html; charset=utf-8", body: html }));
+await page.goto("https://faro.test/");
+await page.waitForFunction(() => window.__faro);
+await login(page, "admin", "segreta1");
+// Partita normale di Easy dal menu.
+await page.evaluate(() => window.__faro.debug.restart(7, { mode: "easy", level: "porto" }));
+await page.waitForTimeout(300);
+while (await page.locator("#dialog").isVisible()) await page.locator("#dialog").click();
+ok(await page.locator("#adminBtn").isVisible(), "il tasto Admin c'è in una partita normale");
+await page.locator("#adminBtn").click();
+await page.waitForTimeout(150);
+const btn = page.locator('#adminDrawer button[data-boss="dohoter"]');
+ok((await btn.count()) === 1, "il tasto del boss c'è nel pannello");
+await btn.click();
+await page.waitForTimeout(100);
+const toasts = await page.locator("#toast").textContent();
+await page.locator('#adminDrawer button:has-text("Chiudi")').click().catch(() => {});
+await page.waitForTimeout(1500);
+const st = await page.evaluate(() => ({ e: window.__faro.state.enemies.filter((x) => x.kind === "dohoter").map((x) => x.maxHp), s: window.__faro.state.spawns.filter((x) => x.enemy === "dohoter").length, touched: window.__faro.state.adminTouched, phase: window.__faro.state.phase, paused: window.__faro.debug.paused?.() }));
+ok(st.e[0] === 67000 && !st.touched, `boss evocato in partita normale ${JSON.stringify(st)} toast=${toasts}`);
+ok(errors.length === 0, `nessun errore ${errors.join(" | ")}`);
+await browser.close();
+process.exit(fails ? 1 : 0);

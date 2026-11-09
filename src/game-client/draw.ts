@@ -265,11 +265,25 @@ export function renderBackground(map: MapDef, W: number, H: number, rot = false,
 
 // ---------- canale animato e faro ----------
 
-export function drawTide(ctx: CanvasRenderingContext2D, T: number, time: number, still: boolean, map: MapDef, open: boolean[]) {
+/** part: "base" è la parte ferma (fondo del canale, argini chiusi), "flow" le correnti che si muovono. */
+export function drawTide(ctx: CanvasRenderingContext2D, T: number, time: number, still: boolean, map: MapDef, open: boolean[], part: "all" | "base" | "flow" = "all") {
   ctx.save();
   ctx.lineJoin = "round";
   ctx.lineCap = "round";
   map.lanes.forEach((cells, i) => {
+    if (part === "flow") {
+      if (!open[i] || still) return;
+      ctx.lineCap = "butt";
+      pathPolyline(ctx, T, cells);
+      ctx.setLineDash([T * 0.22, T * 0.95]);
+      ctx.lineDashOffset = -time * T * 0.0006;
+      ctx.strokeStyle = "rgba(165,228,236,.2)";
+      ctx.lineWidth = Math.max(1, T * 0.035);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.lineCap = "round";
+      return;
+    }
     pathPolyline(ctx, T, cells);
     ctx.strokeStyle = open[i] ? "rgba(4,9,11,.72)" : "rgba(4,9,11,.3)";
     ctx.lineWidth = T * 0.5;
@@ -287,7 +301,7 @@ export function drawTide(ctx: CanvasRenderingContext2D, T: number, time: number,
       ctx.fillRect((ax + 0.1) * T, (ay + 0.4) * T, T * 0.8, T * 0.2);
       return;
     }
-    if (!still) {
+    if (!still && part === "all") {
       // Correnti sottili che scorrono verso il Faro.
       ctx.lineCap = "butt";
       pathPolyline(ctx, T, cells);
@@ -1227,11 +1241,35 @@ function drawNewKind(ctx: CanvasRenderingContext2D, e: Enemy, T: number, time: n
   }
 }
 
-export function drawEnemy(ctx: CanvasRenderingContext2D, e: Enemy, x: number, y: number, T: number, time: number, still: boolean) {
+/** Copie già disegnate dei nemici, per tipo e misura: con tanti nemici costano molto meno dei disegni a mano. */
+const spriteCache = new Map<string, HTMLCanvasElement>();
+let spriteT = 0;
+function enemySprite(e: Enemy, T: number): HTMLCanvasElement {
+  const t = Math.round(T);
+  if (t !== spriteT) {
+    spriteCache.clear();
+    spriteT = t;
+  }
+  const key = `${e.kind}|${e.boss ? 1 : 0}`;
+  let c = spriteCache.get(key);
+  if (!c) {
+    c = document.createElement("canvas");
+    // Grande quanto basta: copie piccole costano poco anche da copiare.
+    const size = Math.ceil(T * (enemySize(e) * 3.4 + 0.3)) + 4;
+    c.width = size;
+    c.height = size;
+    const g = c.getContext("2d")!;
+    g.translate(size / 2, size / 2);
+    enemyBody(g, { ...e, id: 0, mods: 0, hp: 1, maxHp: 1 }, T, 0, true, 0, true);
+    spriteCache.set(key, c);
+  }
+  return c;
+}
+
+/** Corpo del nemico disegnato nell'origine: ombra e forma del tipo. */
+function enemyBody(ctx: CanvasRenderingContext2D, e: Enemy, T: number, time: number, still: boolean, phase: number, solid = false) {
   const def = ENEMIES[e.kind];
-  const phase = e.id * 1.7;
-  ctx.save();
-  ctx.translate(x, y);
+  void def;
   // Ombra sul fondale: stacca il nemico dall'acqua nera.
   const sr = T * enemySize(e);
   ctx.fillStyle = "rgba(0,0,0,.4)";
@@ -1239,7 +1277,7 @@ export function drawEnemy(ctx: CanvasRenderingContext2D, e: Enemy, x: number, y:
   ctx.ellipse(sr * 0.12, sr * 0.75, sr * 0.95, sr * 0.32, 0, 0, Math.PI * 2);
   ctx.fill();
   // Gli invisibili si vedono appena: il giocatore sa che ci sono, le torri senza rilevamento no.
-  if (isHidden(e)) ctx.globalAlpha = 0.5;
+  if (!solid && isHidden(e)) ctx.globalAlpha = 0.5;
   if (e.kind === "risacca") {
     const r = T * 0.2;
     ctx.beginPath();
@@ -1392,6 +1430,37 @@ export function drawEnemy(ctx: CanvasRenderingContext2D, e: Enemy, x: number, y:
     ctx.fillRect(-r * 0.42, -r * 0.2, r * 0.24, r * 0.12);
     ctx.fillRect(r * 0.18, -r * 0.2, r * 0.24, r * 0.12);
   }
+}
+
+/** Versione rapida per le folle: copia già pronta a coordinate intere e barra della vita essenziale. */
+function drawEnemyFast(ctx: CanvasRenderingContext2D, e: Enemy, x: number, y: number, T: number) {
+  const img = enemySprite(e, T);
+  const hidden = isHidden(e);
+  if (hidden) ctx.globalAlpha = 0.5;
+  ctx.drawImage(img, Math.round(x - img.width / 2), Math.round(y - img.height / 2));
+  if (hidden) ctx.globalAlpha = 1;
+  if (e.hp < e.maxHp) {
+    const w = Math.round(T * (e.boss ? 1.1 : 0.5));
+    const h = Math.max(2, Math.round(T * (e.boss ? 0.09 : 0.06)));
+    const left = Math.round(x - w / 2);
+    const top = Math.round(y - T * (enemySize(e) + 0.12));
+    const f = Math.max(0, e.hp) / e.maxHp;
+    ctx.fillStyle = "#1a0d0a";
+    ctx.fillRect(left, top, w, h);
+    ctx.fillStyle = f > 0.6 ? "#9fd28b" : f > 0.3 ? "#e8c35a" : COLORS.coral;
+    ctx.fillRect(left, top, Math.max(1, Math.round(w * f)), h);
+  }
+}
+
+export function drawEnemy(ctx: CanvasRenderingContext2D, e: Enemy, x: number, y: number, T: number, time: number, still: boolean, cached = false) {
+  if (cached) return drawEnemyFast(ctx, e, x, y, T);
+  const def = ENEMIES[e.kind];
+  const phase = e.id * 1.7;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.save();
+  enemyBody(ctx, e, T, time, still, phase);
+  ctx.restore();
   if (e.speedBp < 10000 && e.kind) {
     ctx.strokeStyle = "rgba(165,228,236,.8)";
     ctx.lineWidth = Math.max(1, T * 0.02);

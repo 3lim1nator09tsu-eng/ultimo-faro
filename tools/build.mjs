@@ -13,7 +13,7 @@ try {
 const out = await esbuild.build({
   entryPoints: ["src/game-client/main.ts"],
   bundle: true,
-  minify: true,
+  minify: !process.env.NOMIN,
   format: "iife",
   target: "es2020",
   write: false,

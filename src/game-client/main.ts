@@ -16,6 +16,37 @@ const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as 
 const fmt = (n: number) => n.toLocaleString("it-IT");
 const canvas = $<HTMLCanvasElement>("map");
 const ctx = canvas.getContext("2d")!;
+// Fondo pronto (carta e canali fermi) in una tela fuori schermo: un'unica copia per fotogramma.
+// Misurato: su rendering software una tela sola è più veloce di due tele sovrapposte.
+const bgCanvas = document.createElement("canvas");
+const bgCtx = bgCanvas.getContext("2d", { alpha: false })!;
+let bgDrawn = "";
+let guestAcc = 0; // cosa c'è sulla tela di fondo: misura, mappa, canali aperti
+
+// Qualità automatica: se i fotogrammi arrivano lenti si abbassano i pixel, se tornano veloci si rialzano.
+let autoScale = 1;
+let slowFrames = 0;
+let fastFrames = 0;
+let autoLock = false; // per le misure: qualità fissa
+function adaptQuality(dt: number) {
+  if (autoLock || inMenu || document.hidden || dt <= 0 || dt > 200) return;
+  if (dt > 24) {
+    slowFrames += 1;
+    fastFrames = 0;
+  } else if (dt < 18) {
+    fastFrames += 1;
+    slowFrames = Math.max(0, slowFrames - 1);
+  }
+  if (slowFrames > 45 && autoScale > 0.5) {
+    autoScale = Math.max(0.5, Math.round((autoScale - 0.15) * 100) / 100);
+    slowFrames = 0;
+    layout();
+  } else if (fastFrames > 600 && autoScale < 1) {
+    autoScale = Math.min(1, Math.round((autoScale + 0.1) * 100) / 100);
+    fastFrames = 0;
+    layout();
+  }
+}
 const stage = $("stage");
 const app = $("app");
 const reducedMotion = (() => {
@@ -593,7 +624,7 @@ function layout(measured = 0) {
   // Tetto ai pixel della tela: su schermi grandi la densità scende, il disegno resta nitido ma costa molto meno.
   const budget = light() ? 1.1e6 : 2.4e6;
   dpr = Math.min(window.devicePixelRatio || 1, light() ? 1 : 2, Math.sqrt(budget / Math.max(1, w * h)));
-  dpr = Math.max(0.5, dpr);
+  dpr = Math.max(0.5, dpr * autoScale);
   const pw = Math.round(w * dpr);
   const ph = Math.round(h * dpr);
   const key = `${pw}x${ph}:${rot}:${state.levelId}:${state.mode === "natale"}`;
@@ -601,6 +632,9 @@ function layout(measured = 0) {
     bgKey = key;
     canvas.width = pw;
     canvas.height = ph;
+    bgCanvas.width = pw;
+    bgCanvas.height = ph;
+    bgDrawn = "";
     background = renderBackground(levelOf(state).map, pw, ph, rot, state.mode === "natale");
   }
   // Con la plancia sotto, il dettaglio della torre si apre sopra la carta.
@@ -2570,12 +2604,22 @@ function bindButtons() {
 
 function render(now: number) {
   const pxT = T * dpr;
+  const level = levelOf(state);
+  const open = level.map.lanes.map((_, i) => laneIsOpen(state, i) || (state.phase === "prep" && state.wave + 1 >= (level.map.laneOpen[i] ?? 1)));
+  // Il fondo (carta e canali) cambia di rado: si ridisegna solo sulla tela di sotto, quando serve.
+  const bgNow = `${bgKey}|${open.join(",")}`;
+  if (bgDrawn !== bgNow && background) {
+    bgDrawn = bgNow;
+    bgCtx.setTransform(1, 0, 0, 1, 0, 0);
+    bgCtx.drawImage(background, 0, 0);
+    applyMap(bgCtx, rot, pxT);
+    drawTide(bgCtx, pxT, 0, true, level.map, open, "base");
+  }
   ctx.setTransform(1, 0, 0, 1, 0, 0);
-  if (background) ctx.drawImage(background, 0, 0);
+  ctx.drawImage(bgCanvas, 0, 0);
   const alpha = paused || dialogQueue.length || isOver() ? 1 : Math.min(1, accumulator / 100);
   applyMap(ctx, rot, pxT);
-  const level = levelOf(state);
-  drawTide(ctx, pxT, now, reducedMotion || light(), level.map, level.map.lanes.map((_, i) => laneIsOpen(state, i) || (state.phase === "prep" && state.wave + 1 >= (level.map.laneOpen[i] ?? 1))));
+  drawTide(ctx, pxT, now, reducedMotion || light() || state.enemies.length > 80, level.map, open, "flow");
   for (const e of level.map.emerge) for (const [cx, cy] of e.cells) drawShoal(ctx, pxT, cx, cy, cellEmerged(state, cx, cy), reducedMotion ? 0 : now);
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   drawTwist({ ctx, cellRect, S, px: (u) => toPx(u, pxT), now, calm: reducedMotion || light() }, state, brazierMode);
@@ -2630,13 +2674,15 @@ function render(now: number) {
     }
   }
 
+  // Con tanti nemici (o su dispositivi lenti) si usano le copie già disegnate.
+  const many = state.enemies.length > 50 || autoScale < 1 || light();
   for (const e of state.enemies) {
     const prev = prevPos.get(e.id);
     const ux = prev ? prev.x + (e.x - prev.x) * alpha : e.x;
     const uy = prev ? prev.y + (e.y - prev.y) * alpha : e.y;
     const lane = e.boss ? 0 : e.offset;
     const p = S(ux + lane * 0.5, uy + lane);
-    drawEnemy(ctx, e, p.x, p.y, pxT, now, reducedMotion);
+    drawEnemy(ctx, e, p.x, p.y, pxT, now, reducedMotion, many);
     if (e.frozen || e.chill) {
       // Gelo dello Sledger: velo azzurro, pieno se congelato.
       ctx.save();
@@ -2646,7 +2692,8 @@ function render(now: number) {
       ctx.fill();
       ctx.restore();
     }
-    if (e.mods || e.shield || e.mark || e.bounty) enemyMarks(e, p.x, p.y, pxT, now);
+    // Nelle folle enormi i segni dei modificatori restano solo sui boss: la barra della vita basta.
+    if ((e.mods || e.shield || e.mark || e.bounty) && (e.boss || state.enemies.length < 150)) enemyMarks(e, p.x, p.y, pxT, now);
     drawnAt.set(e.id, p);
   }
   for (const u of state.units) drawUnit(u, pxT, now);
@@ -2673,6 +2720,9 @@ function render(now: number) {
 
   const clock = performance.now();
   fx = fx.filter((f) => clock - f.born < f.life);
+  // Tetto agli effetti: con centinaia di nemici restano i più recenti.
+  const fxMax = many ? 90 : 220;
+  if (fx.length > fxMax) fx.splice(0, fx.length - fxMax);
   for (const f of fx) {
     const k = (clock - f.born) / f.life;
     const p = S(f.x, f.y);
@@ -3230,14 +3280,30 @@ function updateBossBar() {
 function frame(now: number) {
   const dt = Math.min(250, now - (lastFrame || now));
   lastFrame = now;
+  adaptQuality(dt);
   const guest = match && !match.isHost && match.state === state && !inMenu;
   if (guest) {
-    // Chi partecipa segue chi ospita: esegue i tick confermati, più in fretta se è rimasto indietro.
-    prevPos.clear();
-    for (const e of state.enemies) prevPos.set(e.id, { x: e.x, y: e.y });
-    const ev = match!.guestTicks(match!.behind > 30 ? 30 : match!.behind > 4 ? 3 : 1);
+    // Chi partecipa segue chi ospita a passo regolare (10 tick al secondo, di più se è indietro),
+    // così il movimento si può interpolare come per chi ospita, senza scatti né raffiche di calcolo.
+    const m = match!;
+    const rate = Math.min(6, 1 + Math.floor(m.behind / 4));
+    guestAcc += dt * rate;
+    if (m.behind === 0) guestAcc = Math.min(guestAcc, 100);
+    let ev: GameEvent[] = [];
+    const t0 = performance.now();
+    let n = 0;
+    while (guestAcc >= 100 && m.behind > 0 && n < 8 && (n === 0 || performance.now() - t0 < 6)) {
+      if (n === 0) {
+        prevPos.clear();
+        for (const e of state.enemies) prevPos.set(e.id, { x: e.x, y: e.y });
+      }
+      ev = ev.concat(m.guestTicks(1));
+      guestAcc -= 100;
+      n++;
+    }
+    if (guestAcc > 300) guestAcc = 100;
     if (ev.length) handleEvents(ev);
-    accumulator = 0;
+    accumulator = Math.max(0, Math.min(100, guestAcc));
   } else if (!inMenu && !paused && !dialogQueue.length && !isOver()) {
     accumulator += dt * speed;
     let guard = 0;
@@ -3316,6 +3382,16 @@ function start(saved: { snap?: string; log?: Array<[number, Command[]]>; seen?: 
       adminApi,
       openAdmin,
       balance: () => effectiveBalance(),
+      quality: (lock?: boolean) => {
+        if (lock !== undefined) {
+          autoLock = lock;
+          if (lock && autoScale !== 1) {
+            autoScale = 1;
+            layout();
+          }
+        }
+        return { autoScale, lock: autoLock };
+      },
       send,
       get match() {
         return match;

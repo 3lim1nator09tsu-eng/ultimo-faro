@@ -128,9 +128,21 @@ export const MEDALS: Array<{ id: string; name: string; text: string; ok: (m: Med
 // ---------- bacheca ----------
 
 /** Versione del gioco: chi ospita la comunica all'admin, che vede se i comandi nuovi possono funzionare. */
-export const GAME_VERSION = "0.13.1";
+export const GAME_VERSION = "0.13.2";
 
 export const VERSION_NOTES: ChangeEntry[] = [
+  {
+    date: "2026-11-10",
+    title: "Versione 0.13.2: grafica più leggera",
+    kind: "versione",
+    items: [
+      "Con tanti nemici in campo si disegnano copie già pronte: con 500 nemici, su un PC lento, da 7 a oltre 30 fotogrammi al secondo",
+      "Qualità automatica: se i fotogrammi rallentano, la carta usa meno pixel; quando tornano veloci, li riprende",
+      "Fondo della carta e canali preparati una volta sola invece che a ogni fotogramma",
+      "In multigiocatore chi partecipa avanza a passo regolare con movimento fluido, senza raffiche di calcolo quando recupera",
+      "Tetto agli effetti visivi quando la scena è affollata",
+    ],
+  },
   {
     date: "2026-11-10",
     title: "Versione 0.13.1: Boia più giusto",

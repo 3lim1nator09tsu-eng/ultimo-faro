@@ -781,8 +781,14 @@ function textPx(tile: number, bp: number): number {
   return Math.round(Math.max(11 * dpr, Math.min(20 * dpr, tile * bp)));
 }
 
+// Il tocco che apre il riquadro non deve premere anche i suoi tasti (succedeva con lo Star Cannon:
+// il riquadro compariva proprio sotto il dito e il rilascio premeva "Vendi").
+let selectedAt = 0;
+let sellArmed: { id: number; at: number } | null = null;
 function selectTower(id: number | null) {
+  if (id !== null && id !== selectedId) selectedAt = performance.now();
   selectedId = id;
+  sellArmed = null;
   if (id !== null) setPlacing(null);
 }
 
@@ -975,7 +981,10 @@ function updatePanel() {
     }
     const dmg = t.damageDone;
     setText($("dDps"), dmg > 0 ? `Danno inflitto: ${fmt(dmg)}${dpsOn ? ` · ${fmt(Math.round(towerDps(t)))} al secondo` : ""}` : "");
-    setText($("btnSell"), foreign ? `Torre di ${ownerName(t.owner)}` : `Vendi +${fmt(sellValue(state, t))}`);
+    const armed = !!sellArmed && sellArmed.id === t.id && performance.now() - sellArmed.at < 3000;
+    if (sellArmed && !armed) sellArmed = null;
+    setText($("btnSell"), foreign ? `Torre di ${ownerName(t.owner)}` : armed ? `Conferma: vendi +${fmt(sellValue(state, t))}` : `Vendi +${fmt(sellValue(state, t))}`);
+    $("btnSell").classList.toggle("armed", armed);
     $<HTMLButtonElement>("btnSell").disabled = foreign;
     updateExtra(t);
   }
@@ -2655,12 +2664,30 @@ function bindButtons() {
   $("btnB").addEventListener("click", () => {
     if (selectedId !== null) send({ t: "spec", id: selectedId, branch: "B" });
   });
+  // Per vendere servono due tocchi: il primo chiede conferma per 3 secondi.
   $("btnSell").addEventListener("click", () => {
-    if (selectedId !== null) {
-      send({ t: "sell", id: selectedId });
-      selectTower(null);
+    if (selectedId === null) return;
+    if (!sellArmed || sellArmed.id !== selectedId || performance.now() - sellArmed.at > 3000) {
+      sellArmed = { id: selectedId, at: performance.now() };
+      return;
     }
+    send({ t: "sell", id: selectedId });
+    selectTower(null);
   });
+  // Il tocco che ha aperto il riquadro non vale come tocco sui suoi tasti: su telefono il "click" arriva
+  // al rilascio, quando sotto il dito c'è già il riquadro. Vale solo un tocco iniziato sul riquadro.
+  let detailDownAt = 0;
+  $("detail").addEventListener("pointerdown", () => (detailDownAt = performance.now()), true);
+  $("detail").addEventListener(
+    "click",
+    (ev) => {
+      if (detailDownAt < selectedAt) {
+        ev.stopPropagation();
+        ev.preventDefault();
+      }
+    },
+    true,
+  );
   $("btnClose").addEventListener("click", () => selectTower(null));
   $("again").addEventListener("click", restart);
   $("dialog").addEventListener("click", () => {

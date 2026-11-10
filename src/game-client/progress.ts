@@ -128,9 +128,18 @@ export const MEDALS: Array<{ id: string; name: string; text: string; ok: (m: Med
 // ---------- bacheca ----------
 
 /** Versione del gioco: chi ospita la comunica all'admin, che vede se i comandi nuovi possono funzionare. */
-export const GAME_VERSION = "0.14";
+export const GAME_VERSION = "0.14.1";
 
 export const VERSION_NOTES: ChangeEntry[] = [
+  {
+    date: "2026-11-10",
+    title: "Versione 0.14.1: niente vendite per sbaglio",
+    kind: "versione",
+    items: [
+      "Toccando una torre (soprattutto lo Star Cannon) il riquadro poteva aprirsi sotto il dito e vendere subito: ora il riquadro appena aperto ignora quel tocco",
+      "Per vendere una torre servono due tocchi: il primo chiede conferma",
+    ],
+  },
   {
     date: "2026-11-10",
     title: "Versione 0.14: l'onda nascosta diventa un finale",

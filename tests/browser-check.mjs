@@ -397,6 +397,37 @@ for (const vp of [{ width: 390, height: 700 }, { width: 844, height: 390 }]) {
   await context.close();
 }
 
+// ---------- niente vendite per sbaglio ----------
+for (const vp of [{ width: 390, height: 760 }, { width: 844, height: 390 }]) {
+  const tag = `${vp.width}x${vp.height}`;
+  const { page, errors, context } = await open(vp);
+  while (await page.locator("#dialog").isVisible()) await page.locator("#dialog").tap();
+  const spot = await page.evaluate(() => {
+    const f = window.__faro;
+    f.debug.restart(32, { mode: "easy", level: "porto", sandbox: true });
+    for (let cy = 0; cy < 8; cy++) for (let cx = 0; cx < 15; cx++) {
+      f.debug.send({ t: "build", kind: "starcannon", cx, cy });
+      if (f.state.towers.length) return { cx, cy };
+    }
+    return null;
+  });
+  // Tocco sulla casella in basso a destra del cannone, due volte di fila come un dito impaziente.
+  await tapCell(page, spot.cx + 1, spot.cy + 1);
+  await page.waitForTimeout(60);
+  await tapCell(page, spot.cx + 1, spot.cy + 1);
+  await page.waitForTimeout(100);
+  check(`${tag}: toccare lo Star Cannon non lo vende`, (await page.evaluate(() => window.__faro.state.towers.length)) === 1 && (await page.locator("#detail").isVisible()));
+  await page.waitForTimeout(500);
+  await page.locator("#btnSell").click();
+  await page.waitForTimeout(80);
+  check(`${tag}: il primo tocco su Vendi chiede conferma`, (await page.evaluate(() => window.__faro.state.towers.length)) === 1 && (await page.locator("#btnSell").textContent()).startsWith("Conferma"));
+  await page.locator("#btnSell").click();
+  await page.waitForTimeout(80);
+  check(`${tag}: il secondo tocco vende`, (await page.evaluate(() => window.__faro.state.towers.length)) === 0);
+  check(`${tag}: nessun errore nella vendita`, errors.length === 0, errors.join(" | "));
+  await context.close();
+}
+
 // ---------- scelte del giocatore ----------
 for (const vp of [{ width: 390, height: 760 }, { width: 844, height: 390 }]) {
   const tag = `${vp.width}x${vp.height}`;

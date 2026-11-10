@@ -736,6 +736,51 @@ function setPlacing(kind: TowerKind | null) {
   for (const [k, b] of cards) b.classList.toggle("on", k === kind);
 }
 
+// Riquadro della torre su telefono: si sposta trascinando la maniglia e si riduce col tasto.
+let detailY: number | null = null;
+function bindDetailHandle() {
+  const detail = $("detail");
+  const handle = $("dHandle");
+  let grab: { dy: number; id: number } | null = null;
+  handle.addEventListener("pointerdown", (ev) => {
+    if ((ev.target as HTMLElement).closest("button")) return;
+    const r = detail.getBoundingClientRect();
+    grab = { dy: ev.clientY - r.top, id: ev.pointerId };
+    handle.setPointerCapture(ev.pointerId);
+    ev.preventDefault();
+  });
+  handle.addEventListener("pointermove", (ev) => {
+    if (!grab || ev.pointerId !== grab.id) return;
+    const stage = $("stage").getBoundingClientRect();
+    const h = detail.getBoundingClientRect().height;
+    const y = Math.max(6, Math.min(stage.height - h - 6, ev.clientY - stage.top - grab.dy));
+    detailY = y;
+    detail.classList.remove("top");
+    detail.style.top = `${Math.round(y)}px`;
+    detail.style.bottom = "auto";
+  });
+  const drop = () => (grab = null);
+  handle.addEventListener("pointerup", drop);
+  handle.addEventListener("pointercancel", drop);
+  // Doppio tocco sulla maniglia: torna alla posizione automatica.
+  handle.addEventListener("dblclick", () => {
+    detailY = null;
+    detail.style.top = "";
+    detail.style.bottom = "";
+  });
+  $("dMin").addEventListener("click", () => {
+    const min = !detail.classList.contains("min");
+    detail.classList.toggle("min", min);
+    $("dMin").setAttribute("aria-pressed", String(min));
+    $("dMin").textContent = min ? "Apri" : "Riduci";
+  });
+}
+
+/** Misura delle scritte sulla carta: segue la casella ma resta leggibile su telefono e non enorme su PC. */
+function textPx(tile: number, bp: number): number {
+  return Math.round(Math.max(11 * dpr, Math.min(20 * dpr, tile * bp)));
+}
+
 function selectTower(id: number | null) {
   selectedId = id;
   if (id !== null) setPlacing(null);
@@ -879,9 +924,14 @@ function updatePanel() {
   $("build").hidden = !!t && !below;
   const detail = $("detail");
   detail.hidden = !t;
-  if (t && below) {
-    // Il riquadro non deve coprire la torre scelta.
+  if (t && below && detailY === null) {
+    // Il riquadro non deve coprire la torre scelta (se chi gioca non l'ha spostato a mano).
     detail.classList.toggle("top", S(t.x, t.y).y / dpr > stage.clientHeight / 2);
+  }
+  if (!t && detailY !== null) {
+    detailY = null;
+    detail.style.top = "";
+    detail.style.bottom = "";
   }
   if (t) {
     const def = TOWERS[t.kind];
@@ -999,7 +1049,6 @@ function updateExtra(t: GameState["towers"][number]) {
       fire.addEventListener("click", () => send({ t: "cannon", id: t.id }));
       const auto = document.createElement("button");
       auto.id = "cannonAuto";
-      auto.className = "track";
       auto.setAttribute("aria-pressed", String(t.auto !== false));
       auto.textContent = t.auto !== false ? "Automatico: sì" : "Automatico: no";
       auto.title = "Spara da solo quando la carica è piena";
@@ -1118,9 +1167,12 @@ function handleEvents(events: GameEvent[]) {
         fx.push({ kind: "float", x: ev.x, y: ev.y - 400, text: "Giustiziato", color: COLORS.coral, born: now, life: 900 });
         break;
       case "hidden":
-        toast("Il Re Caduto si risveglia: onda nascosta!");
-        sfx.roar();
-        iceFlash = 1;
+        startCinematic("ONDA NASCOSTA", "Il Re si risveglia", "#ff5a5a");
+        openDialog(HIDDEN_LINES);
+        break;
+      case "hiddenStage":
+        startCinematic("THE CREATOR", "e Jack o Bot", "#ffd86b");
+        openDialog(CREATOR_LINES);
         break;
       case "beam":
         fx.push({ kind: "beam", x: ev.x, y: ev.y, r: ev.radius, born: now, life: 520 });
@@ -1314,6 +1366,67 @@ function tick() {
 }
 
 // ---------- dialoghi e fine partita ----------
+
+/** Onda nascosta di Fallen: dialoghi che si vedono solo lì. */
+const HIDDEN_LINES: Line[] = [
+  { who: "???", text: "Il Re è caduto troppo in fretta. Nessuno, prima di voi, ci era mai riuscito." },
+  { who: "Re Risvegliato", text: "Una corona non cade due volte. Mi avete svegliato, guardiani del Faro." },
+  { who: "Re Risvegliato", text: "Che la luce si spenga. Venite a me, mie Ombre: nessuno torna a casa stanotte." },
+  { who: "Anselma", text: "Il cielo si è fatto nero, le torri non vedono lontano come prima. Tenete il Faro acceso!" },
+];
+const CREATOR_LINES: Line[] = [
+  { who: "The Creator", text: "Interessante. Avete abbattuto il mio Re. Era il mio lavoro migliore." },
+  { who: "The Creator", text: "Allora questo mondo lo riscrivo io. Riga per riga, torre per torre." },
+  { who: "Jack o Bot", text: "SISTEMA ZUCCA ONLINE. BERSAGLI: TUTTI. HA. HA. HA." },
+  { who: "Rin", text: "The Creator stordisce le torri vicine e si fa scortare dagli Araldi. Jack o Bot scatta, ruba cash e quando cade si spacca in zucchette!" },
+  { who: "Anselma", text: "Due insieme? Questa non è più una notte, è la fine del mondo. Fuoco con tutto quello che avete!" },
+];
+
+/** Scena teatrale: la carta trema, lampeggia e mostra un titolo grande. */
+let cinematic: { start: number; title: string; sub: string; color: string } | null = null;
+function startCinematic(title: string, sub: string, color: string) {
+  cinematic = { start: performance.now(), title, sub, color };
+  sfx.roar();
+  window.setTimeout(() => sfx.horn(), 500);
+}
+function drawCinematic(now: number) {
+  if (!cinematic) return;
+  const k = (performance.now() - cinematic.start) / 3200;
+  if (k >= 1) {
+    cinematic = null;
+    canvas.style.transform = "";
+    return;
+  }
+  // Tremore che si spegne, solo se l'utente non ha chiesto meno movimento.
+  if (!reducedMotion) {
+    const amp = 8 * (1 - k);
+    const dx = (((now * 7) % 13) / 6.5 - 1) * amp;
+    const dy = (((now * 11) % 17) / 8.5 - 1) * amp;
+    canvas.style.transform = `translate(${dx.toFixed(1)}px, ${dy.toFixed(1)}px)`;
+  }
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  const flick = reducedMotion ? 0.35 : 0.25 + 0.2 * Math.abs(Math.sin(now * 0.03));
+  ctx.fillStyle = `rgba(0,0,0,${(1 - k) * flick + 0.15})`;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  // Titolo grande, misurato sulla tela: resta leggibile su telefono e su PC.
+  const w = canvas.width;
+  const h = canvas.height;
+  const size = Math.max(18, Math.min(w / 9, h / 5));
+  const alpha = k < 0.15 ? k / 0.15 : k > 0.8 ? (1 - k) / 0.2 : 1;
+  ctx.globalAlpha = alpha;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.font = `400 ${Math.round(size)}px "IM Fell English", Georgia, serif`;
+  ctx.fillStyle = cinematic.color;
+  ctx.shadowColor = "#000";
+  ctx.shadowBlur = size * 0.3;
+  ctx.fillText(cinematic.title, w / 2, h * 0.38, w * 0.92);
+  ctx.font = `italic ${Math.round(size * 0.42)}px "IM Fell English", Georgia, serif`;
+  ctx.fillStyle = "#eee4cb";
+  ctx.fillText(cinematic.sub, w / 2, h * 0.38 + size * 0.75, w * 0.9);
+  ctx.restore();
+}
 
 function openDialog(lines: Line[]) {
   dialogQueue = [...lines];
@@ -2824,7 +2937,7 @@ function render(now: number) {
     } else {
       ctx.globalAlpha = 1 - k * k;
       ctx.fillStyle = f.color!;
-      ctx.font = `700 ${Math.round(pxT * 0.34)}px "Barlow Semi Condensed", "Arial Narrow", sans-serif`;
+      ctx.font = `700 ${textPx(pxT, 0.34)}px "Barlow Semi Condensed", "Arial Narrow", sans-serif`;
       ctx.textAlign = "center";
       ctx.fillText(f.text!, p.x, p.y - pxT * (0.3 + k * 0.5));
     }
@@ -2848,6 +2961,8 @@ function render(now: number) {
     drawTowerShape(ctx, placing, x, y, pxT * n, -0.6);
     ctx.restore();
   }
+
+  drawCinematic(now);
 
   if (state.towers.length === 0 && !placing && state.phase === "prep" && !dialogQueue.length) {
     const p = rot ? S(5500, 4500) : S(9000, 7900);
@@ -2964,7 +3079,7 @@ function towerStatus(t: GameState["towers"][number], x: number, y: number, T: nu
     ctx.fill();
   }
   if (dpsOn && t.damageDone > 0) {
-    ctx.font = `700 ${Math.round(T * 0.26)}px "Barlow Semi Condensed", "Arial Narrow", sans-serif`;
+    ctx.font = `700 ${textPx(T, 0.26)}px "Barlow Semi Condensed", "Arial Narrow", sans-serif`;
     ctx.textAlign = "center";
     ctx.fillStyle = "#fff";
     ctx.shadowColor = "#000";
@@ -3334,6 +3449,7 @@ function start(saved: { snap?: string; log?: Array<[number, Command[]]>; seen?: 
   }
   buildCards();
   bindPointer();
+  bindDetailHandle();
   bindButtons();
   layout();
   new ResizeObserver(() => layout()).observe(app);

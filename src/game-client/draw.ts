@@ -808,13 +808,13 @@ export function enemySize(e: Pick<Enemy, "kind" | "boss">): number {
     risacca: 0.22, corridore: 0.2, sabotatore: 0.25, bruto: 0.33, annegato: 0.52, sirena: 0.5, leviatano: 0.78,
     tizzone: 0.2, magmatico: 0.34, colosso: 0.66, spettro: 0.24, cavaliere: 0.34, recaduto: 0.62, risvegliato: 0.8, ombra: 0.22, araldo: 0.4, lancia: 0.34, brinato: 0.27, orso: 0.38, regina: 0.62,
     elfo: 0.19, pupazzetto: 0.28, folletto: 0.48, renna: 0.55, pupazzo: 0.7, befana: 0.56, krampus: 0.8,
-    dohoter: 0.74,
+    dohoter: 0.74, creator: 0.86, jackobot: 0.74, zucchetta: 0.2,
   };
   const r = base[e.kind] ?? 0.3;
   return e.kind === "bruto" && e.boss ? 0.53 : r;
 }
 
-const NEW_KINDS = new Set(["tizzone", "magmatico", "colosso", "spettro", "cavaliere", "recaduto", "brinato", "orso", "regina", "elfo", "pupazzetto", "folletto", "renna", "pupazzo", "befana", "krampus", "dohoter", "risvegliato", "ombra", "araldo", "lancia"]);
+const NEW_KINDS = new Set(["tizzone", "magmatico", "colosso", "spettro", "cavaliere", "recaduto", "brinato", "orso", "regina", "elfo", "pupazzetto", "folletto", "renna", "pupazzo", "befana", "krampus", "dohoter", "risvegliato", "ombra", "araldo", "lancia", "creator", "jackobot", "zucchetta"]);
 
 function poly(ctx: CanvasRenderingContext2D, n: number, r: number, inner: number, spin: number) {
   ctx.beginPath();
@@ -1103,6 +1103,98 @@ function drawNewKind(ctx: CanvasRenderingContext2D, e: Enemy, T: number, time: n
       ctx.lineTo(r * 0.35, r * 0.3);
       ctx.stroke();
       break;
+    case "creator": {
+      // The Creator: figura di luce con un'aureola di cubi che gli ruotano intorno.
+      const spin = still ? 0 : t * 0.0015;
+      ctx.fillStyle = "rgba(255,240,190,.18)";
+      ctx.beginPath();
+      ctx.arc(0, 0, r * 1.25, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#f4ecd6";
+      ctx.strokeStyle = "#ffd86b";
+      ctx.lineWidth = lw;
+      ctx.beginPath();
+      ctx.moveTo(0, -r * 0.95);
+      ctx.lineTo(r * 0.55, -r * 0.1);
+      ctx.lineTo(r * 0.75, r * 0.9);
+      ctx.lineTo(-r * 0.75, r * 0.9);
+      ctx.lineTo(-r * 0.55, -r * 0.1);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      ctx.strokeStyle = "#ffd86b";
+      ctx.beginPath();
+      ctx.ellipse(0, -r * 1.0, r * 0.5, r * 0.14, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      for (let i = 0; i < 4; i++) {
+        const a = spin + (i * Math.PI) / 2;
+        ctx.save();
+        ctx.translate(Math.cos(a) * r * 1.05, Math.sin(a) * r * 0.55);
+        ctx.rotate(a);
+        ctx.fillStyle = i % 2 ? "#c9b8ff" : "#a5e4ec";
+        ctx.fillRect(-r * 0.12, -r * 0.12, r * 0.24, r * 0.24);
+        ctx.restore();
+      }
+      ctx.fillStyle = "#1a1406";
+      ctx.fillRect(-r * 0.3, -r * 0.25, r * 0.6, r * 0.08);
+      eyes(ctx, r, "#ffd86b", 0, -0.2, 0.08);
+      break;
+    }
+    case "jackobot": {
+      // Jack o Bot: zucca di metallo con occhi a LED e un'antenna.
+      const blink = still ? 1 : 0.6 + 0.4 * Math.abs(Math.sin(t * 0.008 + phase));
+      ctx.fillStyle = "#e07a1f";
+      ctx.strokeStyle = "#5b6770";
+      ctx.lineWidth = lw * 1.3;
+      ctx.beginPath();
+      ctx.ellipse(0, r * 0.1, r * 0.95, r * 0.8, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.strokeStyle = "rgba(90,40,10,.55)";
+      ctx.lineWidth = lw;
+      for (const k of [-0.45, 0, 0.45]) {
+        ctx.beginPath();
+        ctx.ellipse(r * k, r * 0.1, r * 0.22, r * 0.76, 0, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      ctx.fillStyle = "#3a4249";
+      ctx.fillRect(-r * 0.12, -r * 0.95, r * 0.24, r * 0.3);
+      ctx.strokeStyle = "#9aa6ad";
+      ctx.beginPath();
+      ctx.moveTo(0, -r * 0.95);
+      ctx.lineTo(r * 0.3, -r * 1.35);
+      ctx.stroke();
+      ctx.fillStyle = `rgba(255,60,60,${blink})`;
+      ctx.beginPath();
+      ctx.arc(r * 0.3, -r * 1.35, r * 0.08, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = `rgba(120,255,140,${blink})`;
+      ctx.beginPath();
+      ctx.moveTo(-r * 0.55, -r * 0.15);
+      ctx.lineTo(-r * 0.2, -r * 0.15);
+      ctx.lineTo(-r * 0.38, r * 0.15);
+      ctx.closePath();
+      ctx.moveTo(r * 0.55, -r * 0.15);
+      ctx.lineTo(r * 0.2, -r * 0.15);
+      ctx.lineTo(r * 0.38, r * 0.15);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillRect(-r * 0.45, r * 0.42, r * 0.9, r * 0.12);
+      break;
+    }
+    case "zucchetta": {
+      ctx.fillStyle = "#e07a1f";
+      ctx.strokeStyle = "#3a4249";
+      ctx.lineWidth = lw;
+      ctx.beginPath();
+      ctx.ellipse(0, 0, r, r * 0.85, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = "#78ff8c";
+      ctx.fillRect(-r * 0.5, -r * 0.2, r * 0.3, r * 0.22);
+      ctx.fillRect(r * 0.2, -r * 0.2, r * 0.3, r * 0.22);
+      break;
+    }
     case "ombra": {
       // Ombra del Re: fiamma nera con occhi rossi, sfrangiata in basso.
       const wob = still ? 0 : Math.sin(t * 0.015 + phase) * r * 0.08;

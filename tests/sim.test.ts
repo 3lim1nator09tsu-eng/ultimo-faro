@@ -1195,7 +1195,17 @@ test("Fallen: il Re Caduto battuto in fretta apre l'onda nascosta, con premio a 
   s.god = true; // senza torri le Ombre arriverebbero al Faro prima del Re
   runTo(s, (x) => x.enemies.some((e) => e.kind === "risvegliato"), 500);
   const w = s.enemies.find((e) => e.kind === "risvegliato")!;
-  assert.equal(w.maxHp, king.maxHp * 3);
+  assert.equal(w.maxHp, Math.floor(king.maxHp * 3.5));
+  // Caduto il Re Risvegliato arrivano The Creator e Jack o Bot.
+  w.hp = -1e9;
+  const ev2 = step(s, []);
+  assert.ok(ev2.some((e) => e.e === "hiddenStage"));
+  runTo(s, (x) => x.enemies.some((e) => e.kind === "jackobot"), 300);
+  const cr = s.enemies.find((e) => e.kind === "creator")!;
+  const jk = s.enemies.find((e) => e.kind === "jackobot")!;
+  assert.ok(cr && jk && cr.boss && jk.boss);
+  assert.equal(cr.maxHp, Math.floor(king.maxHp * 3));
+  assert.equal(jk.maxHp, Math.floor(king.maxHp * 2.5));
   // Vincerla dà il premio nascosto.
   for (let i = 0; i < 30 && s.phase === "wave"; i++) {
     s.spawns = [];
@@ -1327,5 +1337,5 @@ test("Onda nascosta: un'ondata nuova con Ombre, Araldi, Lance e il Re Risvegliat
   const kinds = new Set(s.spawns.map((x) => x.enemy));
   for (const k of ["ombra", "araldo", "lancia", "risvegliato"]) assert.ok(kinds.has(k as never), k);
   const r = effStats(s, s.towers[0]).range;
-  assert.equal(r, Math.floor((towerStats(s.towers[0]).range * 8500) / 10000), "eclissi: gittata -15%");
+  assert.equal(r, Math.floor((towerStats(s.towers[0]).range * 8000) / 10000), "eclissi: gittata -20%");
 });

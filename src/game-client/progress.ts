@@ -128,9 +128,21 @@ export const MEDALS: Array<{ id: string; name: string; text: string; ok: (m: Med
 // ---------- bacheca ----------
 
 /** Versione del gioco: chi ospita la comunica all'admin, che vede se i comandi nuovi possono funzionare. */
-export const GAME_VERSION = "0.13.2";
+export const GAME_VERSION = "0.14";
 
 export const VERSION_NOTES: ChangeEntry[] = [
+  {
+    date: "2026-11-10",
+    title: "Versione 0.14: l'onda nascosta diventa un finale",
+    kind: "versione",
+    items: [
+      "Onda nascosta più dura: scorta più forte e più numerosa, eclissi al -20% di gittata, Re Risvegliato con più vita",
+      "Dopo il Re Risvegliato arrivano insieme The Creator e Jack o Bot, ognuno con poteri suoi",
+      "Scene teatrali: la carta trema, titoli grandi e dialoghi che si vedono solo nell'onda nascosta",
+      "Telefono: il riquadro della torre non esce più dalla carta, si scorre, si riduce col tasto e si sposta trascinando la maniglia (doppio tocco per rimetterlo a posto)",
+      "Scritte sulla carta, barra del boss e dialoghi con misure che restano leggibili su telefono e non enormi su PC",
+    ],
+  },
   {
     date: "2026-11-10",
     title: "Versione 0.13.2: grafica più leggera",

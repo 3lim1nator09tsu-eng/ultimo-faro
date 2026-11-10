@@ -12,7 +12,7 @@ export type EnemyKind =
   | "spettro" | "cavaliere" | "recaduto"
   | "brinato" | "orso" | "regina"
   | "elfo" | "pupazzetto" | "folletto" | "renna" | "pupazzo" | "befana" | "krampus"
-  | "dohoter" | "risvegliato" | "ombra" | "araldo" | "lancia";
+  | "dohoter" | "risvegliato" | "ombra" | "araldo" | "lancia" | "creator" | "jackobot" | "zucchetta";
 export type TowerKind =
   | "balestra" | "mortaio" | "soffio" | "cecchino" | "bobina" | "officina" | "grammofono" | "capitano" | "medico" | "arpione" | "mitragliera" | "purificatore"
   | "custode" | "campana" | "cometa" | "kingpin" | "sledger" | "executioner" | "starcannon" | "accelerator";
@@ -129,6 +129,17 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
     name: "Re Risvegliato", plural: "Re Risvegliati", cls: "corazza", hp: 150, speed: 24, armor: 60, bounty: 80, lifeDamage: 1000, regenBp: 3, slowImmune: true,
     summon: { kind: "ombra", count: 4, every: 90 }, song: { range: 3600, every: 120, stun: 35 }, phases: [8000, 6000, 4000, 2000], phaseShieldBp: 2500,
   },
+  // Dopo il Re Risvegliato, nell'onda nascosta: i due che stavano dietro a tutto.
+  creator: {
+    name: "The Creator", plural: "The Creator", cls: "corazza", hp: 150, speed: 20, armor: 70, bounty: 120, lifeDamage: 1000, regenBp: 2, slowImmune: true,
+    summon: { kind: "araldo", count: 2, every: 120 }, song: { range: 4000, every: 100, stun: 40 }, phases: [7500, 5000, 2500], phaseShieldBp: 3000,
+  },
+  jackobot: {
+    name: "Jack o Bot", plural: "Jack o Bot", cls: "meccanico", hp: 150, speed: 40, armor: 40, bounty: 120, lifeDamage: 1000, slowImmune: true,
+    charge: { every: 70, ticks: 15, speedBp: 30000 }, steal: { every: 60, amount: 50 }, summon: { kind: "zucchetta", count: 3, every: 80 },
+    split: { kind: "zucchetta", count: 8 }, phases: [5000], phaseShieldBp: 2000,
+  },
+  zucchetta: { name: "Zucchetta", plural: "Zucchette", cls: "meccanico", hp: 60, speed: 90, armor: 10, bounty: 5, lifeDamage: 2 },
   ombra: { name: "Ombra del Re", plural: "Ombre del Re", cls: "carne", hp: 70, speed: 96, armor: 0, bounty: 8, lifeDamage: 2, hidden: true },
   araldo: { name: "Araldo Nero", plural: "Araldi Neri", cls: "corazza", hp: 420, speed: 36, armor: 45, bounty: 30, lifeDamage: 6, sabotage: { range: 2600, every: 80, stun: 30 } },
   lancia: { name: "Lancia Nera", plural: "Lance Nere", cls: "corazza", hp: 260, speed: 48, armor: 35, bounty: 22, lifeDamage: 5, slowImmune: true, charge: { every: 60, ticks: 15, speedBp: 32000 }, split: { kind: "ombra", count: 2 } },

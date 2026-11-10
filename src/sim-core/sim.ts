@@ -197,7 +197,7 @@ export interface GameState {
   spawns: Spawn[];
   units: Unit[];
   quakes?: Quake[];
-  hidden?: { bossAt: number; bossId: number; on: boolean; lostInHidden?: boolean }; // Fallen: onda nascosta
+  hidden?: { bossAt: number; bossId: number; on: boolean; lostInHidden?: boolean; kingHp?: number; stage?: number }; // Fallen: onda nascosta
   tw: Twist; // scelte della modalità: offerte, contratti, reliquie, bracieri, momenti rapidi
 }
 
@@ -293,6 +293,7 @@ export type GameEvent =
   | { e: "cannon"; from: number; x: number; y: number; radius: number; power: number }
   | { e: "laser"; from: number; x: number; y: number; tx: number; ty: number }
   | { e: "hidden" }
+  | { e: "hiddenStage"; stage: number }
   | { e: "blizzard"; on: boolean }
   | { e: "qte"; id: number }
   | { e: "qteEnd"; ok: boolean; x: number; y: number }
@@ -519,7 +520,7 @@ export function effStats(state: GameState, t: Tower): TowerStats {
     if (tw.blizzard && cold(state, t)) coldBp = BLIZZARD.slowBp;
   }
   // Eclissi dell'onda nascosta: le torri vedono meno lontano.
-  if (state.hidden?.on && state.phase === "wave") rng -= 1500;
+  if (state.hidden?.on && state.phase === "wave") rng -= HIDDEN.eclipseBp;
   if (!dmg && !rng && !haste && !detect && coldBp === 10000) return s;
   return {
     ...s,
@@ -942,21 +943,25 @@ function accelerate(state: GameState, t: Tower, s: TowerStats, events: GameEvent
 function startHidden(state: GameState, king: Enemy, events: GameEvent[]) {
   const level = levelOf(state);
   state.hidden!.on = true;
+  state.hidden!.kingHp = king.maxHp;
+  state.hidden!.stage = 1;
   state.wave += 1;
   // La forza dei nemici è quella dell'ultima ondata di Fallen.
   const last = waveFor(state.mode, level, waveCount(state) - 2, state.night).find((g) => !g.boss);
-  const m = last?.hpMulBp ?? 10000;
+  // Più duri dell'ultima ondata: è l'onda che si guadagna solo chi è stato bravo.
+  const m = Math.floor(((last?.hpMulBp ?? 10000) * HIDDEN.escortBp) / 10000);
   const lanes = level.map.lanes.map((_, i) => i).filter((i) => laneIsOpen(state, i));
   const at = (k: number) => lanes[k % lanes.length] ?? 0;
   const push = (enemy: EnemyKind, n: number, delay: number, every: number, extra: Partial<Spawn> = {}) => {
     for (let i = 0; i < n; i++) state.spawns.push({ tick: state.tick + delay + i * every, enemy, lane: at(i), mods: 0, hpMulBp: m, lifeDamage: ENEMIES[enemy].lifeDamage, boss: false, ...extra });
   };
-  push("ombra", 16, 40, 8);
-  push("araldo", 6, 130, 30);
-  push("lancia", 8, 230, 25);
-  push("risvegliato", 1, 320, 0, { boss: true, fixedHp: king.maxHp * HIDDEN.hpMul, lifeDamage: 1000, hpMulBp: 10000 });
-  push("ombra", 20, 420, 6);
-  push("araldo", 4, 520, 40, { mods: modsToBits(["schermato"]) });
+  push("ombra", 24, 40, 7);
+  push("araldo", 8, 130, 26);
+  push("lancia", 12, 230, 20);
+  push("risvegliato", 1, 320, 0, { boss: true, fixedHp: Math.floor(king.maxHp * HIDDEN.hpMul), lifeDamage: 1000, hpMulBp: 10000 });
+  push("ombra", 30, 420, 5);
+  push("araldo", 6, 520, 35, { mods: modsToBits(["schermato"]) });
+  push("lancia", 8, 600, 25, { mods: modsToBits(["agile"]) });
   state.spawns.sort((a, b) => a.tick - b.tick || a.lane - b.lane);
   events.push({ e: "hidden" });
 }
@@ -1522,6 +1527,21 @@ function clearDead(state: GameState, events: GameEvent[]): void {
     }
     state.kills += 1;
     if (state.hidden && !state.hidden.on && e.id === state.hidden.bossId && state.tick - state.hidden.bossAt <= HIDDEN.window) startHidden(state, e, events);
+    if (state.hidden?.on && e.kind === "risvegliato" && state.hidden.stage === 1) {
+      // Caduto il Re Risvegliato, arrivano i due che stavano dietro a tutto.
+      const hp = state.hidden.kingHp ?? e.maxHp;
+      state.hidden.stage = 2;
+      state.spawns.push({ tick: state.tick + 30, enemy: "creator", lane: 0, mods: 0, hpMulBp: 10000, lifeDamage: 1000, boss: true, fixedHp: Math.floor(hp * HIDDEN.creatorMul) });
+      const lanes = levelOf(state).map.lanes.length;
+      state.spawns.push({ tick: state.tick + 90, enemy: "jackobot", lane: lanes > 1 && laneIsOpen(state, 1) ? 1 : 0, mods: 0, hpMulBp: 10000, lifeDamage: 1000, boss: true, fixedHp: Math.floor(hp * HIDDEN.jackMul) });
+      // La loro scorta: Lance e Araldi più forti dell'ultima ondata.
+      const last = waveFor(state.mode, levelOf(state), waveTotal(state.mode, levelOf(state), state.night) - 1, state.night).find((g) => !g.boss);
+      const m = Math.floor(((last?.hpMulBp ?? 10000) * HIDDEN.escortBp) / 10000);
+      for (let i = 0; i < 10; i++) state.spawns.push({ tick: state.tick + 60 + i * 18, enemy: "lancia", lane: laneIsOpen(state, i % lanes) ? i % lanes : 0, mods: 0, hpMulBp: m, lifeDamage: ENEMIES.lancia.lifeDamage, boss: false });
+      for (let i = 0; i < 4; i++) state.spawns.push({ tick: state.tick + 140 + i * 40, enemy: "araldo", lane: laneIsOpen(state, i % lanes) ? i % lanes : 0, mods: modsToBits(["schermato"]), hpMulBp: m, lifeDamage: ENEMIES.araldo.lifeDamage, boss: false });
+      state.spawns.sort((a, b) => a.tick - b.tick || a.lane - b.lane);
+      events.push({ e: "hiddenStage", stage: 2 });
+    }
     if (e.boss && !ADMIN_BOSSES.includes(e.kind)) {
       state.bossKills += 1;
       // Fallen: ogni mini-boss abbattuto lascia una reliquia da scegliere.
@@ -2117,6 +2137,7 @@ export function hashState(state: GameState): string {
     for (const id of q.ids) mix(id);
   }
   if (state.hidden) {
+    mix(state.hidden.stage ?? 0);
     mix(state.hidden.bossAt);
     mix(state.hidden.bossId);
     mix(state.hidden.on ? 1 : 0);

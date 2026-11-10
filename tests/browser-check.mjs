@@ -355,6 +355,48 @@ for (const vp of [{ width: 390, height: 700 }, { width: 844, height: 390 }]) {
   await context.close();
 }
 
+// ---------- riquadro della torre su telefono ----------
+{
+  const tag = "390x760";
+  const { page, errors, context } = await open({ width: 390, height: 760 });
+  while (await page.locator("#dialog").isVisible()) await page.locator("#dialog").tap();
+  await page.evaluate(() => {
+    const f = window.__faro;
+    f.debug.restart(31, { mode: "easy", level: "porto", sandbox: true });
+    f.debug.send({ t: "build", kind: "kingpin", cx: 5, cy: 3 });
+    const t = f.state.towers[0];
+    f.debug.send({ t: "upgrade", id: t.id });
+    f.debug.send({ t: "upgrade", id: t.id });
+  });
+  await tapCell(page, 5, 3);
+  await page.waitForTimeout(150);
+  const stage = await page.locator("#stage").boundingBox();
+  const det = await page.locator("#detail").boundingBox();
+  check(`${tag}: il riquadro della torre resta dentro la carta`, det.y >= stage.y - 1 && det.y + det.height <= stage.y + stage.height + 1, JSON.stringify({ stage, det }));
+  check(`${tag}: il riquadro ha la maniglia e il tasto Riduci`, (await page.locator("#dHandle").isVisible()) && (await page.locator("#dMin").isVisible()));
+  await page.locator("#dMin").tap();
+  await page.waitForTimeout(80);
+  const small = await page.locator("#detail").boundingBox();
+  check(`${tag}: ridotto, il riquadro lascia vedere la carta`, small.height < 140 && (await page.locator("#btnClose").isVisible()), String(small.height));
+  // Trascinando la maniglia il riquadro si sposta.
+  const h = await page.locator("#dHandle").boundingBox();
+  await page.mouse.move(h.x + 20, h.y + h.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(h.x + 20, stage.y + 40, { steps: 6 });
+  await page.mouse.up();
+  await page.waitForTimeout(80);
+  const moved = await page.locator("#detail").boundingBox();
+  check(`${tag}: la maniglia sposta il riquadro`, moved.y < small.y - 50 && moved.y >= stage.y, `${small.y} → ${moved.y}`);
+  await page.screenshot({ path: `${outDir}/70-detail-min-${tag}.png` });
+  await page.locator("#dMin").tap();
+  await page.waitForTimeout(80);
+  const big = await page.locator("#detail").boundingBox();
+  check(`${tag}: riaperto, il riquadro resta nella carta`, big.y >= stage.y - 1 && big.y + big.height <= stage.y + stage.height + 1);
+  await page.screenshot({ path: `${outDir}/71-detail-open-${tag}.png` });
+  check(`${tag}: nessun errore nel riquadro`, errors.length === 0, errors.join(" | "));
+  await context.close();
+}
+
 // ---------- scelte del giocatore ----------
 for (const vp of [{ width: 390, height: 760 }, { width: 844, height: 390 }]) {
   const tag = `${vp.width}x${vp.height}`;

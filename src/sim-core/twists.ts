@@ -81,7 +81,7 @@ export const BLIZZARD = { every: 4, radius: 3000, slowBp: 14000, braziers: 2, ex
 // ---------- Fallen: onda nascosta ----------
 
 /** Se il Re Caduto cade entro 45 secondi dalla sua comparsa, si risveglia. */
-export const HIDDEN = { window: 450, hpMul: 3, schegge: 1500, perle: 25 };
+export const HIDDEN = { window: 450, hpMul: 3.5, creatorMul: 3, jackMul: 2.5, escortBp: 14000, eclipseBp: 2000, schegge: 1500, perle: 25 };
 
 // ---------- Notte 5: momenti rapidi ----------
 

@@ -1,6 +1,6 @@
 // Client del prototipo: disegna lo stato, raccoglie i tocchi, non decide mai le regole.
 import { ADMIN_ONLY, EVENT_TOWER, KINGPIN_QUEUE, SURVIVAL_MAPS, UNITS, UNIT_ORDER, ABILITIES, APEX_RANK, AbilityId, ENEMIES, GameMode, HARDCORE_TOWERS, LEVELS, MODS, LOADOUT_SIZE, MAP_H, MAP_W, MAX_RANK, RANK_COSTS, RULES, STARTER_TOWERS, TICKS_PER_SECOND, TILE, TOWERS, TOWER_ORDER, TRACKS, TowerKind, Track, Branch, levelById } from "../sim-core/content";
-import { Command, GameEvent, GameOptions, GameState, modBit, playerCount, hiddenWon, canPlace, covers, sizeOf, abilityCdOf, allowedOf, cashOf, apexBlock, apexPrice, applyCommands, modsOf, perleFor, cellEmerged, createGame, effStats, hashState, isBuildable, laneIsOpen, levelOf, rankedStats, restore, rewardFor, sellValue, specPrice, statsIn, snapshot, starsFor, step, upgradePrice, waveCount, wavePreview } from "../sim-core/sim";
+import { Command, Enemy, GameEvent, GameOptions, GameState, modBit, playerCount, hiddenWon, canPlace, covers, sizeOf, abilityCdOf, allowedOf, cashOf, apexBlock, apexPrice, applyCommands, modsOf, perleFor, cellEmerged, createGame, effStats, hashState, isBuildable, laneIsOpen, levelOf, rankedStats, restore, rewardFor, sellValue, specPrice, statsIn, snapshot, starsFor, step, upgradePrice, waveCount, wavePreview } from "../sim-core/sim";
 import { playBot } from "../sim-core/bot";
 import { drawTwist, qteKey, renderAim, renderChoice, renderQte, renderTwist, twistToast } from "./twist-ui";
 import { HARDCORE, ModeDef, NIGHTS, SURVIVAL, disgeloFor, modeDef } from "../sim-core/modes";
@@ -10,7 +10,7 @@ import { renderLobby, renderOnline } from "./online-ui";
 import { AdminApi, BalanceEntry, BalanceKind, describeAll, describeEntry, renderAdminDrawer, renderAdminPanel } from "./admin";
 import { Balance, applyBalance, balanceSize, cleanBalance, emptyBalance, mergeBalance, pruneBalance } from "../sim-core/balance";
 import { ChangeEntry, MEDALS, MISSIONS, MissionSlot, Totals, GAME_VERSION, VERSION_NOTES, emptyTotals, levelFromXp, levelReward, missionProgress, missionTarget, missionText, newSlot } from "./progress";
-import { COLORS, enemySize, applyMap, drawEnemy, drawFaro, drawShoal, drawTide, drawTowerShape, mapToScreen, renderBackground, toPx } from "./draw";
+import { COLORS, enemySize, applyMap, drawEnemy, drawEnemyBody, drawFaro, drawShoal, drawTide, drawTowerShape, mapToScreen, renderBackground, toPx } from "./draw";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const fmt = (n: number) => n.toLocaleString("it-IT");
@@ -159,9 +159,16 @@ let inspectId: number | null = null;
 let hoverId: number | null = null;
 const drawnAt = new Map<number, { x: number; y: number }>();
 const aim = new Map<number, number>();
+/** Quando ha sparato ogni torre (rinculo) e quando è stata costruita o migliorata (saltello). */
+const fired = new Map<number, number>();
+const popAt = new Map<number, number>();
+/** Ultimo aspetto di ogni nemico: direzione, vita e posizione, per girarlo, farlo lampeggiare e farlo cadere. */
+const shown = new Map<number, { e: Enemy; x: number; y: number; h: number; hp: number; hitAt: number }>();
+const KICK_MS: Partial<Record<TowerKind, number>> = { sledger: 340, mortaio: 320, starcannon: 520, executioner: 420, arpione: 380, cecchino: 240, balestra: 220 };
 
 interface Fx {
-  kind: "tracer" | "blast" | "float" | "zap" | "beam" | "ring" | "cone" | "axe";
+  kind: "tracer" | "blast" | "float" | "zap" | "beam" | "ring" | "cone" | "axe" | "corpse";
+  en?: Enemy; // chi sta cadendo
   a?: number; // direzione del cono, in radianti
   w?: number; // ampiezza del cono, in radianti
   pts?: number[];
@@ -1150,24 +1157,29 @@ function handleEvents(events: GameEvent[]) {
         break;
       case "zap":
         fx.push({ kind: "zap", x: ev.points[0], y: ev.points[1], pts: ev.points, born: now, life: 160 });
+        if (ev.points.length >= 4) setAim(ev.from, ev.points[0], ev.points[1], ev.points[2], ev.points[3]);
         sfx.zap();
         break;
       case "axe":
         fx.push({ kind: "axe", x: ev.points[0], y: ev.points[1], pts: ev.points, born: now, life: 140 + 70 * (ev.points.length / 2 - 1) });
+        if (ev.points.length >= 4) setAim(ev.from, ev.points[0], ev.points[1], ev.points[2], ev.points[3]);
         sfx.shot();
         break;
       case "swing":
         fx.push({ kind: "cone", x: ev.x, y: ev.y, r: ev.range, a: Math.atan2(ev.ty - ev.y, ev.tx - ev.x), w: (ev.cone * Math.PI) / 180, born: now, life: 240 });
+        setAim(ev.from, ev.x, ev.y, ev.tx, ev.ty);
         sfx.blast();
         break;
       case "cannon":
         fx.push({ kind: "beam", x: ev.x, y: ev.y, r: ev.radius * 1.4, born: now, life: 700 + ev.power * 6 });
         fx.push({ kind: "ring", x: ev.x, y: ev.y, r: ev.radius, color: "#ffd86b", born: now, life: 600 });
         if (ev.power >= 100) fx.push({ kind: "float", x: ev.x, y: ev.y - 600, text: "Carica piena!", color: "#ffd86b", born: now, life: 1100 });
+        fired.set(ev.from, now);
         sfx.beam();
         break;
       case "laser":
         fx.push({ kind: "zap", x: ev.x, y: ev.y, pts: [ev.x, ev.y, ev.tx, ev.ty], color: "#7fe3ff", born: now, life: 90 });
+        setAim(ev.from, ev.x, ev.y, ev.tx, ev.ty);
         break;
       case "iced":
         fx.push({ kind: "ring", x: ev.x, y: ev.y, r: 600, color: "#bfe8ff", born: now, life: 420 });
@@ -1332,9 +1344,13 @@ function handleEvents(events: GameEvent[]) {
         }
         break;
       case "built":
-      case "upgraded":
+      case "upgraded": {
+        popAt.set(ev.id, now);
+        const tw = state.towers.find((t) => t.id === ev.id);
+        if (tw && ev.e === "upgraded") fx.push({ kind: "ring", x: tw.x, y: tw.y, r: 700, color: COLORS.brass, born: now, life: 380 });
         sfx.build();
         break;
+      }
       case "sold":
         sfx.coin();
         break;
@@ -1365,6 +1381,7 @@ function bossLabel(): string {
 
 function setAim(id: number, x: number, y: number, tx: number, ty: number) {
   aim.set(id, Math.atan2(ty - y, tx - x));
+  fired.set(id, performance.now());
 }
 
 function tick() {
@@ -1598,6 +1615,9 @@ function beginState(st: GameState) {
   state = st;
   myP = match && match.state === st ? Math.max(0, match.order.indexOf(match.me.id)) : 0;
   builtAt.clear();
+  popAt.clear();
+  fired.clear();
+  shown.clear();
   goldFlash = 0;
   $("adminDrawer").hidden = true;
   buildCards();
@@ -2802,7 +2822,12 @@ function render(now: number) {
       ctx.restore();
     }
     const angle = aim.has(t.id) ? aim.get(t.id)! + turn() : -0.6;
-    drawTowerShape(ctx, t.kind, p.x, p.y, pxT * sizeOf(t.kind), angle, t.level, t.branch, reducedMotion ? 0 : now, t.track);
+    const shotAgo = now - (fired.get(t.id) ?? -1e9);
+    const kick = reducedMotion ? 0 : Math.max(0, 1 - shotAgo / (KICK_MS[t.kind] ?? 170));
+    // Appena costruita o migliorata la torre fa un saltello.
+    const born = (now - (popAt.get(t.id) ?? -1e9)) / 320;
+    const pop = reducedMotion || born >= 1 ? 1 : 1 + 0.22 * Math.sin(born * Math.PI) * (1 - born * 0.5);
+    drawTowerShape(ctx, t.kind, p.x, p.y, pxT * sizeOf(t.kind) * pop, angle, t.level, t.branch, reducedMotion ? 0 : now, t.track, kick);
     towerStatus(t, p.x, p.y, pxT, now);
     if (t.id === selectedId) {
       const r = cellRect(t.cx, t.cy);
@@ -2822,7 +2847,20 @@ function render(now: number) {
     const uy = prev ? prev.y + (e.y - prev.y) * alpha : e.y;
     const lane = e.boss ? 0 : e.offset;
     const p = S(ux + lane * 0.5, uy + lane);
-    drawEnemy(ctx, e, p.x, p.y, pxT, now, reducedMotion, many);
+    // Il nemico guarda dove cammina e lampeggia quando perde vita.
+    let look = shown.get(e.id);
+    if (!look) shown.set(e.id, (look = { e, x: 0, y: 0, h: turn(), hp: e.hp, hitAt: -1e9 }));
+    if (prev && (e.x !== prev.x || e.y !== prev.y)) {
+      const want = Math.atan2(e.y - prev.y, e.x - prev.x) + turn();
+      const diff = Math.atan2(Math.sin(want - look.h), Math.cos(want - look.h));
+      look.h += diff * 0.3;
+    }
+    if (e.hp < look.hp) look.hitAt = now;
+    look.hp = e.hp;
+    look.e = e;
+    look.x = ux + lane * 0.5;
+    look.y = uy + lane;
+    drawEnemy(ctx, e, p.x, p.y, pxT, now, reducedMotion, many, look.h, !reducedMotion && now - look.hitAt < 70);
     if (e.frozen || e.chill) {
       // Gelo dello Sledger: velo azzurro, pieno se congelato.
       ctx.save();
@@ -2835,6 +2873,16 @@ function render(now: number) {
     // Nelle folle enormi i segni dei modificatori restano solo sui boss: la barra della vita basta.
     if ((e.mods || e.shield || e.mark || e.bounty) && (e.boss || state.enemies.length < 150)) enemyMarks(e, p.x, p.y, pxT, now);
     drawnAt.set(e.id, p);
+  }
+  // Chi non c'è più ed è stato abbattuto cade a pezzi; chi è arrivato al Faro sparisce e basta.
+  if (shown.size > state.enemies.length) {
+    const live = new Set<number>();
+    for (const e of state.enemies) live.add(e.id);
+    for (const [id, v] of shown) {
+      if (live.has(id)) continue;
+      shown.delete(id);
+      if (v.e.hp <= 0 && !reducedMotion && (!many || v.e.boss)) fx.push({ kind: "corpse", x: v.x, y: v.y, a: v.h, en: v.e, born: performance.now(), life: v.e.boss ? 900 : 420 });
+    }
   }
   for (const u of state.units) drawUnit(u, pxT, now);
 
@@ -2867,7 +2915,25 @@ function render(now: number) {
     const k = (clock - f.born) / f.life;
     const p = S(f.x, f.y);
     ctx.save();
-    if (f.kind === "zap") {
+    if (f.kind === "corpse") {
+      // Caduta: la figura si rimpicciolisce e svanisce, i pezzi volano via.
+      const en = f.en!;
+      const r = pxT * enemySize(en);
+      ctx.globalAlpha = 1 - k;
+      ctx.translate(p.x, p.y);
+      ctx.save();
+      ctx.scale(1 - 0.4 * k, 1 - 0.4 * k);
+      drawEnemyBody(ctx, en, 0, 0, pxT, f.a ?? 0, 0, k < 0.3);
+      ctx.restore();
+      const n = en.boss ? 12 : 6;
+      for (let i = 0; i < n; i++) {
+        const a = en.id * 1.7 + (i * Math.PI * 2) / n;
+        const d = r * (0.5 + 1.9 * k * (0.7 + (i % 3) * 0.2));
+        const q = r * (en.boss ? 0.16 : 0.22) * (1 - k * 0.5);
+        ctx.fillStyle = i % 2 ? "#eee4cb" : "#0d1418";
+        ctx.fillRect(Math.cos(a) * d - q / 2, Math.sin(a) * d - q / 2 - Math.sin(k * Math.PI) * r * 0.5, q, q);
+      }
+    } else if (f.kind === "zap") {
       const pts = f.pts!;
       ctx.strokeStyle = f.color ?? "#e9e2ff";
       // L'alone dei fulmini è l'effetto più costoso: in grafica leggera si toglie.

@@ -2,6 +2,7 @@ import { DOHOTER_FACE } from "./assets/dohoter";
 // Disegno su canvas. Tutto è in coordinate della mappa: T è il lato di una casella in pixel.
 import { Branch, ENEMIES, MAP_H, MAP_W, MapDef, TILE, TowerKind, Track } from "../sim-core/content";
 import { Enemy, isHidden } from "../sim-core/sim";
+import { enemyFigure, towerFigure } from "./figures";
 
 export const COLORS = {
   brass: "#e0b354",
@@ -399,389 +400,12 @@ export function drawFaro(ctx: CanvasRenderingContext2D, T: number, time: number,
 
 export const TRACK_COLORS: Record<Track, string> = { danno: "#e2714f", gittata: "#a5e4ec", sconto: "#9fd28b" };
 
-export function drawTowerShape(ctx: CanvasRenderingContext2D, kind: TowerKind, x: number, y: number, T: number, angle: number, level = 1, branch: Branch | null = null, time = 0, track: Track = "danno") {
+export function drawTowerShape(ctx: CanvasRenderingContext2D, kind: TowerKind, x: number, y: number, T: number, angle: number, level = 1, branch: Branch | null = null, time = 0, track: Track = "danno", kick = 0) {
   ctx.save();
   ctx.translate(x, y);
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
-  // Basamento comune: ombra, pietra scura con un bordo chiaro e un anello interno, per staccare la torre dalla terra.
-  ctx.fillStyle = "rgba(0,0,0,.35)";
-  ctx.beginPath();
-  ctx.ellipse(T * 0.05, T * 0.08, T * 0.42, T * 0.38, 0, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = "#1a2124";
-  ctx.strokeStyle = level >= 5 ? COLORS.brass : "rgba(238,228,203,.55)";
-  ctx.lineWidth = Math.max(1, T * (level >= 5 ? 0.05 : 0.03));
-  ctx.beginPath();
-  ctx.arc(0, 0, T * 0.4, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.stroke();
-  ctx.strokeStyle = "rgba(255,255,255,.07)";
-  ctx.lineWidth = Math.max(1, T * 0.04);
-  ctx.beginPath();
-  ctx.arc(0, 0, T * 0.33, Math.PI * 1.05, Math.PI * 1.75);
-  ctx.stroke();
-
-  if (kind === "balestra") {
-    ctx.rotate(angle);
-    ctx.strokeStyle = branch === "B" ? COLORS.coral : COLORS.brass;
-    ctx.lineWidth = T * 0.08;
-    ctx.beginPath();
-    ctx.arc(-T * 0.02, 0, T * 0.27, -1.05, 1.05);
-    ctx.stroke();
-    ctx.strokeStyle = COLORS.cream;
-    ctx.lineWidth = T * 0.05;
-    ctx.beginPath();
-    ctx.moveTo(-T * 0.27, 0);
-    ctx.lineTo(T * 0.33, 0);
-    ctx.stroke();
-    if (branch === "A") {
-      ctx.beginPath();
-      ctx.moveTo(-T * 0.17, -T * 0.11);
-      ctx.lineTo(T * 0.24, -T * 0.11);
-      ctx.moveTo(-T * 0.17, T * 0.11);
-      ctx.lineTo(T * 0.24, T * 0.11);
-      ctx.lineWidth = T * 0.03;
-      ctx.stroke();
-    }
-  } else if (kind === "mortaio") {
-    ctx.fillStyle = COLORS.iron;
-    ctx.beginPath();
-    for (let i = 0; i < 8; i++) {
-      const a = (i * Math.PI) / 4 + Math.PI / 8;
-      const px = Math.cos(a) * T * 0.3;
-      const py = Math.sin(a) * T * 0.3;
-      if (i === 0) ctx.moveTo(px, py);
-      else ctx.lineTo(px, py);
-    }
-    ctx.closePath();
-    ctx.fill();
-    ctx.rotate(angle);
-    ctx.fillStyle = "#2b3236";
-    ctx.fillRect(-T * 0.08, -T * 0.13, T * 0.36, T * 0.26);
-    ctx.fillStyle = branch === "B" ? COLORS.coral : branch === "A" ? COLORS.brass : COLORS.cream;
-    ctx.fillRect(T * 0.24, -T * 0.14, T * 0.07, T * 0.28);
-  } else if (kind === "arpione") {
-    ctx.rotate(angle);
-    ctx.strokeStyle = "#8a7a58";
-    ctx.lineWidth = Math.max(1, T * 0.03);
-    ctx.beginPath();
-    ctx.arc(-T * 0.1, 0, T * 0.16, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.strokeStyle = COLORS.cream;
-    ctx.lineWidth = T * 0.06;
-    ctx.beginPath();
-    ctx.moveTo(-T * 0.3, 0);
-    ctx.lineTo(T * 0.26, 0);
-    ctx.stroke();
-    ctx.fillStyle = branch === "B" ? COLORS.coral : "#c9b8ff";
-    ctx.beginPath();
-    ctx.moveTo(T * 0.4, 0);
-    ctx.lineTo(T * 0.22, -T * 0.11);
-    ctx.lineTo(T * 0.26, 0);
-    ctx.lineTo(T * 0.22, T * 0.11);
-    ctx.closePath();
-    ctx.fill();
-  } else if (kind === "mitragliera") {
-    ctx.rotate(angle);
-    ctx.fillStyle = "#2b3236";
-    ctx.fillRect(-T * 0.16, -T * 0.16, T * 0.26, T * 0.32);
-    ctx.save();
-    ctx.translate(T * 0.12, 0);
-    ctx.rotate(branch === "A" ? time * 0.03 : time * 0.012);
-    ctx.fillStyle = branch === "B" ? "#fff1b0" : "#c9b8ff";
-    for (let i = 0; i < 3; i++) {
-      ctx.rotate((Math.PI * 2) / 3);
-      ctx.fillRect(0, -T * 0.035, T * 0.24, T * 0.07);
-    }
-    ctx.restore();
-  } else if (kind === "purificatore") {
-    const pulse = 1 + 0.08 * Math.sin(time * 0.006);
-    ctx.fillStyle = branch === "B" ? COLORS.coral : "#fff1b0";
-    ctx.beginPath();
-    for (let i = 0; i < 16; i++) {
-      const a = (i * Math.PI) / 8;
-      const r = (i % 2 ? T * 0.13 : T * 0.3) * pulse;
-      ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
-    }
-    ctx.closePath();
-    ctx.fill();
-    ctx.fillStyle = "#c9b8ff";
-    ctx.beginPath();
-    ctx.arc(0, 0, T * 0.08, 0, Math.PI * 2);
-    ctx.fill();
-  } else if (kind === "grammofono") {
-    // Il DJ: un disco che gira e una tromba del colore del disco scelto.
-    ctx.fillStyle = "#0a0f11";
-    ctx.beginPath();
-    ctx.arc(0, T * 0.05, T * 0.25, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = "rgba(238,228,203,.35)";
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.arc(0, T * 0.05, T * 0.17, time * 0.004, time * 0.004 + 4);
-    ctx.stroke();
-    ctx.fillStyle = TRACK_COLORS[track];
-    ctx.beginPath();
-    ctx.arc(0, T * 0.05, T * 0.06, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.beginPath();
-    ctx.moveTo(T * 0.05, -T * 0.05);
-    ctx.lineTo(T * 0.32, -T * 0.34);
-    ctx.lineTo(T * 0.12, -T * 0.38);
-    ctx.closePath();
-    ctx.fill();
-  } else if (kind === "capitano") {
-    ctx.strokeStyle = COLORS.cream;
-    ctx.lineWidth = Math.max(1, T * 0.04);
-    ctx.beginPath();
-    ctx.moveTo(-T * 0.12, T * 0.28);
-    ctx.lineTo(-T * 0.12, -T * 0.3);
-    ctx.stroke();
-    ctx.fillStyle = branch === "B" ? COLORS.coral : COLORS.brass;
-    const wave = Math.sin(time * 0.006) * T * 0.03;
-    ctx.beginPath();
-    ctx.moveTo(-T * 0.12, -T * 0.3);
-    ctx.quadraticCurveTo(T * 0.08, -T * 0.3 + wave, T * 0.28, -T * 0.2);
-    ctx.lineTo(-T * 0.12, -T * 0.05);
-    ctx.closePath();
-    ctx.fill();
-  } else if (kind === "medico") {
-    ctx.fillStyle = COLORS.cream;
-    ctx.beginPath();
-    ctx.arc(0, 0, T * 0.24, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = branch === "A" ? COLORS.brass : "#3f9b6b";
-    ctx.fillRect(-T * 0.06, -T * 0.17, T * 0.12, T * 0.34);
-    ctx.fillRect(-T * 0.17, -T * 0.06, T * 0.34, T * 0.12);
-  } else if (kind === "cecchino") {
-    ctx.rotate(angle);
-    ctx.fillStyle = "#2b3236";
-    ctx.beginPath();
-    ctx.arc(0, 0, T * 0.17, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = branch === "B" ? COLORS.coral : branch === "A" ? COLORS.brass : COLORS.cream;
-    ctx.fillRect(-T * 0.06, -T * 0.045, T * 0.44, T * 0.09);
-    ctx.fillStyle = COLORS.iron;
-    ctx.fillRect(-T * 0.02, -T * 0.13, T * 0.16, T * 0.06);
-  } else if (kind === "bobina") {
-    ctx.strokeStyle = branch === "B" ? COLORS.coral : "#c9b8ff";
-    ctx.lineWidth = Math.max(1, T * 0.045);
-    for (let i = 0; i < 3; i++) {
-      ctx.beginPath();
-      ctx.ellipse(0, T * (0.12 - i * 0.12), T * (0.26 - i * 0.04), T * 0.08, 0, 0, Math.PI * 2);
-      ctx.stroke();
-    }
-    ctx.fillStyle = COLORS.cream;
-    ctx.beginPath();
-    ctx.arc(0, -T * 0.22, T * 0.07, 0, Math.PI * 2);
-    ctx.fill();
-    if (time && Math.floor(time / 120) % 3 === 0) {
-      ctx.strokeStyle = "#e9e2ff";
-      ctx.lineWidth = Math.max(1, T * 0.025);
-      ctx.beginPath();
-      ctx.moveTo(0, -T * 0.22);
-      ctx.lineTo(T * 0.12, -T * 0.3);
-      ctx.lineTo(T * 0.06, -T * 0.36);
-      ctx.stroke();
-    }
-  } else if (kind === "officina") {
-    ctx.rotate(time * 0.0003);
-    ctx.fillStyle = branch === "B" ? COLORS.coral : COLORS.brass;
-    ctx.beginPath();
-    for (let i = 0; i < 16; i++) {
-      const a = (i * Math.PI) / 8;
-      const r = i % 2 ? T * 0.22 : T * 0.3;
-      ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
-    }
-    ctx.closePath();
-    ctx.fill();
-    ctx.fillStyle = "#1a2124";
-    ctx.beginPath();
-    ctx.arc(0, 0, T * 0.1, 0, Math.PI * 2);
-    ctx.fill();
-  } else if (kind === "sledger") {
-    // Sledger: martello pesante con la testa di ghiaccio, girato verso il bersaglio.
-    ctx.rotate(angle);
-    ctx.fillStyle = "#5a4330";
-    ctx.fillRect(-T * 0.26, -T * 0.035, T * 0.42, T * 0.07);
-    ctx.fillStyle = branch === "A" ? "#bfe8ff" : branch === "B" ? "#8fd0ff" : "#c7d2d8";
-    ctx.strokeStyle = "#e9f6ff";
-    ctx.lineWidth = Math.max(1, T * 0.025);
-    ctx.beginPath();
-    ctx.rect(T * 0.12, -T * 0.2, T * 0.2, T * 0.4);
-    ctx.fill();
-    ctx.stroke();
-    ctx.fillStyle = "rgba(255,255,255,.55)";
-    ctx.fillRect(T * 0.15, -T * 0.16, T * 0.05, T * 0.32);
-  } else if (kind === "executioner") {
-    // Executioner: ascia a mezzaluna sopra un ceppo scuro.
-    ctx.fillStyle = "#2b2422";
-    ctx.beginPath();
-    ctx.ellipse(0, T * 0.18, T * 0.28, T * 0.1, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.rotate(angle);
-    ctx.fillStyle = "#6b4a2e";
-    ctx.fillRect(-T * 0.2, -T * 0.03, T * 0.42, T * 0.06);
-    ctx.fillStyle = branch === "A" ? COLORS.coral : branch === "B" ? "#c9b8ff" : "#d6dde0";
-    ctx.beginPath();
-    ctx.moveTo(T * 0.12, -T * 0.04);
-    ctx.quadraticCurveTo(T * 0.42, -T * 0.32, T * 0.3, -T * 0.04);
-    ctx.lineTo(T * 0.3, T * 0.04);
-    ctx.quadraticCurveTo(T * 0.42, T * 0.32, T * 0.12, T * 0.04);
-    ctx.closePath();
-    ctx.fill();
-  } else if (kind === "starcannon") {
-    // Star Cannon: canna larga puntata in alto, anelli dorati e una stella sulla bocca.
-    ctx.rotate(angle);
-    ctx.fillStyle = "#1f2a44";
-    ctx.strokeStyle = branch === "A" ? "#ffd86b" : branch === "B" ? "#a5e4ec" : "#c9b8ff";
-    ctx.lineWidth = Math.max(1, T * 0.03);
-    ctx.beginPath();
-    ctx.rect(-T * 0.18, -T * 0.12, T * 0.56, T * 0.24);
-    ctx.fill();
-    ctx.stroke();
-    for (const k of [0.02, 0.18]) {
-      ctx.fillStyle = "#ffd86b";
-      ctx.fillRect(T * k, -T * 0.14, T * 0.05, T * 0.28);
-    }
-    ctx.fillStyle = "#fff1b0";
-    ctx.beginPath();
-    for (let i = 0; i < 10; i++) {
-      const a = (i * Math.PI) / 5;
-      const rr = i % 2 ? T * 0.04 : T * 0.1;
-      ctx.lineTo(T * 0.38 + Math.cos(a) * rr, Math.sin(a) * rr);
-    }
-    ctx.closePath();
-    ctx.fill();
-  } else if (kind === "accelerator") {
-    // Accelerator: anello con un nucleo che si accende e due elettrodi.
-    ctx.rotate(angle);
-    ctx.strokeStyle = branch === "B" ? COLORS.coral : "#7fe3ff";
-    ctx.lineWidth = Math.max(1, T * 0.05);
-    ctx.beginPath();
-    ctx.arc(0, 0, T * 0.2, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.fillStyle = "#d9fbff";
-    ctx.beginPath();
-    ctx.arc(0, 0, T * (0.07 + 0.02 * Math.sin(time * 0.02)), 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = "#2b3236";
-    ctx.fillRect(T * 0.12, -T * 0.05, T * 0.28, T * 0.1);
-    ctx.fillStyle = "#7fe3ff";
-    ctx.fillRect(T * 0.34, -T * 0.035, T * 0.06, T * 0.07);
-  } else if (kind === "kingpin") {
-    // Kingpin: cilindro e fascia d'oro, gessato scuro.
-    ctx.fillStyle = "#14181b";
-    ctx.strokeStyle = branch === "A" ? "#9fd28b" : branch === "B" ? COLORS.coral : COLORS.brass;
-    ctx.lineWidth = T * 0.035;
-    ctx.beginPath();
-    ctx.ellipse(0, T * 0.12, T * 0.3, T * 0.1, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.rect(-T * 0.18, -T * 0.28, T * 0.36, T * 0.4);
-    ctx.fill();
-    ctx.stroke();
-    ctx.fillStyle = branch === "A" ? "#9fd28b" : branch === "B" ? COLORS.coral : COLORS.brass;
-    ctx.fillRect(-T * 0.18, T * 0.02, T * 0.36, T * 0.07);
-    // Gessato.
-    ctx.strokeStyle = "rgba(238,228,203,.25)";
-    ctx.lineWidth = Math.max(1, T * 0.012);
-    ctx.beginPath();
-    for (const dx of [-0.09, 0, 0.09]) {
-      ctx.moveTo(T * dx, -T * 0.26);
-      ctx.lineTo(T * dx, T * 0.0);
-    }
-    ctx.stroke();
-  } else if (kind === "custode") {
-    // Lanterna del Custode: un occhio d'oro dentro una lanterna bianca.
-    ctx.rotate(angle);
-    ctx.fillStyle = "#f6efd8";
-    ctx.strokeStyle = COLORS.brass;
-    ctx.lineWidth = T * 0.04;
-    ctx.beginPath();
-    ctx.moveTo(-T * 0.2, -T * 0.24);
-    ctx.lineTo(T * 0.2, -T * 0.24);
-    ctx.lineTo(T * 0.26, T * 0.2);
-    ctx.lineTo(-T * 0.26, T * 0.2);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
-    ctx.fillStyle = branch === "B" ? COLORS.coral : COLORS.brass;
-    ctx.beginPath();
-    ctx.ellipse(0, -T * 0.02, T * 0.15, T * 0.09, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = "#1a2124";
-    ctx.beginPath();
-    ctx.arc(0, -T * 0.02, T * 0.05, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = COLORS.brass;
-    ctx.beginPath();
-    ctx.moveTo(T * 0.26, 0);
-    ctx.lineTo(T * 0.38, 0);
-    ctx.stroke();
-  } else if (kind === "campana") {
-    const swing = Math.sin(time * 0.003) * 0.25;
-    ctx.rotate(swing);
-    ctx.fillStyle = COLORS.brass;
-    ctx.strokeStyle = "#f6efd8";
-    ctx.lineWidth = T * 0.035;
-    ctx.beginPath();
-    ctx.moveTo(-T * 0.08, -T * 0.28);
-    ctx.quadraticCurveTo(-T * 0.2, -T * 0.25, -T * 0.2, T * 0.05);
-    ctx.lineTo(-T * 0.29, T * 0.2);
-    ctx.lineTo(T * 0.29, T * 0.2);
-    ctx.lineTo(T * 0.2, T * 0.05);
-    ctx.quadraticCurveTo(T * 0.2, -T * 0.25, T * 0.08, -T * 0.28);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
-    ctx.fillStyle = branch === "B" ? COLORS.ice : "#1a2124";
-    ctx.beginPath();
-    ctx.arc(0, T * 0.25, T * 0.06, 0, Math.PI * 2);
-    ctx.fill();
-  } else if (kind === "cometa") {
-    ctx.rotate(angle);
-    // Coda della cometa.
-    ctx.strokeStyle = branch === "B" ? "rgba(165,228,236,.8)" : "rgba(255,226,150,.75)";
-    ctx.lineWidth = T * 0.06;
-    for (const dy of [-0.08, 0, 0.08]) {
-      ctx.beginPath();
-      ctx.moveTo(-T * 0.05, T * dy);
-      ctx.lineTo(-T * 0.33, T * dy * 2.2);
-      ctx.stroke();
-    }
-    ctx.fillStyle = "#fff6d6";
-    ctx.strokeStyle = COLORS.brass;
-    ctx.lineWidth = T * 0.03;
-    ctx.beginPath();
-    for (let i = 0; i < 10; i++) {
-      const a = (i * Math.PI) / 5 - Math.PI / 2 + time * 0.0008;
-      const r = i % 2 ? T * 0.09 : T * 0.21;
-      ctx.lineTo(T * 0.1 + Math.cos(a) * r, Math.sin(a) * r);
-    }
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
-  } else {
-    const spin = time * 0.0004;
-    ctx.strokeStyle = branch === "B" ? COLORS.coral : COLORS.ice;
-    ctx.lineWidth = T * 0.055;
-    for (let i = 0; i < 6; i++) {
-      ctx.save();
-      ctx.rotate(spin + (i * Math.PI) / 3);
-      ctx.beginPath();
-      ctx.moveTo(0, 0);
-      ctx.lineTo(T * 0.3, 0);
-      ctx.moveTo(T * 0.18, 0);
-      ctx.lineTo(T * 0.26, T * 0.07);
-      ctx.moveTo(T * 0.18, 0);
-      ctx.lineTo(T * 0.26, -T * 0.07);
-      ctx.stroke();
-      ctx.restore();
-    }
-  }
+  towerFigure(ctx, kind, T, angle, level, branch, time, kick, TRACK_COLORS[track]);
   ctx.restore();
 
   // Tacche di livello sotto la torre.
@@ -814,26 +438,6 @@ export function enemySize(e: Pick<Enemy, "kind" | "boss">): number {
   return e.kind === "bruto" && e.boss ? 0.53 : r;
 }
 
-const NEW_KINDS = new Set(["tizzone", "magmatico", "colosso", "spettro", "cavaliere", "recaduto", "brinato", "orso", "regina", "elfo", "pupazzetto", "folletto", "renna", "pupazzo", "befana", "krampus", "dohoter", "risvegliato", "ombra", "araldo", "lancia", "creator", "jackobot", "zucchetta"]);
-
-function poly(ctx: CanvasRenderingContext2D, n: number, r: number, inner: number, spin: number) {
-  ctx.beginPath();
-  for (let i = 0; i < n * 2; i++) {
-    const a = (i * Math.PI) / n + spin;
-    const rr = i % 2 ? r * inner : r;
-    ctx.lineTo(Math.cos(a) * rr, Math.sin(a) * rr);
-  }
-  ctx.closePath();
-}
-
-function eyes(ctx: CanvasRenderingContext2D, r: number, color: string, dy = -0.12, gap = 0.3, size = 0.12) {
-  ctx.fillStyle = color;
-  ctx.beginPath();
-  ctx.arc(-r * gap, r * dy, r * size, 0, Math.PI * 2);
-  ctx.arc(r * gap, r * dy, r * size, 0, Math.PI * 2);
-  ctx.fill();
-}
-
 let faceImg: HTMLImageElement | null = null;
 /** Foto del Dohoter Gang, caricata una volta sola al primo disegno. */
 function dohoterFace(): HTMLImageElement {
@@ -844,428 +448,12 @@ function dohoterFace(): HTMLImageElement {
   return faceImg;
 }
 
-function drawNewKind(ctx: CanvasRenderingContext2D, e: Enemy, T: number, time: number, still: boolean, phase: number) {
-  const r = T * enemySize(e);
-  const lw = Math.max(1.2, T * (e.boss ? 0.055 : 0.035));
-  const t = still ? 0 : time;
-  ctx.lineWidth = lw;
-  const flick = still ? 1 : 1 + 0.08 * Math.sin(t * 0.02 + phase);
-  switch (e.kind) {
-    case "tizzone":
-      ctx.fillStyle = "#3a1208";
-      ctx.strokeStyle = "#ff8a3c";
-      poly(ctx, 5, r * flick, 0.6, t * 0.004);
-      ctx.fill();
-      ctx.stroke();
-      ctx.fillStyle = "#ffd27a";
-      ctx.beginPath();
-      ctx.arc(0, 0, r * 0.3, 0, Math.PI * 2);
-      ctx.fill();
-      break;
-    case "magmatico":
-    case "colosso":
-      ctx.fillStyle = "#2a0f08";
-      ctx.strokeStyle = e.kind === "colosso" ? "#ff7a3a" : "#e2714f";
-      poly(ctx, e.kind === "colosso" ? 9 : 4, r, e.kind === "colosso" ? 0.78 : 0.86, Math.PI / 4 + (e.kind === "colosso" ? t * 0.0006 : 0));
-      ctx.fill();
-      ctx.stroke();
-      ctx.strokeStyle = `rgba(255,170,80,${0.6 + 0.3 * Math.sin(t * 0.006 + phase)})`;
-      ctx.lineWidth = lw * 0.7;
-      ctx.beginPath();
-      ctx.moveTo(-r * 0.5, -r * 0.2);
-      ctx.lineTo(-r * 0.1, r * 0.1);
-      ctx.lineTo(r * 0.35, -r * 0.05);
-      ctx.moveTo(-r * 0.1, r * 0.1);
-      ctx.lineTo(0, r * 0.5);
-      ctx.stroke();
-      eyes(ctx, r, "#ffd27a", -0.3, 0.32, 0.1);
-      break;
-    case "spettro":
-      ctx.fillStyle = "rgba(201,184,255,.22)";
-      ctx.strokeStyle = "rgba(201,184,255,.8)";
-      ctx.beginPath();
-      ctx.arc(0, -r * 0.1, r * 0.8, Math.PI, 0);
-      for (let i = 0; i <= 6; i++) ctx.lineTo(r * 0.8 - (i * r * 1.6) / 6, r * 0.7 + (i % 2 ? -r * 0.25 : 0) + (still ? 0 : Math.sin(t * 0.01 + i) * r * 0.06));
-      ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
-      eyes(ctx, r, "#f2ecff", -0.15, 0.3, 0.13);
-      break;
-    case "cavaliere":
-      ctx.fillStyle = "#1e2328";
-      ctx.strokeStyle = "#b9a88a";
-      ctx.beginPath();
-      ctx.moveTo(-r * 0.8, -r * 0.8);
-      ctx.lineTo(r * 0.8, -r * 0.8);
-      ctx.lineTo(r * 0.8, r * 0.1);
-      ctx.quadraticCurveTo(r * 0.6, r * 0.8, 0, r);
-      ctx.quadraticCurveTo(-r * 0.6, r * 0.8, -r * 0.8, r * 0.1);
-      ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
-      ctx.fillStyle = "#ff9a9a";
-      ctx.fillRect(-r * 0.5, -r * 0.35, r, r * 0.14);
-      break;
-    case "recaduto":
-    case "risvegliato":
-    case "regina": {
-      const ice = e.kind === "regina";
-      const woke = e.kind === "risvegliato";
-      if (woke) {
-        // Il Re Risvegliato: alone rosso che pulsa.
-        ctx.fillStyle = `rgba(255,70,70,${0.18 + 0.12 * Math.sin(t * 0.01)})`;
-        ctx.beginPath();
-        ctx.arc(0, r * 0.1, r * 1.25, 0, Math.PI * 2);
-        ctx.fill();
-      }
-      ctx.fillStyle = ice ? "#123a46" : woke ? "#2a0d12" : "#1a1622";
-      ctx.strokeStyle = ice ? COLORS.ice : woke ? "#ff6b6b" : "#c9b8ff";
-      ctx.beginPath();
-      if (ice) {
-        ctx.moveTo(0, -r * 0.6);
-        ctx.lineTo(r * 0.85, r * 0.9);
-        ctx.lineTo(-r * 0.85, r * 0.9);
-        ctx.closePath();
-      } else ctx.arc(0, r * 0.1, r * 0.8, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
-      // Corona.
-      ctx.fillStyle = ice ? "#f2fbff" : COLORS.brass;
-      ctx.beginPath();
-      const cy = -r * (ice ? 0.55 : 0.6);
-      ctx.moveTo(-r * 0.55, cy);
-      for (let i = 0; i < 5; i++) {
-        ctx.lineTo(-r * 0.55 + (i + 0.5) * r * 0.22, cy - r * (i % 2 ? 0.25 : 0.5));
-        ctx.lineTo(-r * 0.55 + (i + 1) * r * 0.22, cy);
-      }
-      ctx.closePath();
-      ctx.fill();
-      eyes(ctx, r, ice ? "#e9fbff" : woke ? "#ff6b6b" : "#c9b8ff", ice ? 0.15 : 0, 0.28, 0.1);
-      break;
-    }
-    case "brinato":
-      ctx.fillStyle = "#10323c";
-      ctx.strokeStyle = COLORS.ice;
-      poly(ctx, 6, r, 0.88, t * 0.001);
-      ctx.fill();
-      ctx.stroke();
-      ctx.strokeStyle = "rgba(233,251,255,.85)";
-      ctx.lineWidth = lw * 0.7;
-      ctx.beginPath();
-      for (let i = 0; i < 3; i++) {
-        const a = (i * Math.PI) / 3;
-        ctx.moveTo(Math.cos(a) * r * 0.6, Math.sin(a) * r * 0.6);
-        ctx.lineTo(-Math.cos(a) * r * 0.6, -Math.sin(a) * r * 0.6);
-      }
-      ctx.stroke();
-      break;
-    case "orso":
-      ctx.fillStyle = "#e8f0f2";
-      ctx.strokeStyle = COLORS.ice;
-      ctx.beginPath();
-      ctx.arc(-r * 0.55, -r * 0.6, r * 0.25, 0, Math.PI * 2);
-      ctx.arc(r * 0.55, -r * 0.6, r * 0.25, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.beginPath();
-      ctx.arc(0, 0, r * 0.85, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
-      eyes(ctx, r, "#0b1316", -0.1, 0.3, 0.1);
-      ctx.fillStyle = "#0b1316";
-      ctx.beginPath();
-      ctx.arc(0, r * 0.25, r * 0.14, 0, Math.PI * 2);
-      ctx.fill();
-      break;
-    case "elfo":
-      ctx.fillStyle = "#1d3a22";
-      ctx.strokeStyle = "#ff9a9a";
-      ctx.beginPath();
-      ctx.arc(0, r * 0.2, r * 0.75, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
-      ctx.fillStyle = "#c8323c";
-      ctx.beginPath();
-      ctx.moveTo(-r * 0.7, -r * 0.2);
-      ctx.lineTo(r * 0.7, -r * 0.2);
-      ctx.lineTo(r * 0.2, -r * 1.25);
-      ctx.closePath();
-      ctx.fill();
-      eyes(ctx, r, "#ffe296", 0.15, 0.3, 0.14);
-      break;
-    case "pupazzetto":
-    case "pupazzo": {
-      const big = e.kind === "pupazzo";
-      ctx.fillStyle = "#eef6f9";
-      ctx.strokeStyle = big ? "#ff9a9a" : COLORS.ice;
-      ctx.beginPath();
-      ctx.arc(0, r * 0.35, r * 0.62, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.arc(0, -r * 0.42, r * 0.42, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
-      if (big) {
-        ctx.fillStyle = "#0b1316";
-        ctx.fillRect(-r * 0.32, -r * 1.05, r * 0.64, r * 0.32);
-        ctx.fillRect(-r * 0.45, -r * 0.78, r * 0.9, r * 0.08);
-      }
-      eyes(ctx, r, big ? "#e2714f" : "#0b1316", -0.48, 0.16, 0.07);
-      ctx.fillStyle = "#ff8a3c";
-      ctx.beginPath();
-      ctx.moveTo(0, -r * 0.38);
-      ctx.lineTo(r * 0.3, -r * 0.32);
-      ctx.lineTo(0, -r * 0.28);
-      ctx.fill();
-      break;
-    }
-    case "folletto":
-      ctx.fillStyle = "#4a3a12";
-      ctx.strokeStyle = COLORS.brass;
-      ctx.beginPath();
-      ctx.ellipse(r * 0.45, r * 0.25, r * 0.45, r * 0.5, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
-      ctx.fillStyle = "#1d3a22";
-      ctx.strokeStyle = "#9fd28b";
-      ctx.beginPath();
-      ctx.arc(-r * 0.15, 0, r * 0.6, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
-      ctx.fillStyle = "#c8323c";
-      ctx.beginPath();
-      ctx.moveTo(-r * 0.7, -r * 0.35);
-      ctx.lineTo(r * 0.4, -r * 0.35);
-      ctx.lineTo(-r * 0.6, -r * 1.2);
-      ctx.closePath();
-      ctx.fill();
-      eyes(ctx, r * 0.8, "#ffe296", 0, 0.3, 0.13);
-      break;
-    case "renna":
-      ctx.strokeStyle = "#ff9a9a";
-      ctx.lineWidth = lw;
-      ctx.beginPath();
-      for (const s of [-1, 1]) {
-        ctx.moveTo(s * r * 0.25, -r * 0.45);
-        ctx.lineTo(s * r * 0.55, -r * 1.05);
-        ctx.moveTo(s * r * 0.42, -r * 0.8);
-        ctx.lineTo(s * r * 0.85, -r * 0.9);
-      }
-      ctx.stroke();
-      ctx.fillStyle = e.chargeLeft > 0 ? "#4a1212" : "#2a1a12";
-      ctx.beginPath();
-      ctx.ellipse(0, 0, r * 0.75, r * 0.55, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
-      eyes(ctx, r, "#ff4a4a", -0.1, 0.28, 0.1);
-      break;
-    case "befana":
-      ctx.strokeStyle = "rgba(255,226,150,.7)";
-      ctx.lineWidth = lw;
-      ctx.beginPath();
-      ctx.moveTo(-r * 1.1, r * 0.55);
-      ctx.lineTo(r * 1.1, r * 0.2);
-      ctx.stroke();
-      ctx.fillStyle = "rgba(26,20,24,.75)";
-      ctx.strokeStyle = "rgba(255,226,150,.85)";
-      ctx.beginPath();
-      ctx.arc(0, r * 0.1, r * 0.55, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.moveTo(-r * 0.7, -r * 0.25);
-      ctx.lineTo(r * 0.7, -r * 0.25);
-      ctx.lineTo(r * 0.15, -r * 1.25);
-      ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
-      eyes(ctx, r, "#ffe296", 0.05, 0.22, 0.09);
-      break;
-    case "krampus":
-      ctx.strokeStyle = "#c8b89a";
-      ctx.lineWidth = lw * 1.4;
-      ctx.beginPath();
-      ctx.moveTo(-r * 0.35, -r * 0.6);
-      ctx.quadraticCurveTo(-r * 1.1, -r * 1.0, -r * 0.8, -r * 1.35);
-      ctx.moveTo(r * 0.35, -r * 0.6);
-      ctx.quadraticCurveTo(r * 1.1, -r * 1.0, r * 0.8, -r * 1.35);
-      ctx.stroke();
-      ctx.fillStyle = "#2a0808";
-      ctx.strokeStyle = "#ff4a4a";
-      ctx.lineWidth = lw;
-      poly(ctx, 10, r * 0.9, 0.82, t * 0.0005);
-      ctx.fill();
-      ctx.stroke();
-      eyes(ctx, r, "#ffd27a", -0.15, 0.3, 0.11);
-      ctx.strokeStyle = "#ffd27a";
-      ctx.beginPath();
-      ctx.moveTo(-r * 0.35, r * 0.3);
-      ctx.lineTo(r * 0.35, r * 0.3);
-      ctx.stroke();
-      break;
-    case "creator": {
-      // The Creator: figura di luce con un'aureola di cubi che gli ruotano intorno.
-      const spin = still ? 0 : t * 0.0015;
-      ctx.fillStyle = "rgba(255,240,190,.18)";
-      ctx.beginPath();
-      ctx.arc(0, 0, r * 1.25, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = "#f4ecd6";
-      ctx.strokeStyle = "#ffd86b";
-      ctx.lineWidth = lw;
-      ctx.beginPath();
-      ctx.moveTo(0, -r * 0.95);
-      ctx.lineTo(r * 0.55, -r * 0.1);
-      ctx.lineTo(r * 0.75, r * 0.9);
-      ctx.lineTo(-r * 0.75, r * 0.9);
-      ctx.lineTo(-r * 0.55, -r * 0.1);
-      ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
-      ctx.strokeStyle = "#ffd86b";
-      ctx.beginPath();
-      ctx.ellipse(0, -r * 1.0, r * 0.5, r * 0.14, 0, 0, Math.PI * 2);
-      ctx.stroke();
-      for (let i = 0; i < 4; i++) {
-        const a = spin + (i * Math.PI) / 2;
-        ctx.save();
-        ctx.translate(Math.cos(a) * r * 1.05, Math.sin(a) * r * 0.55);
-        ctx.rotate(a);
-        ctx.fillStyle = i % 2 ? "#c9b8ff" : "#a5e4ec";
-        ctx.fillRect(-r * 0.12, -r * 0.12, r * 0.24, r * 0.24);
-        ctx.restore();
-      }
-      ctx.fillStyle = "#1a1406";
-      ctx.fillRect(-r * 0.3, -r * 0.25, r * 0.6, r * 0.08);
-      eyes(ctx, r, "#ffd86b", 0, -0.2, 0.08);
-      break;
-    }
-    case "jackobot": {
-      // Jack o Bot: zucca di metallo con occhi a LED e un'antenna.
-      const blink = still ? 1 : 0.6 + 0.4 * Math.abs(Math.sin(t * 0.008 + phase));
-      ctx.fillStyle = "#e07a1f";
-      ctx.strokeStyle = "#5b6770";
-      ctx.lineWidth = lw * 1.3;
-      ctx.beginPath();
-      ctx.ellipse(0, r * 0.1, r * 0.95, r * 0.8, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
-      ctx.strokeStyle = "rgba(90,40,10,.55)";
-      ctx.lineWidth = lw;
-      for (const k of [-0.45, 0, 0.45]) {
-        ctx.beginPath();
-        ctx.ellipse(r * k, r * 0.1, r * 0.22, r * 0.76, 0, 0, Math.PI * 2);
-        ctx.stroke();
-      }
-      ctx.fillStyle = "#3a4249";
-      ctx.fillRect(-r * 0.12, -r * 0.95, r * 0.24, r * 0.3);
-      ctx.strokeStyle = "#9aa6ad";
-      ctx.beginPath();
-      ctx.moveTo(0, -r * 0.95);
-      ctx.lineTo(r * 0.3, -r * 1.35);
-      ctx.stroke();
-      ctx.fillStyle = `rgba(255,60,60,${blink})`;
-      ctx.beginPath();
-      ctx.arc(r * 0.3, -r * 1.35, r * 0.08, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = `rgba(120,255,140,${blink})`;
-      ctx.beginPath();
-      ctx.moveTo(-r * 0.55, -r * 0.15);
-      ctx.lineTo(-r * 0.2, -r * 0.15);
-      ctx.lineTo(-r * 0.38, r * 0.15);
-      ctx.closePath();
-      ctx.moveTo(r * 0.55, -r * 0.15);
-      ctx.lineTo(r * 0.2, -r * 0.15);
-      ctx.lineTo(r * 0.38, r * 0.15);
-      ctx.closePath();
-      ctx.fill();
-      ctx.fillRect(-r * 0.45, r * 0.42, r * 0.9, r * 0.12);
-      break;
-    }
-    case "zucchetta": {
-      ctx.fillStyle = "#e07a1f";
-      ctx.strokeStyle = "#3a4249";
-      ctx.lineWidth = lw;
-      ctx.beginPath();
-      ctx.ellipse(0, 0, r, r * 0.85, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
-      ctx.fillStyle = "#78ff8c";
-      ctx.fillRect(-r * 0.5, -r * 0.2, r * 0.3, r * 0.22);
-      ctx.fillRect(r * 0.2, -r * 0.2, r * 0.3, r * 0.22);
-      break;
-    }
-    case "ombra": {
-      // Ombra del Re: fiamma nera con occhi rossi, sfrangiata in basso.
-      const wob = still ? 0 : Math.sin(t * 0.015 + phase) * r * 0.08;
-      ctx.fillStyle = "rgba(14,6,12,.92)";
-      ctx.beginPath();
-      ctx.moveTo(0, -r * 1.05);
-      ctx.quadraticCurveTo(r * 0.95, -r * 0.2, r * 0.6 + wob, r * 0.9);
-      ctx.lineTo(r * 0.2, r * 0.6);
-      ctx.lineTo(-r * 0.15 + wob, r * 0.95);
-      ctx.lineTo(-r * 0.45, r * 0.6);
-      ctx.lineTo(-r * 0.7 - wob, r * 0.9);
-      ctx.quadraticCurveTo(-r * 0.95, -r * 0.2, 0, -r * 1.05);
-      ctx.fill();
-      eyes(ctx, r, "#ff4d4d", 0, 0.25, 0.12);
-      break;
-    }
-    case "araldo": {
-      // Araldo Nero: corazza scura e stendardo rosso che stordisce le torri.
-      ctx.fillStyle = "#1b1418";
-      ctx.strokeStyle = "#8a2b2b";
-      ctx.lineWidth = lw;
-      ctx.beginPath();
-      ctx.moveTo(-r * 0.75, r * 0.85);
-      ctx.lineTo(-r * 0.6, -r * 0.45);
-      ctx.quadraticCurveTo(0, -r * 0.95, r * 0.6, -r * 0.45);
-      ctx.lineTo(r * 0.75, r * 0.85);
-      ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
-      ctx.strokeStyle = "#c9b8ff";
-      ctx.beginPath();
-      ctx.moveTo(r * 0.85, r * 0.9);
-      ctx.lineTo(r * 0.85, -r * 1.2);
-      ctx.stroke();
-      ctx.fillStyle = "#b02a2a";
-      const flap = still ? 0 : Math.sin(t * 0.01 + phase) * r * 0.1;
-      ctx.beginPath();
-      ctx.moveTo(r * 0.85, -r * 1.2);
-      ctx.lineTo(r * 1.45, -r * 1.0 + flap);
-      ctx.lineTo(r * 0.85, -r * 0.75);
-      ctx.closePath();
-      ctx.fill();
-      eyes(ctx, r, "#ff6b6b", 0, 0.2, 0.09);
-      break;
-    }
-    case "lancia": {
-      // Lancia Nera: cavaliere sottile con una lancia lunga puntata avanti.
-      ctx.fillStyle = "#16121a";
-      ctx.strokeStyle = "#ff6b6b";
-      ctx.lineWidth = lw;
-      ctx.beginPath();
-      ctx.ellipse(0, r * 0.1, r * 0.55, r * 0.8, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
-      ctx.strokeStyle = "#d6dde0";
-      ctx.lineWidth = lw * 1.3;
-      ctx.beginPath();
-      ctx.moveTo(-r * 0.9, r * 0.6);
-      ctx.lineTo(r * 1.5, -r * 0.7);
-      ctx.stroke();
-      ctx.fillStyle = "#d6dde0";
-      ctx.beginPath();
-      ctx.moveTo(r * 1.5, -r * 0.7);
-      ctx.lineTo(r * 1.15, -r * 0.62);
-      ctx.lineTo(r * 1.32, -r * 0.4);
-      ctx.closePath();
-      ctx.fill();
-      eyes(ctx, r, "#ff6b6b", 0, 0.15, 0.09);
-      break;
-    }
-    case "dohoter": {
+/** Il boss con la foto non ruota: resta un medaglione che dondola. */
+function dohoterBody(ctx: CanvasRenderingContext2D, r: number, lw: number, frame: number) {
+  const still = false;
+  const t = frame * 260;
+  const phase = 0;
+
       const sway = still ? 0 : Math.sin(t * 0.006 + phase) * 0.08;
       if (dohoterFace().complete && dohoterFace().naturalWidth) {
         // Il volto del boss, in un medaglione viola con la catena d'oro.
@@ -1291,7 +479,7 @@ function drawNewKind(ctx: CanvasRenderingContext2D, e: Enemy, T: number, time: n
         ctx.beginPath();
         ctx.arc(sway * r * 4, r * 1.03, r * 0.15, 0, Math.PI * 2);
         ctx.fill();
-        break;
+        return;
       }
       // Finché la foto non è pronta: capo della gang con cappuccio e catena.
       ctx.fillStyle = "#1c1030";
@@ -1328,251 +516,117 @@ function drawNewKind(ctx: CanvasRenderingContext2D, e: Enemy, T: number, time: n
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.fillText("D", sway * r * 4, r * 0.67);
-      break;
-    }
-  }
+      return;
 }
 
-/** Copie già disegnate dei nemici, per tipo e misura: con tanti nemici costano molto meno dei disegni a mano. */
+const DIRS = 16;
+const FRAMES = 4;
+/** Copie già disegnate dei nemici per tipo, direzione e passo: si disegnano una volta e poi si copiano. */
 const spriteCache = new Map<string, HTMLCanvasElement>();
 let spriteT = 0;
-function enemySprite(e: Enemy, T: number): HTMLCanvasElement {
+function enemySprite(e: Enemy, T: number, dir: number, frame: number, lit: boolean): HTMLCanvasElement {
   const t = Math.round(T);
-  if (t !== spriteT) {
+  if (t !== spriteT || spriteCache.size > 2400) {
     spriteCache.clear();
     spriteT = t;
   }
-  const key = `${e.kind}|${e.boss ? 1 : 0}`;
+  const photo = e.kind === "dohoter";
+  const ready = photo && dohoterFace().complete && dohoterFace().naturalWidth > 0;
+  if (photo) dir = 0;
+  const key = `${e.kind}|${e.boss ? 1 : 0}|${dir}|${frame}|${lit ? 1 : 0}|${ready ? 1 : 0}`;
   let c = spriteCache.get(key);
   if (!c) {
     c = document.createElement("canvas");
-    // Grande quanto basta: copie piccole costano poco anche da copiare.
-    const size = Math.ceil(T * (enemySize(e) * 3.4 + 0.3)) + 4;
+    // I più piccoli si disegnano un po' più grandi del loro raggio di gioco: così si riconoscono.
+    const r = Math.max(T * enemySize(e), T * 0.26);
+    const size = Math.ceil(r * 3.9 + T * 0.3) + 4;
     c.width = size;
     c.height = size;
     const g = c.getContext("2d")!;
     g.translate(size / 2, size / 2);
-    enemyBody(g, { ...e, id: 0, mods: 0, hp: 1, maxHp: 1 }, T, 0, true, 0, true);
+    // Ombra sul fondale, sempre dalla stessa parte qualunque sia la direzione.
+    g.fillStyle = "rgba(0,0,0,.32)";
+    g.beginPath();
+    g.ellipse(r * 0.12, r * 0.2, r * 0.95, r * 0.8, 0, 0, Math.PI * 2);
+    g.fill();
+    if (photo) dohoterBody(g, r, Math.max(1.2, T * 0.055), frame);
+    else {
+      g.rotate((dir * Math.PI * 2) / DIRS);
+      enemyFigure(g, e.kind, e.boss, r, frame);
+    }
+    if (lit) {
+      // Lampo bianco quando viene colpito.
+      g.setTransform(1, 0, 0, 1, 0, 0);
+      g.globalCompositeOperation = "source-atop";
+      g.fillStyle = "rgba(255,255,255,.62)";
+      g.fillRect(0, 0, size, size);
+    }
     spriteCache.set(key, c);
   }
   return c;
 }
 
-/** Corpo del nemico disegnato nell'origine: ombra e forma del tipo. */
-function enemyBody(ctx: CanvasRenderingContext2D, e: Enemy, T: number, time: number, still: boolean, phase: number, solid = false) {
-  const def = ENEMIES[e.kind];
-  void def;
-  // Ombra sul fondale: stacca il nemico dall'acqua nera.
-  const sr = T * enemySize(e);
-  ctx.fillStyle = "rgba(0,0,0,.4)";
-  ctx.beginPath();
-  ctx.ellipse(sr * 0.12, sr * 0.75, sr * 0.95, sr * 0.32, 0, 0, Math.PI * 2);
-  ctx.fill();
-  // Gli invisibili si vedono appena: il giocatore sa che ci sono, le torri senza rilevamento no.
-  if (!solid && isHidden(e)) ctx.globalAlpha = 0.5;
-  if (e.kind === "risacca") {
-    const r = T * 0.2;
-    ctx.beginPath();
-    for (let i = 0; i < 12; i++) {
-      const a = (i / 12) * Math.PI * 2;
-      const wob = still ? 1 : 1 + 0.13 * Math.sin(time * 0.009 + phase + i * 2.1);
-      const px = Math.cos(a) * r * wob;
-      const py = Math.sin(a) * r * wob;
-      if (i === 0) ctx.moveTo(px, py);
-      else ctx.lineTo(px, py);
-    }
-    ctx.closePath();
-    ctx.fillStyle = "#050b0e";
-    ctx.fill();
-    ctx.strokeStyle = "rgba(165,228,236,.85)";
-    ctx.lineWidth = Math.max(1, T * 0.03);
-    ctx.stroke();
-    ctx.fillStyle = "#e9f7f2";
-    ctx.beginPath();
-    ctx.arc(-r * 0.3, -r * 0.15, r * 0.17, 0, Math.PI * 2);
-    ctx.arc(r * 0.3, -r * 0.15, r * 0.17, 0, Math.PI * 2);
-    ctx.fill();
-  } else if (e.kind === "annegato") {
-    const r = T * 0.5;
-    ctx.fillStyle = "#1d2a26";
-    ctx.strokeStyle = "#7fb7a4";
-    ctx.lineWidth = Math.max(1.5, T * 0.05);
-    ctx.beginPath();
-    ctx.arc(0, r * 0.1, r * 0.8, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-    // Tricorno del capitano.
-    ctx.fillStyle = "#0b1110";
-    ctx.strokeStyle = COLORS.brass;
-    ctx.beginPath();
-    ctx.moveTo(-r * 0.95, -r * 0.35);
-    ctx.quadraticCurveTo(0, -r * 1.25, r * 0.95, -r * 0.35);
-    ctx.quadraticCurveTo(0, -r * 0.6, -r * 0.95, -r * 0.35);
-    ctx.fill();
-    ctx.stroke();
-    ctx.fillStyle = "#c8f5e6";
-    ctx.beginPath();
-    ctx.arc(-r * 0.3, r * 0.05, r * 0.11, 0, Math.PI * 2);
-    ctx.arc(r * 0.3, r * 0.05, r * 0.11, 0, Math.PI * 2);
-    ctx.fill();
-  } else if (e.kind === "sirena") {
-    const r = T * 0.46;
-    ctx.strokeStyle = "rgba(165,228,236,.7)";
-    ctx.lineWidth = Math.max(1, T * 0.04);
-    for (let i = 0; i < 5; i++) {
-      const a = -Math.PI / 2 + (i - 2) * 0.45;
-      ctx.beginPath();
-      ctx.moveTo(0, -r * 0.4);
-      ctx.quadraticCurveTo(Math.cos(a) * r * 1.2, Math.sin(a) * r * 0.4 + (still ? 0 : Math.sin(time * 0.004 + i) * r * 0.2), Math.cos(a) * r * 1.3, r * 0.6);
-      ctx.stroke();
-    }
-    ctx.fillStyle = "#123a40";
-    ctx.strokeStyle = "#a5e4ec";
-    ctx.beginPath();
-    ctx.ellipse(0, 0, r * 0.55, r * 0.7, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-    ctx.strokeStyle = "#ffe296";
-    ctx.beginPath();
-    ctx.arc(0, r * 0.15, r * 0.16, 0, Math.PI * 2);
-    ctx.stroke();
-  } else if (e.kind === "leviatano") {
-    const r = T * 0.72;
-    ctx.fillStyle = "#0c2420";
-    ctx.strokeStyle = COLORS.coral;
-    ctx.lineWidth = Math.max(2, T * 0.06);
-    ctx.beginPath();
-    for (let i = 0; i < 18; i++) {
-      const a = (i * Math.PI) / 9 + (still ? 0 : time * 0.0008);
-      const rr = i % 2 ? r * 0.78 : r;
-      ctx.lineTo(Math.cos(a) * rr, Math.sin(a) * rr);
-    }
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
-    ctx.fillStyle = "#ff8a5c";
-    ctx.beginPath();
-    ctx.ellipse(-r * 0.28, -r * 0.1, r * 0.12, r * 0.07, 0, 0, Math.PI * 2);
-    ctx.ellipse(r * 0.28, -r * 0.1, r * 0.12, r * 0.07, 0, 0, Math.PI * 2);
-    ctx.fill();
-  } else if (e.kind === "sabotatore") {
-    const r = T * 0.22;
-    ctx.fillStyle = "#1c1630";
-    ctx.strokeStyle = "#c9b8ff";
-    ctx.lineWidth = Math.max(1, T * 0.035);
-    ctx.beginPath();
-    for (let i = 0; i < 10; i++) {
-      const a = (i * Math.PI) / 5 + (still ? 0 : time * 0.002);
-      const rr = i % 2 ? r * 0.75 : r;
-      ctx.lineTo(Math.cos(a) * rr, Math.sin(a) * rr);
-    }
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
-    ctx.fillStyle = e.act < 10 ? "#ffe296" : "#c9b8ff";
-    ctx.beginPath();
-    ctx.arc(0, 0, r * 0.3, 0, Math.PI * 2);
-    ctx.fill();
-  } else if (e.kind === "corridore") {
-    const r = T * 0.17;
-    const bob = still ? 0 : Math.sin(time * 0.03 + phase) * r * 0.15;
-    ctx.fillStyle = "#0b1316";
-    ctx.strokeStyle = COLORS.brass;
-    ctx.lineWidth = Math.max(1, T * 0.03);
-    ctx.beginPath();
-    ctx.moveTo(-r * 1.3, bob);
-    ctx.lineTo(0, -r);
-    ctx.lineTo(r * 1.3, 0);
-    ctx.lineTo(0, r);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
-    ctx.fillStyle = "#fff1c4";
-    ctx.beginPath();
-    ctx.arc(r * 0.35, -r * 0.2, r * 0.2, 0, Math.PI * 2);
-    ctx.fill();
-  } else if (NEW_KINDS.has(e.kind)) {
-    drawNewKind(ctx, e, T, time, still, phase);
-  } else {
-    const r = T * (e.boss ? 0.5 : 0.3);
-    ctx.fillStyle = "#3d1c14";
-    ctx.strokeStyle = e.boss ? COLORS.brass : COLORS.coral;
-    ctx.lineWidth = Math.max(1.5, T * (e.boss ? 0.06 : 0.04));
-    ctx.beginPath();
-    ctx.moveTo(-r, -r * 0.45);
-    ctx.lineTo(-r * 0.45, -r);
-    ctx.lineTo(r * 0.45, -r);
-    ctx.lineTo(r, -r * 0.45);
-    ctx.lineTo(r, r * 0.45);
-    ctx.lineTo(r * 0.45, r);
-    ctx.lineTo(-r * 0.45, r);
-    ctx.lineTo(-r, r * 0.45);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
-    // Cirripedi sulla corazza.
-    ctx.fillStyle = COLORS.coral;
-    for (let i = 0; i < 5; i++) {
-      const a = phase + i * 1.9;
-      ctx.beginPath();
-      ctx.arc(Math.cos(a) * r * 0.6, Math.sin(a) * r * 0.6, r * 0.09, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    ctx.fillStyle = "#ffd9a6";
-    ctx.fillRect(-r * 0.42, -r * 0.2, r * 0.24, r * 0.12);
-    ctx.fillRect(r * 0.18, -r * 0.2, r * 0.24, r * 0.12);
-  }
+/** Passo dell'animazione: chi corre muove le gambe più in fretta. */
+function walkFrame(e: Enemy, time: number, still: boolean): number {
+  if (still || e.stun > 0 || e.frozen) return 0;
+  const pace = 0.004 + ENEMIES[e.kind].speed * 0.00006;
+  return Math.floor(time * pace + e.id * 1.3) & 3;
 }
 
-/** Versione rapida per le folle: copia già pronta a coordinate intere e barra della vita essenziale. */
-function drawEnemyFast(ctx: CanvasRenderingContext2D, e: Enemy, x: number, y: number, T: number) {
-  const img = enemySprite(e, T);
+const dirOf = (heading: number) => ((Math.round((heading / (Math.PI * 2)) * DIRS) % DIRS) + DIRS) % DIRS;
+
+/** Solo la figura, senza barre: serve anche a chi cade. */
+export function drawEnemyBody(ctx: CanvasRenderingContext2D, e: Enemy, x: number, y: number, T: number, heading: number, frame: number, lit = false) {
+  const img = enemySprite(e, T, dirOf(heading), frame, lit);
+  ctx.drawImage(img, Math.round(x - img.width / 2), Math.round(y - img.height / 2));
+}
+
+export function drawEnemy(ctx: CanvasRenderingContext2D, e: Enemy, x: number, y: number, T: number, time: number, still: boolean, cached = false, heading = 0, lit = false) {
+  const def = ENEMIES[e.kind];
   const hidden = isHidden(e);
   if (hidden) ctx.globalAlpha = 0.5;
-  ctx.drawImage(img, Math.round(x - img.width / 2), Math.round(y - img.height / 2));
+  drawEnemyBody(ctx, e, x, y, T, heading, walkFrame(e, time, still), lit);
   if (hidden) ctx.globalAlpha = 1;
-  if (e.hp < e.maxHp) {
-    const w = Math.round(T * (e.boss ? 1.1 : 0.5));
-    const h = Math.max(2, Math.round(T * (e.boss ? 0.09 : 0.06)));
-    const left = Math.round(x - w / 2);
-    const top = Math.round(y - T * (enemySize(e) + 0.12));
-    const f = Math.max(0, e.hp) / e.maxHp;
-    ctx.fillStyle = "#1a0d0a";
-    ctx.fillRect(left, top, w, h);
-    ctx.fillStyle = f > 0.6 ? "#9fd28b" : f > 0.3 ? "#e8c35a" : COLORS.coral;
-    ctx.fillRect(left, top, Math.max(1, Math.round(w * f)), h);
+  if (cached) {
+    if (e.hp < e.maxHp) {
+      const w = Math.round(T * (e.boss ? 1.1 : 0.5));
+      const h = Math.max(2, Math.round(T * (e.boss ? 0.09 : 0.06)));
+      const left = Math.round(x - w / 2);
+      const top = Math.round(y - T * (enemySize(e) + 0.12));
+      const f = Math.max(0, e.hp) / e.maxHp;
+      ctx.fillStyle = "#1a0d0a";
+      ctx.fillRect(left, top, w, h);
+      ctx.fillStyle = f > 0.6 ? "#9fd28b" : f > 0.3 ? "#e8c35a" : COLORS.coral;
+      ctx.fillRect(left, top, Math.max(1, Math.round(w * f)), h);
+    }
+    return;
   }
-}
-
-export function drawEnemy(ctx: CanvasRenderingContext2D, e: Enemy, x: number, y: number, T: number, time: number, still: boolean, cached = false) {
-  if (cached) return drawEnemyFast(ctx, e, x, y, T);
-  const def = ENEMIES[e.kind];
-  const phase = e.id * 1.7;
-  ctx.save();
-  ctx.translate(x, y);
-  ctx.save();
-  enemyBody(ctx, e, T, time, still, phase);
-  ctx.restore();
-  if (e.speedBp < 10000 && e.kind) {
+  if (e.speedBp < 10000) {
     ctx.strokeStyle = "rgba(165,228,236,.8)";
     ctx.lineWidth = Math.max(1, T * 0.02);
     ctx.setLineDash([T * 0.05, T * 0.05]);
     ctx.beginPath();
-    ctx.arc(0, 0, T * (enemySize(e) + 0.05), 0, Math.PI * 2);
+    ctx.arc(x, y, T * (enemySize(e) + 0.05), 0, Math.PI * 2);
     ctx.stroke();
     ctx.setLineDash([]);
+  }
+  if (e.kind === "sabotatore" && e.act < 10) {
+    // Sta per colpire una torre: la miccia brilla.
+    ctx.strokeStyle = "#ffe296";
+    ctx.lineWidth = Math.max(1, T * 0.03);
+    ctx.beginPath();
+    ctx.arc(x, y, T * (enemySize(e) + 0.1), 0, Math.PI * 2);
+    ctx.stroke();
   }
   if (e.stun > 0) {
     ctx.fillStyle = COLORS.brass;
     for (let i = 0; i < 3; i++) {
       const a = time * 0.008 + (i * Math.PI * 2) / 3;
       ctx.beginPath();
-      ctx.arc(Math.cos(a) * T * 0.22, -T * 0.32 + Math.sin(a) * T * 0.06, T * 0.04, 0, Math.PI * 2);
+      ctx.arc(x + Math.cos(a) * T * 0.22, y - T * 0.32 + Math.sin(a) * T * 0.06, T * 0.04, 0, Math.PI * 2);
       ctx.fill();
     }
   }
-  ctx.restore();
-
   if (e.hp < e.maxHp) {
     const w = T * (e.boss ? 1.1 : def.hp > 100 ? 0.6 : 0.42);
     const h = Math.max(3, T * (e.boss ? 0.09 : 0.07));

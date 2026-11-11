@@ -128,9 +128,21 @@ export const MEDALS: Array<{ id: string; name: string; text: string; ok: (m: Med
 // ---------- bacheca ----------
 
 /** Versione del gioco: chi ospita la comunica all'admin, che vede se i comandi nuovi possono funzionare. */
-export const GAME_VERSION = "0.14.1";
+export const GAME_VERSION = "0.15.0";
 
 export const VERSION_NOTES: ChangeEntry[] = [
+  {
+    date: "2026-11-11",
+    title: "Versione 0.15: nuovi modelli e animazioni",
+    kind: "versione",
+    items: [
+      "Tutte le torri sono state ridisegnate come personaggi a blocchi in stile cartone, ognuno con la sua arma; i miglioramenti aggiungono spalline, zaino e colori del ramo scelto",
+      "Tutti i nemici sono stati ridisegnati: camminano muovendo gambe e braccia e si girano dove vanno",
+      "Le torri rinculano e fanno la fiammata quando sparano; il martello dello Sledger si abbatte davvero",
+      "I nemici lampeggiano quando vengono colpiti e cadono a pezzi quando sono abbattuti",
+      "Le torri fanno un saltello quando vengono costruite o migliorate",
+    ],
+  },
   {
     date: "2026-11-10",
     title: "Versione 0.14.1: niente vendite per sbaglio",

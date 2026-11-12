@@ -128,9 +128,21 @@ export const MEDALS: Array<{ id: string; name: string; text: string; ok: (m: Med
 // ---------- bacheca ----------
 
 /** Versione del gioco: chi ospita la comunica all'admin, che vede se i comandi nuovi possono funzionare. */
-export const GAME_VERSION = "0.16.0";
+export const GAME_VERSION = "0.17.0";
 
 export const VERSION_NOTES: ChangeEntry[] = [
+  {
+    date: "2026-11-12",
+    title: "Versione 0.17: tre torri nuove e sfide della settimana",
+    kind: "versione",
+    items: [
+      "Ingegnere: spara chiodi e costruisce torrette che sparano da sole e restano tra un'ondata e l'altra (1.600 Schegge e 20 Perle)",
+      "Pistolero: revolver rapido che ogni sei colpi a segno incassa cash (700 Schegge)",
+      "Piromante: lanciafiamme a cono, i nemici continuano a bruciare e l'armatura non li salva; non brucia i nemici di brace (1.200 Schegge)",
+      "Sfide della settimana: tre sfide uguali per tutti, cambiano ogni lunedì e danno Perle in più",
+      "Sbloccare le torri più forti costa di più: Star Cannon, Kingpin, Accelerator, Executioner, Sledger, le torri Hardcore e le torri di supporto; chi le ha già le tiene",
+    ],
+  },
   {
     date: "2026-11-11",
     title: "Versione 0.16: nuovo bilanciamento",
@@ -382,3 +394,68 @@ export const VERSION_NOTES: ChangeEntry[] = [
     items: ["Fascio del Faro e Gelata", "Cecchino, Bobina, Officina", "Schegge, ranghi e modalità Infinita"],
   },
 ];
+
+// ---------- sfide della settimana ----------
+
+/** Com'è andata una partita, per quanto serve alle sfide. */
+export interface WeeklyRun {
+  mode: string;
+  won: boolean;
+  cleared: number; // ondate superate
+  lives: number;
+  startLives: number;
+  seconds: number;
+  kinds: string[]; // tipi di torre costruiti nella partita
+  families: string[]; // famiglie di quelle torri
+  towers: number; // torri in campo alla fine
+  players: number;
+}
+
+export interface WeeklyDef {
+  id: string;
+  text: string;
+  perle: number;
+  ok: (r: WeeklyRun) => boolean;
+}
+
+const lost = (r: WeeklyRun) => r.startLives - r.lives;
+export const WEEKLY: WeeklyDef[] = [
+  { id: "easy-intatto", text: "Vinci Easy senza perdere nemmeno una vita", perle: 6, ok: (r) => r.mode === "easy" && r.won && lost(r) <= 0 },
+  { id: "easy-lampo", text: "Vinci Easy in meno di 12 minuti", perle: 6, ok: (r) => r.mode === "easy" && r.won && r.seconds < 720 },
+  { id: "medium-3vite", text: "Vinci Medium perdendo al massimo 3 vite", perle: 8, ok: (r) => r.mode === "medium" && r.won && lost(r) <= 3 },
+  { id: "medium-12torri", text: "Vinci Medium con al massimo 12 torri in campo", perle: 8, ok: (r) => r.mode === "medium" && r.won && r.towers <= 12 },
+  { id: "molten-4tipi", text: "Vinci Molten costruendo al massimo 4 tipi di torre", perle: 10, ok: (r) => r.mode === "molten" && r.won && r.kinds.length <= 4 },
+  { id: "molten-soli", text: "Vinci Molten senza torri di supporto", perle: 10, ok: (r) => r.mode === "molten" && r.won && !r.families.includes("supporto") },
+  { id: "fallen-puro", text: "Vinci Fallen senza Kingpin né Star Cannon", perle: 12, ok: (r) => r.mode === "fallen" && r.won && !r.kinds.includes("kingpin") && !r.kinds.includes("starcannon") },
+  { id: "fallen-10vite", text: "Vinci Fallen perdendo al massimo 10 vite", perle: 12, ok: (r) => r.mode === "fallen" && r.won && lost(r) <= 10 },
+  { id: "frost-povero", text: "Vinci Frost senza Officine", perle: 12, ok: (r) => r.mode === "frost" && r.won && !r.kinds.includes("officina") },
+  { id: "hardcore-25", text: "Arriva all'ondata 25 in Hardcore", perle: 12, ok: (r) => r.mode === "hardcore" && r.cleared >= 25 },
+  { id: "hardcore-40", text: "Arriva all'ondata 40 in Hardcore", perle: 15, ok: (r) => r.mode === "hardcore" && r.cleared >= 40 },
+  { id: "squadra", text: "Vinci una modalità qualsiasi in squadra", perle: 8, ok: (r) => r.won && r.players >= 2 && ["easy", "medium", "molten", "fallen", "frost", "hardcore"].includes(r.mode) },
+];
+
+const WEEK_MS = 7 * 24 * 3600 * 1000;
+const WEEK_ZERO = Date.UTC(2024, 0, 1); // un lunedì
+/** Numero della settimana: cambia ogni lunedì a mezzanotte (ora di Greenwich), uguale per tutti. */
+export const weekOf = (ms: number) => Math.floor((ms - WEEK_ZERO) / WEEK_MS);
+export const weekEndsIn = (ms: number) => WEEK_ZERO + (weekOf(ms) + 1) * WEEK_MS - ms;
+
+/** Le tre sfide della settimana: una facile, una media, una dura, a rotazione. */
+export function weeklyFor(week: number): WeeklyDef[] {
+  const tiers = [WEEKLY.filter((w) => w.perle <= 8), WEEKLY.filter((w) => w.perle > 8 && w.perle <= 10).concat(WEEKLY.filter((w) => w.id === "fallen-puro")), WEEKLY.filter((w) => w.perle >= 12 && w.id !== "fallen-puro")];
+  const k = Math.max(0, week);
+  return tiers.map((t, i) => t[(k + i * 2) % t.length]);
+}
+
+export interface WeeklyState {
+  week: number;
+  done: string[];
+}
+
+/** Segna le sfide riuscite con questa partita e dice quali sono nuove. */
+export function weeklyCheck(state: WeeklyState | undefined, run: WeeklyRun, nowMs: number): { state: WeeklyState; won: WeeklyDef[] } {
+  const week = weekOf(nowMs);
+  const cur: WeeklyState = state && state.week === week ? state : { week, done: [] };
+  const won = weeklyFor(week).filter((w) => !cur.done.includes(w.id) && w.ok(run));
+  return { state: { week, done: [...cur.done, ...won.map((w) => w.id)] }, won };
+}

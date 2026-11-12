@@ -618,6 +618,18 @@ export function drawEnemy(ctx: CanvasRenderingContext2D, e: Enemy, x: number, y:
     ctx.arc(x, y, T * (enemySize(e) + 0.1), 0, Math.PI * 2);
     ctx.stroke();
   }
+  if (e.burnT) {
+    // Brucia: fiammelle che guizzano sopra la testa.
+    for (let i = -1; i <= 1; i++) {
+      const h = T * (0.12 + 0.05 * Math.sin(time * 0.02 + i * 2 + e.id));
+      ctx.fillStyle = i ? "#ff8a3a" : "#ffe08a";
+      ctx.beginPath();
+      ctx.moveTo(x + i * T * 0.09 - T * 0.05, y - T * 0.05);
+      ctx.lineTo(x + i * T * 0.09, y - T * 0.05 - h);
+      ctx.lineTo(x + i * T * 0.09 + T * 0.05, y - T * 0.05);
+      ctx.fill();
+    }
+  }
   if (e.stun > 0) {
     ctx.fillStyle = COLORS.brass;
     for (let i = 0; i < 3; i++) {

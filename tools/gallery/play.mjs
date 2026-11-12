@@ -17,7 +17,7 @@ const mode = process.argv[2] ?? "easy";
 const n = await page.evaluate((mode) => {
   const f = window.__faro;
   f.debug.restart(7, { mode, level: "porto", sandbox: true });
-  const kinds = ["balestra", "mortaio", "soffio", "cecchino", "bobina", "officina", "grammofono", "capitano", "medico", "kingpin", "sledger", "executioner", "arpione", "mitragliera", "purificatore", "accelerator", "starcannon"];
+  const kinds = ["ingegnere", "pistolero", "piromante", "balestra", "mortaio", "soffio", "cecchino", "bobina", "officina", "grammofono", "capitano", "medico", "kingpin", "sledger", "executioner", "arpione", "mitragliera", "purificatore", "accelerator", "starcannon"];
   let i = 0;
   for (let cy = 0; cy < 9 && i < kinds.length; cy++) for (let cx = 1; cx < 15 && i < kinds.length; cx += 2) {
     const before = f.state.towers.length;

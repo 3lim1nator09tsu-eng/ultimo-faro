@@ -323,7 +323,7 @@ for (const vp of [{ width: 390, height: 700 }, { width: 844, height: 390 }]) {
   await page.waitForTimeout(200);
   while (await page.locator("#dialog").isVisible()) await page.locator("#dialog").tap();
   let st = await page.evaluate(() => window.__faro.state);
-  check(`${tag}: la prova ha tutte le 20 torri e niente premi`, st.sandbox && st.allowed.length === 20 && (await page.locator(".card").count()) === 20);
+  check(`${tag}: la prova ha tutte le 23 torri e niente premi`, st.sandbox && st.allowed.length === 23 && (await page.locator(".card").count()) === 23);
   const dmg = await page.evaluate(() => {
     const f = window.__faro;
     f.debug.send({ t: "build", kind: "balestra", cx: 5, cy: 3 });
@@ -425,6 +425,52 @@ for (const vp of [{ width: 390, height: 760 }, { width: 844, height: 390 }]) {
   await page.waitForTimeout(80);
   check(`${tag}: il secondo tocco vende`, (await page.evaluate(() => window.__faro.state.towers.length)) === 0);
   check(`${tag}: nessun errore nella vendita`, errors.length === 0, errors.join(" | "));
+  await context.close();
+}
+
+// ---------- sfide della settimana ----------
+{
+  const { page, errors, context } = await open({ width: 420, height: 860 });
+  while (await page.locator("#dialog").isVisible()) await page.locator("#dialog").tap();
+  const texts = await page.locator("#weekly .mission b").allTextContents();
+  const pick = texts.find((t) => !/squadra/.test(t));
+  const mode = (pick.match(/Easy|Medium|Molten|Fallen|Frost|Hardcore/) ?? ["Easy"])[0].toLowerCase();
+  const before = await page.evaluate(() => window.__faro.debug.meta.perle);
+  await page.evaluate((mode) => {
+    const f = window.__faro;
+    f.debug.restart(3, { mode, level: "porto" });
+    // Ultima ondata già vuota: al prossimo passo la partita è vinta davvero, con i premi veri.
+    const n = { easy: 20, medium: 25, molten: 30, fallen: 35, frost: 40, hardcore: 50 }[mode];
+    f.state.wave = n;
+    f.state.cleared = n - 1;
+    f.state.phase = "wave";
+    f.state.spawns = [];
+    f.state.enemies = [];
+  }, mode);
+  await page.waitForTimeout(900);
+  const after = await page.evaluate(() => ({ perle: window.__faro.debug.meta.perle, weekly: window.__faro.debug.meta.weekly }));
+  check(`sfida della settimana riuscita (${pick}): Perle in più e segnata come fatta`, after.weekly?.done.length >= 1 && after.perle > before, JSON.stringify(after));
+  const shown = await page.locator("body").textContent();
+  check("la schermata finale lo dice", /Sfida della settimana riuscita/.test(shown));
+  // Rifarla nella stessa settimana non paga due volte.
+  const mid = after.perle;
+  const gained = await page.evaluate((mode) => {
+    const f = window.__faro;
+    const base = f.debug.meta.perle;
+    f.debug.restart(4, { mode, level: "porto" });
+    const start = f.debug.meta.perle;
+    const n = { easy: 20, medium: 25, molten: 30, fallen: 35, frost: 40, hardcore: 50 }[mode];
+    f.state.wave = n;
+    f.state.cleared = n - 1;
+    f.state.phase = "wave";
+    f.state.spawns = [];
+    f.state.enemies = [];
+    return [base, start];
+  }, mode);
+  await page.waitForTimeout(900);
+  const again = await page.evaluate(() => window.__faro.debug.meta.weekly.done.length);
+  check("la stessa sfida non si riscuote due volte", again === after.weekly.done.length, `${mid} ${gained}`);
+  check(`sfide: nessun errore ${errors.join(" | ")}`, errors.length === 0);
   await context.close();
 }
 
@@ -546,7 +592,8 @@ for (const vp of [{ width: 390, height: 760 }, { width: 844, height: 390 }]) {
   await page.screenshot({ path: `${outDir}/12-menu.png` });
   check("il menu compare all'avvio", await page.locator("#menu").isVisible());
   check("Infinita è chiusa finché non si vince", await page.locator("#mInfinita").isDisabled());
-  check("l'Arsenale elenca 18 torri (le 2 admin restano nascoste)", (await page.locator("#arsenal .row").count()) === 18);
+  check("l'Arsenale elenca 21 torri (le 2 admin restano nascoste)", (await page.locator("#arsenal .row").count()) === 21);
+  check("le sfide della settimana sono tre, con le Perle in premio", (await page.locator("#weekly .mission").count()) === 3 && /Perle/.test(await page.locator("#weekly").textContent()) && /cambiano tra/.test(await page.locator("#weeklyLeft").textContent()));
   check("la Stella Cometa si ottiene solo vincendo la Notte 5", (await page.locator('#arsenal button[data-kind="cometa"]').textContent()) === "Vinci la Notte 5");
   check("ci sono tre missioni attive", (await page.locator("#missions .mission").count()) === 3);
   check("le medaglie sono 18", (await page.locator("#medals .medal").count()) === 18);
@@ -554,7 +601,7 @@ for (const vp of [{ width: 390, height: 760 }, { width: 844, height: 390 }]) {
   check("Notte 1 aperta, Notte 2 chiusa", !(await page.locator('[data-night="1"]').isDisabled()) && (await page.locator('[data-night="2"]').isDisabled()));
   check("il Disgelo è indicato nel menu", /forza \d+%/.test(await page.locator("#disgelo").textContent()));
   check("la sezione Online mostra l'accesso", await page.locator("#olLogin").isVisible());
-  check("torri Hardcore, Kingpin e Star Cannon chiedono Perle", (await page.locator("#arsenal button.pearl").count()) === 6);
+  check("torri Hardcore, Kingpin e Star Cannon chiedono Perle", (await page.locator("#arsenal button.pearl").count()) === 7);
   check("i livelli 2 e 3 sono chiusi all'inizio", (await page.locator('[data-play="foce"]').isDisabled()) && (await page.locator('[data-play="marea"]').isDisabled()));
   check("senza Schegge non si sblocca", await page.locator('#arsenal button[data-kind="cecchino"]').isDisabled());
   check("il menu non scorre di lato", await page.evaluate(() => document.getElementById("menu").scrollWidth <= innerWidth));
@@ -595,10 +642,10 @@ for (const vp of [{ width: 390, height: 760 }, { width: 844, height: 390 }]) {
     window.__faro.debug.setSchegge(2000);
   });
   const kp = page.locator('#arsenal button[data-kind="kingpin"]');
-  check("il Kingpin chiede Schegge e Perle", /1\.?000 Schegge \+ 40 Perle/.test(await kp.textContent()) && (await kp.isDisabled()), await kp.textContent());
+  check("il Kingpin chiede Schegge e Perle", /1\.?800 Schegge \+ 55 Perle/.test(await kp.textContent()) && (await kp.isDisabled()), await kp.textContent());
   await page.evaluate(() => {
-    window.__faro.debug.meta.perle = 50;
-    window.__faro.debug.setSchegge(2000);
+    window.__faro.debug.meta.perle = 65;
+    window.__faro.debug.setSchegge(2800);
   });
   await kp.tap();
   const meta3 = await page.evaluate(() => window.__faro.debug.meta);

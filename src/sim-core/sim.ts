@@ -75,6 +75,9 @@ export interface Enemy {
   bountyBp?: number;
   chill?: number; // rallentamento dello Sledger, in bp
   chillT?: number; // tick prima che il rallentamento svanisca
+  burn?: number; // Piromante: danni ogni mezzo secondo
+  burnT?: number; // tick di bruciatura rimasti
+  burnBy?: number; // torre che l'ha acceso
   frozen?: number; // tick di congelamento rimasti
 }
 
@@ -119,6 +122,9 @@ export interface Tower {
   acc?: number; // Accelerator: tick rimasti della fase in corso
   accOn?: boolean; // Accelerator: true durante la raffica
   lock?: number; // Accelerator: id del bersaglio agganciato
+  sentries?: number[]; // Ingegnere: una voce per torretta costruita, con i tick al prossimo colpo
+  sentryT?: number; // Ingegnere: tick di cantiere accumulati
+  shots?: number; // Pistolero: colpi dall'ultimo incasso
 }
 
 /** Unità del Kingpin: camminano dal Faro verso il mare e combattono i nemici che incontrano. */
@@ -288,7 +294,9 @@ export type GameEvent =
   | { e: "chosen"; kind: string; pick: string }
   | { e: "contract"; ok: boolean; amount: number }
   | { e: "eruption" }
-  | { e: "swing"; from: number; x: number; y: number; tx: number; ty: number; range: number; cone: number }
+  | { e: "swing"; from: number; x: number; y: number; tx: number; ty: number; range: number; cone: number; fire?: boolean }
+  | { e: "sentry"; from: number; n: number }
+  | { e: "tip"; x: number; y: number; amount: number }
   | { e: "axe"; from: number; points: number[] }
   | { e: "execute"; x: number; y: number }
   | { e: "iced"; x: number; y: number }
@@ -484,6 +492,8 @@ export function rankedStats(t: Pick<Tower, "kind" | "level" | "branch">, rank: n
   return {
     ...s,
     damage: scale(s.damage),
+    sentryDamage: scale(s.sentryDamage),
+    burnDamage: scale(s.burnDamage),
     slowBp: s.slowBp < 10000 ? 10000 - scale(10000 - s.slowBp) : s.slowBp,
     income: scale(s.income),
     auraBp: scale(s.auraBp),
@@ -528,6 +538,8 @@ export function effStats(state: GameState, t: Tower): TowerStats {
     ...s,
     detect: s.detect || detect,
     damage: Math.floor((s.damage * (10000 + dmg)) / 10000),
+    sentryDamage: Math.floor((s.sentryDamage * (10000 + dmg)) / 10000),
+    burnDamage: Math.floor((s.burnDamage * (10000 + dmg)) / 10000),
     range: Math.floor((s.range * (10000 + rng)) / 10000),
     cooldown: s.cooldown > 0 ? Math.max(1, Math.floor((Math.floor((s.cooldown * 10000) / (10000 + haste)) * coldBp) / 10000)) : 0,
   };
@@ -830,6 +842,14 @@ export const eruptionNext = (state: GameState) => state.mode === "molten" && (st
 // ---------- Sledger ----------
 
 /** Coseno al quadrato del mezzo cono, in bp: niente trigonometria, stesso risultato su ogni dispositivo. */
+/** Chi è fatto di brace non brucia. */
+export const BURN_IMMUNE: EnemyKind[] = ["tizzone", "magmatico", "colosso"];
+/** Ogni quanti tick morde la bruciatura. */
+export const BURN_EVERY = 5;
+const SENTRY_SPOTS = [-620, -620, 620, -620, 620, 620, -620, 620, 0, -880];
+/** Dove sta la torretta numero i dell'Ingegnere, in unità di mappa. */
+export const sentrySpot = (t: Pick<Tower, "x" | "y">, i: number) => ({ x: t.x + SENTRY_SPOTS[(i % 5) * 2], y: t.y + SENTRY_SPOTS[(i % 5) * 2 + 1] });
+
 const CONE_COS2: Record<number, number> = { 60: 7500, 70: 6710, 80: 5868, 90: 5000 };
 
 function swing(state: GameState, t: Tower, s: TowerStats, target: Enemy, events: GameEvent[]) {
@@ -856,9 +876,17 @@ function swing(state: GameState, t: Tower, s: TowerStats, target: Enemy, events:
     const iced = (e.frozen ?? 0) > 0 || (e.chill ?? 0) > 0;
     hit(state, e, t, s, s.iceBreaker && iced ? s.damage * 2 : s.damage, events);
     chillEnemy(state, e, s, events);
+    if (s.burnDamage > 0 && e.hp > 0 && !BURN_IMMUNE.includes(e.kind)) {
+      // Le fiamme restano addosso: vale la bruciatura più forte, la durata riparte.
+      if (s.burnDamage >= (e.burn ?? 0)) {
+        e.burn = s.burnDamage;
+        e.burnBy = t.id;
+      }
+      e.burnT = Math.max(e.burnT ?? 0, s.burnTicks);
+    }
   }
   if (s.aftershockBp > 0) (state.quakes ??= []).push({ tick: state.tick + 4, towerId: t.id, ids: hitList.map((e) => e.id), amount: Math.floor((s.damage * s.aftershockBp) / 10000) });
-  events.push({ e: "swing", from: t.id, x: t.x, y: t.y, tx: target.x, ty: target.y, range: s.range, cone: s.coneDeg });
+  events.push({ e: "swing", from: t.id, x: t.x, y: t.y, tx: target.x, ty: target.y, range: s.range, cone: s.coneDeg, ...(s.burnDamage > 0 ? { fire: true } : {}) });
 }
 
 function chillEnemy(state: GameState, e: Enemy, s: TowerStats, events: GameEvent[]) {
@@ -1940,11 +1968,26 @@ export function step(state: GameState, commands: Command[] = []): GameEvent[] {
       e.speedBp = Math.min(e.speedBp, 10000 - (e.chill ?? 0));
       if (!e.chillT) e.chill = 0;
     }
+    if (e.burnT) {
+      // Bruciatura del Piromante: morde ogni mezzo secondo e ignora l'armatura.
+      e.burnT -= 1;
+      if (e.hp > 0 && state.tick % BURN_EVERY === 0) {
+        const done = applyDamage(e, e.burn ?? 0);
+        const by = state.towers.find((t) => t.id === e.burnBy);
+        if (by) by.damageDone += done;
+      }
+      if (!e.burnT) e.burn = 0;
+    }
   }
 
   // Movimento dei nemici.
   const survivors: Enemy[] = [];
   for (const e of state.enemies) {
+    if (e.hp <= 0) {
+      // Finito dalle fiamme: resta dov'è finché non viene tolto.
+      survivors.push(e);
+      continue;
+    }
     if (e.stun > 0) {
       e.stun -= 1;
     } else {
@@ -1980,6 +2023,32 @@ export function step(state: GameState, commands: Command[] = []): GameEvent[] {
     if (s.accBurst > 0) {
       accelerate(state, t, s, events);
       continue;
+    }
+    if (s.sentryMax > 0) {
+      // Ingegnere: il cantiere va avanti da solo; ogni torretta spara per conto suo sullo stesso bersaglio.
+      const list = (t.sentries ??= []);
+      if (list.length > s.sentryMax) list.length = s.sentryMax;
+      if (list.length < s.sentryMax) {
+        t.sentryT = (t.sentryT ?? 0) + 1;
+        if (t.sentryT >= s.sentryEvery) {
+          t.sentryT = 0;
+          list.push(0);
+          events.push({ e: "sentry", from: t.id, n: list.length });
+        }
+      }
+      let aimAt: Enemy | null | undefined;
+      for (let i = 0; i < list.length; i++) {
+        if (list[i] > 0) {
+          list[i] -= 1;
+          continue;
+        }
+        if (aimAt === undefined) aimAt = pickTarget(state, t, s);
+        if (!aimAt || aimAt.hp <= 0) break;
+        list[i] = s.sentryCooldown;
+        hit(state, aimAt, t, s, s.sentryDamage, events);
+        const from = sentrySpot(t, i);
+        events.push({ e: "shot", from: -1, to: aimAt.id, x: from.x, y: from.y, tx: aimAt.x, ty: aimAt.y });
+      }
     }
     if (s.cooldown === 0 || t.cooldown > 0) continue;
     if (s.pulseAll) {
@@ -2043,6 +2112,15 @@ export function step(state: GameState, commands: Command[] = []): GameEvent[] {
     } else {
       hit(state, target, t, s, s.damage, events);
       events.push({ e: "shot", from: t.id, to: target.id, x: t.x, y: t.y, tx: target.x, ty: target.y });
+      if (s.cashEvery > 0) {
+        // Pistolero: ogni tot colpi a segno incassa.
+        t.shots = (t.shots ?? 0) + 1;
+        if (t.shots >= s.cashEvery) {
+          t.shots = 0;
+          addCash(state, t.owner, s.cashAmount);
+          events.push({ e: "tip", x: t.x, y: t.y, amount: s.cashAmount });
+        }
+      }
     }
   }
 
@@ -2217,6 +2295,8 @@ export function hashState(state: GameState): string {
     mix(e.hp);
     mix(e.chill ?? 0);
     mix(e.chillT ?? 0);
+    mix(e.burn ?? 0);
+    mix(e.burnT ?? 0);
     mix(e.frozen ?? 0);
     mix(e.lane);
     mix(e.dist);
@@ -2253,6 +2333,9 @@ export function hashState(state: GameState): string {
     mix(t.acc ?? -1);
     mix(t.accOn ? 1 : 0);
     mix(t.lock ?? 0);
+    mix(t.sentryT ?? 0);
+    mix(t.shots ?? 0);
+    for (const c of t.sentries ?? []) mix(c + 1);
     mix(t.abilityCd);
     mix(t.abilityLeft);
     mix(t.owner);

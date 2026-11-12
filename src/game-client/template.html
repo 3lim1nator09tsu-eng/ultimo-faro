@@ -202,6 +202,9 @@ table.board { width: 100%; border-collapse: collapse; font-variant-numeric: tabu
 #missions { display: grid; gap: 6px; }
 .mission { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; padding: 8px 10px; background: var(--plate); border: 1px solid var(--line); }
 .mission .bar { margin-top: 4px; }
+#weekly { display: grid; gap: 6px; }
+.weeklyTag { font-size: 12px; padding: 4px 8px; border: 1px solid var(--line); opacity: .8; white-space: nowrap; }
+.mission.done .weeklyTag { border-color: var(--brass); color: var(--brass); opacity: 1; }
 .mission.done { border-color: var(--brass); }
 .mission.done button { background: var(--brass); color: #1b1408; border-color: var(--brass); font-weight: 700; }
 #medals { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; }
@@ -487,6 +490,8 @@ button:not(:disabled):active { transform: translateY(1px); }
     <div id="modes"></div>
     <h2 class="xmasHead">Evento di Natale <small id="disgelo"></small></h2>
     <div id="nights"></div>
+    <h2>Sfide della settimana <small id="weeklyLeft"></small></h2>
+    <div id="weekly"></div>
     <h2>Missioni</h2>
     <div id="missions"></div>
     <h2>Arsenale</h2>

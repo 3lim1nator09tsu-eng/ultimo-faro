@@ -499,7 +499,7 @@ test("divisione, gelo alla morte, furto e immunità al rallentamento", () => {
 
 test("sandbox e comandi admin: tutte le torri, nessun premio, vite infinite, salto d'ondata", () => {
   const s = createGame(1, { sandbox: true, allowed: ["balestra"] });
-  assert.equal(s.allowed.length, 20);
+  assert.equal(s.allowed.length, 23);
   assert.ok(s.cash >= 100000);
   step(s, [{ t: "adminGod", on: true }, { t: "adminSpawn", enemy: "corridore", count: 5, mods: ["agile"] }]);
   for (let i = 0; i < 600; i++) step(s, []);
@@ -1041,8 +1041,8 @@ test("Notte 5: i momenti rapidi premiano chi risponde e puniscono chi sbaglia", 
 test("Bilanciamento: prezzi dell'Arsenale in Schegge e Perle", async () => {
   const B = await import("../src/sim-core/balance");
   const C = await import("../src/sim-core/content");
-  assert.equal(C.TOWERS.kingpin.unlock, 1000);
-  assert.equal(C.TOWERS.kingpin.perle, 40);
+  assert.equal(C.TOWERS.kingpin.unlock, 1800);
+  assert.equal(C.TOWERS.kingpin.perle, 55);
   assert.deepEqual(C.HARDCORE_TOWERS, ["arpione", "mitragliera", "purificatore", "accelerator"]);
   const raw = { shop: [{ key: "kingpin.unlock", value: 1500 }, { key: "kingpin.perle", value: 60 }, { key: "rank.3", value: 250 }, { key: "rank.1", value: 5 }, { key: "nessuna.unlock", value: 5 }, { key: "kingpin.cost", value: 5 }] };
   const b = B.cleanBalance(raw);
@@ -1053,9 +1053,9 @@ test("Bilanciamento: prezzi dell'Arsenale in Schegge e Perle", async () => {
   assert.equal(C.RANK_COSTS[2], 250);
   assert.equal(B.shopValue("rank.3", true), 200);
   B.applyBalance();
-  assert.equal(C.TOWERS.kingpin.unlock, 1000);
+  assert.equal(C.TOWERS.kingpin.unlock, 1800);
   assert.equal(C.RANK_COSTS[2], 200);
-  assert.equal(B.balanceSize(B.pruneBalance({ towers: [], modes: [], maps: [], shop: [{ key: "kingpin.perle", value: 40 }] })), 0);
+  assert.equal(B.balanceSize(B.pruneBalance({ towers: [], modes: [], maps: [], shop: [{ key: "kingpin.perle", value: 55 }] })), 0);
 });
 
 test("Dohoter Gang: boss dell'admin con 67.000 di vita, premi salvi", () => {
@@ -1382,4 +1382,113 @@ test("Bilanciamento: migliorare rende più della torre base, e il boss ha la sco
   const lvl = levelById("porto");
   const count = (w: number) => modeWaveFor("easy", lvl, w - 1).filter((g) => !g.boss).reduce((a, g) => a + g.count, 0);
   assert.ok(BOSS_ESCORT_BP < 10000 && count(20) < count(19) * 1.3, `${count(19)} → ${count(20)}`);
+});
+
+import { WEEKLY, weekOf, weeklyCheck, weeklyFor } from "../src/game-client/progress";
+import { BURN_EVERY, sentrySpot } from "../src/sim-core/sim";
+
+/** Un nemico fermo e robusto davanti a una torre appena costruita. */
+function duel(kind: "ingegnere" | "pistolero" | "piromante", level = 1) {
+  const s = createGame(77, { mode: "campagna", level: "porto", allowed: [kind] });
+  s.cash = 90000;
+  step(s, [{ t: "build", kind, cx: 5, cy: 3 }]);
+  const t = s.towers[0];
+  for (let i = 1; i < level; i++) step(s, [{ t: "upgrade", id: t.id }]);
+  toWave(s);
+  s.spawns = [];
+  s.enemies = [];
+  const lvl = levelById("porto");
+  // Il punto del sentiero più vicino alla torre.
+  let at = 0, best = Infinity;
+  for (let d = 0; d < 40000; d += 100) {
+    const p = lanePoint(lvl, 0, d);
+    const q = (p.x - t.x) ** 2 + (p.y - t.y) ** 2;
+    if (q < best) { best = q; at = d; }
+  }
+  assert.ok(best <= towerStats(t).range ** 2, "il bersaglio è a tiro");
+  const p = lanePoint(lvl, 0, at);
+  const e = { ...newTestEnemy(s), id: s.nextId++, dist: at, x: p.x, y: p.y, hp: 1e6, maxHp: 1e6, stun: 99999, kind: "risacca" as const };
+  s.enemies.push(e);
+  return { s, t, e };
+}
+
+test("Ingegnere: costruisce torrette fino al massimo, sparano da sole e restano", () => {
+  const { s, t, e } = duel("ingegnere");
+  const st = towerStats(t);
+  let built = 0, sentryShots = 0;
+  for (let i = 0; i < st.sentryEvery * 3; i++) {
+    for (const ev of step(s, [])) {
+      if (ev.e === "sentry") built++;
+      if (ev.e === "shot" && ev.from === -1) sentryShots++;
+    }
+  }
+  assert.equal(built, st.sentryMax, "non supera il massimo");
+  assert.equal(t.sentries!.length, st.sentryMax);
+  assert.ok(sentryShots > 10, `colpi delle torrette: ${sentryShots}`);
+  assert.ok(e.hp < 1e6);
+  const spot = sentrySpot(t, 0);
+  assert.ok(spot.x !== t.x || spot.y !== t.y);
+  // Migliorando, il massimo sale e il cantiere riparte.
+  step(s, [{ t: "upgrade", id: t.id }]);
+  for (let i = 0; i < 200; i++) step(s, []);
+  assert.equal(t.sentries!.length, towerStats(t).sentryMax);
+  const h1 = hashState(s);
+  const copy = restore(snapshot(s));
+  assert.equal(hashState(copy), h1, "le torrette passano nel salvataggio");
+});
+
+test("Pistolero: ogni sei colpi a segno incassa", () => {
+  const { s, t } = duel("pistolero");
+  const st = towerStats(t);
+  const before = s.cash;
+  let shots = 0, tips = 0;
+  for (let i = 0; i < 300; i++) for (const ev of step(s, [])) {
+    if (ev.e === "shot" && ev.from === t.id) shots++;
+    if (ev.e === "tip") tips++;
+  }
+  assert.equal(tips, Math.floor(shots / st.cashEvery));
+  assert.equal(s.cash - before, tips * st.cashAmount);
+});
+
+test("Piromante: la bruciatura continua dopo la fiammata, ignora l'armatura, non tocca i nemici di brace", () => {
+  const { s, t, e } = duel("piromante");
+  const st = towerStats(t);
+  step(s, []);
+  assert.ok((e.burnT ?? 0) > 0 && e.burn === st.burnDamage, `brucia: ${e.burn} per ${e.burnT}`);
+  // Venduta la torre, il fuoco resta addosso e poi si spegne.
+  step(s, [{ t: "sell", id: t.id }]);
+  const hp = e.hp;
+  for (let i = 0; i < st.burnTicks + 10; i++) step(s, []);
+  const ticks = Math.round((hp - e.hp) / st.burnDamage);
+  assert.ok(ticks >= Math.floor(st.burnTicks / BURN_EVERY) - 1 && ticks <= Math.ceil(st.burnTicks / BURN_EVERY) + 1, `morsi: ${ticks}`);
+  assert.equal(e.burnT ?? 0, 0);
+  const hot = duel("piromante");
+  hot.e.kind = "tizzone" as never;
+  step(hot.s, []);
+  assert.ok(!hot.e.burnT, "il Tizzone non brucia");
+});
+
+test("Sfide della settimana: tre a settimana, uguali per tutti, premio una volta sola", () => {
+  const monday = Date.UTC(2026, 10, 9);
+  assert.equal(weekOf(monday), weekOf(monday + 6 * 86400000 + 86399000));
+  assert.equal(weekOf(monday + 7 * 86400000), weekOf(monday) + 1);
+  for (let w = 0; w < 60; w++) {
+    const set = weeklyFor(w);
+    assert.equal(new Set(set.map((x) => x.id)).size, 3, `settimana ${w}`);
+  }
+  const seen = new Set<string>();
+  for (let w = 0; w < 30; w++) for (const x of weeklyFor(w)) seen.add(x.id);
+  assert.equal(seen.size, WEEKLY.length, "prima o poi escono tutte");
+  const w = weekOf(monday);
+  const target = weeklyFor(w)[0];
+  const base = { mode: "easy", won: true, cleared: 20, lives: 20, startLives: 20, seconds: 100, kinds: ["balestra"], families: ["attacco"], towers: 3, players: 2 };
+  const run = WEEKLY.map(() => base).find(() => target.ok(base)) ?? { ...base, mode: target.id.split("-")[0], cleared: 50 };
+  assert.ok(target.ok(run), target.id);
+  const a = weeklyCheck(undefined, run, monday);
+  assert.ok(a.won.some((x) => x.id === target.id));
+  const b = weeklyCheck(a.state, run, monday + 1000);
+  assert.equal(b.won.length, 0, "non si riscuote due volte");
+  const c = weeklyCheck(a.state, run, monday + 7 * 86400000);
+  assert.equal(c.state.week, w + 1);
+  assert.ok(!c.state.done.includes(target.id) || weeklyFor(w + 1).some((x) => x.id === target.id));
 });

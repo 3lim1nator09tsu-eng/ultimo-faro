@@ -401,6 +401,84 @@ export function towerFigure(c: C, kind: TowerKind, T: number, angle: number, lev
       });
       break;
     }
+    case "ingegnere": {
+      c.rotate(angle);
+      person(c, s, { skin: SKIN, shirt: "#e8862a", pull: pull * 0.6 }, {
+        back: (q) => {
+          // Chiave inglese a tracolla; dal livello 3 anche la cassetta degli attrezzi.
+          limb(c, -0.75 * s, -0.7 * s, -0.75 * s, 0.6 * s, 0.14 * s, "#aab4ba", q * 0.6);
+          if (level >= 3) box(c, -1.2 * s, -0.45 * s, 0.5 * s, 0.9 * s, 0.1 * s, "#c0392b", q);
+        },
+        chest: (q) => {
+          c.fillStyle = "#fff1b0";
+          c.fillRect(-0.4 * s, -0.55 * s, 0.8 * s, 0.14 * s);
+          c.fillRect(-0.4 * s, 0.41 * s, 0.8 * s, 0.14 * s);
+          pads("#f5a653")(q);
+        },
+        held: (q) => {
+          c.save();
+          c.translate(-pull * 0.6 * s, 0);
+          const tip = gun(c, s, q, { len: 1.35, w: 0.36, body: "#f0c93a", barrel: accent ?? "#565e66" });
+          flash(c, tip + 0.1 * s, s * 0.7, kick);
+          c.restore();
+        },
+        hat: (hx, hr, q) => helmet(c, hx, hr, q, "#f0c93a", "#c9a52a"),
+      });
+      break;
+    }
+    case "pistolero": {
+      c.rotate(angle);
+      person(c, s, { skin: SKIN, shirt: "#a8442f", sleeve: "#d9c9a8", pull, reach: 1.15 }, {
+        back: pack("#6b4a2a"),
+        chest: (q) => {
+          // Poncho a strisce e stella da sceriffo dal livello 2.
+          c.fillStyle = "#e0b354";
+          c.fillRect(-0.42 * s, -0.25 * s, 0.84 * s, 0.14 * s);
+          c.fillRect(-0.42 * s, 0.12 * s, 0.84 * s, 0.14 * s);
+          if (level >= 2) star(c, 0.2 * s, -0.6 * s, 0.2 * s, "#ffe08a", 5, 0.45);
+          void q;
+        },
+        held: (q) => {
+          c.save();
+          c.translate(-pull * s, 0);
+          c.rotate(-kick * 0.5);
+          const tip = gun(c, s, q, { len: 1.25, w: 0.3, body: WOOD, barrel: accent ?? "#aab4ba", drum: "#8f9ca3" });
+          flash(c, tip + 0.12 * s, s * 0.8, kick);
+          c.restore();
+        },
+        hat: (hx, hr, q) => brim(c, hx, hr, q, "#7a5230", "#3b2a1a", 1.75),
+      });
+      break;
+    }
+    case "piromante": {
+      c.rotate(angle);
+      person(c, s, { skin: "#3a3f45", shirt: "#8a2a22", sleeve: "#6a1f1a", eyes: "#ffb347" }, {
+        back: (q) => {
+          // Bombole sulla schiena.
+          box(c, -1.0 * s, -0.75 * s, 0.6 * s, 0.65 * s, 0.25 * s, "#c9a23a", q);
+          box(c, -1.0 * s, 0.1 * s, 0.6 * s, 0.65 * s, 0.25 * s, level >= 3 ? "#e2714f" : "#c9a23a", q);
+        },
+        chest: pads("#b8452f"),
+        held: (q) => {
+          gun(c, s, q, { len: 1.6, w: 0.28, body: "#3a4247", barrel: accent ?? "#6b7a82" });
+          const lick = 0.7 + 0.3 * Math.sin(time * 0.03);
+          // Fiammella pilota sempre accesa; quando spara, la vampata.
+          shape(c, [2.0 * s, -0.1 * s, 2.3 * s * lick + 0.1 * s, 0, 2.0 * s, 0.1 * s], "#ffb347", 0);
+          if (kick > 0.05) {
+            c.globalAlpha = Math.min(1, kick * 1.4);
+            shape(c, [2.0 * s, -0.22 * s, (2.9 + lick * 0.5) * s, -0.5 * s, (3.4 + lick * 0.4) * s, 0, (2.9 + lick * 0.5) * s, 0.5 * s, 2.0 * s, 0.22 * s], "#ff8a3a", 0);
+            shape(c, [2.0 * s, -0.12 * s, (2.6 + lick * 0.3) * s, -0.22 * s, (2.9 + lick * 0.3) * s, 0, (2.6 + lick * 0.3) * s, 0.22 * s, 2.0 * s, 0.12 * s], "#ffe08a", 0);
+            c.globalAlpha = 1;
+          }
+        },
+        hat: (hx, hr, q) => {
+          helmet(c, hx, hr, q, "#5a1a16");
+          // Filtro della maschera.
+          dot(c, hx + hr * 0.75, 0, hr * 0.3, "#aab4ba", q * 0.7);
+        },
+      });
+      break;
+    }
     case "accelerator": {
       c.rotate(angle);
       const glow = 0.6 + 0.4 * Math.sin(time * 0.008);
@@ -753,6 +831,22 @@ export function towerFigure(c: C, kind: TowerKind, T: number, angle: number, lev
       break;
     }
   }
+}
+
+/** Torretta dell'Ingegnere: treppiede, corpo e canna, rivolta dove spara. */
+export function sentryFigure(c: C, T: number, angle: number, heavy: boolean, kick: number) {
+  const lw = Math.max(1, T * 0.025);
+  for (let i = 0; i < 3; i++) {
+    const a = (i * TAU) / 3 + 0.5;
+    limb(c, 0, 0, Math.cos(a) * T * 0.17, Math.sin(a) * T * 0.17, T * 0.04, "#565e66", lw * 0.6);
+  }
+  c.save();
+  c.rotate(angle);
+  box(c, T * 0.02 - kick * T * 0.03, -T * 0.035, T * 0.2, T * 0.07, T * 0.02, "#3a4247", lw);
+  box(c, -T * 0.1, -T * 0.09, T * 0.18, T * 0.18, T * 0.04, heavy ? "#8f9ca3" : "#f0c93a", lw);
+  dot(c, -T * 0.01, 0, T * 0.03, heavy ? CORAL : "#e8862a");
+  if (kick > 0.5) star(c, T * 0.26, 0, T * 0.07, "#fff6d6", 4, 0.4, 0.4);
+  c.restore();
 }
 
 // ---------- nemici ----------

@@ -1,6 +1,6 @@
 // Client del prototipo: disegna lo stato, raccoglie i tocchi, non decide mai le regole.
 import { ADMIN_ONLY, EVENT_TOWER, KINGPIN_QUEUE, SURVIVAL_MAPS, UNITS, UNIT_ORDER, ABILITIES, APEX_RANK, AbilityId, ENEMIES, GameMode, HARDCORE_TOWERS, LEVELS, MODS, LOADOUT_SIZE, MAP_H, MAP_W, MAX_RANK, RANK_COSTS, RULES, STARTER_TOWERS, TICKS_PER_SECOND, TILE, TOWERS, TOWER_ORDER, TRACKS, TowerKind, Track, Branch, levelById } from "../sim-core/content";
-import { Command, Enemy, GameEvent, levelHpBp, GameOptions, GameState, modBit, playerCount, hiddenWon, canPlace, covers, sizeOf, abilityCdOf, allowedOf, cashOf, apexBlock, apexPrice, applyCommands, modsOf, perleFor, cellEmerged, createGame, effStats, hashState, isBuildable, laneIsOpen, levelOf, rankedStats, restore, rewardFor, sellValue, specPrice, statsIn, snapshot, starsFor, step, upgradePrice, waveCount, wavePreview } from "../sim-core/sim";
+import { Command, Enemy, GameEvent, levelHpBp, sentrySpot, GameOptions, GameState, modBit, playerCount, hiddenWon, canPlace, covers, sizeOf, abilityCdOf, allowedOf, cashOf, apexBlock, apexPrice, applyCommands, modsOf, perleFor, cellEmerged, createGame, effStats, hashState, isBuildable, laneIsOpen, levelOf, rankedStats, restore, rewardFor, sellValue, specPrice, statsIn, snapshot, starsFor, step, upgradePrice, waveCount, wavePreview } from "../sim-core/sim";
 import { playBot } from "../sim-core/bot";
 import { drawTwist, qteKey, renderAim, renderChoice, renderQte, renderTwist, twistToast } from "./twist-ui";
 import { HARDCORE, ModeDef, NIGHTS, SURVIVAL, disgeloFor, modeDef } from "../sim-core/modes";
@@ -9,7 +9,8 @@ import { NetMatch, Player, Setup } from "./netplay";
 import { renderLobby, renderOnline } from "./online-ui";
 import { AdminApi, BalanceEntry, BalanceKind, describeAll, describeEntry, renderAdminDrawer, renderAdminPanel } from "./admin";
 import { Balance, applyBalance, balanceSize, cleanBalance, emptyBalance, mergeBalance, pruneBalance } from "../sim-core/balance";
-import { ChangeEntry, MEDALS, MISSIONS, MissionSlot, Totals, GAME_VERSION, VERSION_NOTES, emptyTotals, levelFromXp, levelReward, missionProgress, missionTarget, missionText, newSlot } from "./progress";
+import { ChangeEntry, MEDALS, MISSIONS, MissionSlot, Totals, GAME_VERSION, VERSION_NOTES, emptyTotals, levelFromXp, levelReward, missionProgress, missionTarget, missionText, newSlot, WeeklyState, weekEndsIn, weekOf, weeklyCheck, weeklyFor } from "./progress";
+import { sentryFigure } from "./figures";
 import { COLORS, enemySize, applyMap, drawEnemy, drawEnemyBody, drawFaro, drawShoal, drawTide, drawTowerShape, mapToScreen, renderBackground, toPx } from "./draw";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -159,12 +160,16 @@ let inspectId: number | null = null;
 let hoverId: number | null = null;
 const drawnAt = new Map<number, { x: number; y: number }>();
 const aim = new Map<number, number>();
+/** Tipi di torre costruiti in questa partita, per le sfide della settimana. */
+const matchKinds = new Set<string>();
+/** Ultimo colpo di ogni torretta dell'Ingegnere (id torre * 8 + numero). */
+const sentryShot = new Map<number, number>();
 /** Quando ha sparato ogni torre (rinculo) e quando è stata costruita o migliorata (saltello). */
 const fired = new Map<number, number>();
 const popAt = new Map<number, number>();
 /** Ultimo aspetto di ogni nemico: direzione, vita e posizione, per girarlo, farlo lampeggiare e farlo cadere. */
 const shown = new Map<number, { e: Enemy; x: number; y: number; h: number; hp: number; hitAt: number }>();
-const KICK_MS: Partial<Record<TowerKind, number>> = { sledger: 340, mortaio: 320, starcannon: 520, executioner: 420, arpione: 380, cecchino: 240, balestra: 220 };
+const KICK_MS: Partial<Record<TowerKind, number>> = { piromante: 420, pistolero: 150, sledger: 340, mortaio: 320, starcannon: 520, executioner: 420, arpione: 380, cecchino: 240, balestra: 220 };
 
 interface Fx {
   kind: "tracer" | "blast" | "float" | "zap" | "beam" | "ring" | "cone" | "axe" | "corpse";
@@ -250,6 +255,7 @@ const lineKey = () => (state.mode === "natale" ? `natale:${state.night}` : state
 
 interface Meta {
   v: 2;
+  weekly?: WeeklyState; // sfide della settimana già riuscite
   schegge: number;
   earned: number;
   unlocked: TowerKind[];
@@ -328,6 +334,7 @@ function loadMeta(raw: string | null = store.get("faro.meta.v1")): Meta {
       m.missionNext = n(d.missionNext, 3, 1e6, 3);
     }
     m.hcWins = record(d.hcWins, 1e6);
+    if (d.weekly && typeof d.weekly === "object" && Array.isArray(d.weekly.done)) m.weekly = { week: n(d.weekly.week, 0, 1e6, 0), done: d.weekly.done.filter((x) => typeof x === "string").slice(0, 12) };
     if (Array.isArray(d.medals)) m.medals = d.medals.filter((x) => typeof x === "string");
     // Le modifiche della 0.8 erano solo per le torri: diventano prove su questo dispositivo.
     const old = (d as { overrides?: unknown }).overrides;
@@ -836,6 +843,9 @@ function statsLine(kind: TowerKind, level: number, branch: Branch | null, rank =
     const ice = s.freezeTicks ? ` Oltre il ${pct(s.chillMax)} di rallentamento congela per ${num(s.freezeTicks / TICKS_PER_SECOND)} s (non i boss né chi resiste al gelo).` : "";
     return `Martellata a cono: ${s.damage} danni a ${s.maxTargets} nemici, ${num(TICKS_PER_SECOND / s.cooldown)} colpi/s, portata ${range}. Ogni colpo rallenta del ${pct(s.chillBp)} fino al ${pct(s.chillMax)}.${ice}${s.iceBreaker ? " Danno doppio a chi è gelato." : ""}${s.aftershockBp ? ` Seconda scossa del ${pct(s.aftershockBp)}.` : ""}`;
   }
+  if (kind === "ingegnere") return `Chiodi: ${s.damage} danni, ${num(TICKS_PER_SECOND / s.cooldown)} colpi/s, gittata ${range}. Costruisce una torretta ogni ${num(s.sentryEvery / TICKS_PER_SECOND)} s, fino a ${s.sentryMax}: ognuna fa ${s.sentryDamage} danni, ${num(TICKS_PER_SECOND / s.sentryCooldown)} colpi/s. Le torrette restano tra un'ondata e l'altra.${s.pierce ? " Ignora l'armatura." : ""}${s.detect ? " Vede gli invisibili." : ""}`;
+  if (kind === "pistolero") return `Revolver: ${s.damage} danni, ${num(TICKS_PER_SECOND / s.cooldown)} colpi/s, gittata ${range}. Ogni ${s.cashEvery} colpi a segno incassa ${s.cashAmount} cash.`;
+  if (kind === "piromante") return `Fiammata a cono: ${s.damage} danni a ${s.maxTargets} nemici, ${num(TICKS_PER_SECOND / s.cooldown)} fiammate/s, portata ${range}. Chi è colpito brucia per ${num(s.burnTicks / TICKS_PER_SECOND)} s: ${s.burnDamage * 2} danni al secondo che ignorano l'armatura. Non brucia i nemici di brace.`;
   if (kind === "starcannon") return `Si carica in ${num(s.chargeTicks / TICKS_PER_SECOND)} s: a carica piena ${fmt(s.cannonMax)} danni e ${num(s.cannonStun / TICKS_PER_SECOND)} s di stordimento in un'area di ${num(s.radius / TILE)}; se spari prima, da ${fmt(s.cannonMin)} in su. Poi ${num(s.cooldown / TICKS_PER_SECOND)} s di pausa. Gittata ${range}. Occupa 4 caselle.`;
   if (kind === "accelerator") return `Carica ${num(s.accCharge / TICKS_PER_SECOND)} s, poi raffica di ${num(s.accBurst / TICKS_PER_SECOND)} s: ${s.damage} danni ogni ${num(s.accTick / TICKS_PER_SECOND)} s sullo stesso bersaglio finché vive. Gittata ${range}.${s.detect ? " Vede gli invisibili." : ""}`;
   if (kind === "executioner") return `Ascia: ${s.damage} danni, ${num(TICKS_PER_SECOND / s.cooldown)} lanci/s, gittata ${range}; rimbalza su ${s.chains} nemici senza perdere forza.${s.detect ? " Vede gli invisibili." : ""}${s.executeBp ? ` Finisce chi scende sotto il ${pct(s.executeBp)} di vita.` : ""}`;
@@ -1158,6 +1168,16 @@ function handleEvents(events: GameEvent[]) {
     switch (ev.e) {
       case "shot":
         fx.push({ kind: "tracer", x: ev.x, y: ev.y, x2: ev.tx, y2: ev.ty, born: now, life: 110 });
+        if (ev.from === -1) {
+          // Colpo di una torretta dell'Ingegnere: la riconosco dalla posizione.
+          for (const t of state.towers) {
+            for (let i = 0; i < (t.sentries?.length ?? 0); i++) {
+              const at = sentrySpot(t, i);
+              if (at.x === ev.x && at.y === ev.y) sentryShot.set(t.id * 8 + i, now);
+            }
+          }
+          break;
+        }
         setAim(ev.from, ev.x, ev.y, ev.tx, ev.ty);
         sfx.shot();
         break;
@@ -1172,9 +1192,22 @@ function handleEvents(events: GameEvent[]) {
         sfx.shot();
         break;
       case "swing":
-        fx.push({ kind: "cone", x: ev.x, y: ev.y, r: ev.range, a: Math.atan2(ev.ty - ev.y, ev.tx - ev.x), w: (ev.cone * Math.PI) / 180, born: now, life: 240 });
+        fx.push({ kind: "cone", x: ev.x, y: ev.y, r: ev.range, a: Math.atan2(ev.ty - ev.y, ev.tx - ev.x), w: (ev.cone * Math.PI) / 180, color: ev.fire ? "#ff9a3a" : undefined, born: now, life: ev.fire ? 320 : 240 });
         setAim(ev.from, ev.x, ev.y, ev.tx, ev.ty);
-        sfx.blast();
+        if (!ev.fire) sfx.blast();
+        break;
+      case "sentry": {
+        const tw = state.towers.find((t) => t.id === ev.from);
+        if (tw) {
+          const at = sentrySpot(tw, ev.n - 1);
+          fx.push({ kind: "ring", x: at.x, y: at.y, r: 350, color: "#f0c93a", born: now, life: 320 });
+          sentryShot.set(tw.id * 8 + ev.n - 1, -1e9);
+        }
+        sfx.build();
+        break;
+      }
+      case "tip":
+        fx.push({ kind: "float", x: ev.x, y: ev.y - 500, text: `+${ev.amount}`, color: COLORS.brass, born: now, life: 700 });
         break;
       case "cannon":
         fx.push({ kind: "beam", x: ev.x, y: ev.y, r: ev.radius * 1.4, born: now, life: 700 + ev.power * 6 });
@@ -1353,6 +1386,7 @@ function handleEvents(events: GameEvent[]) {
       case "upgraded": {
         popAt.set(ev.id, now);
         const tw = state.towers.find((t) => t.id === ev.id);
+        if (tw) matchKinds.add(tw.kind);
         if (tw && ev.e === "upgraded") fx.push({ kind: "ring", x: tw.x, y: tw.y, r: 700, color: COLORS.brass, born: now, life: 380 });
         sfx.build();
         break;
@@ -1526,6 +1560,29 @@ function award(): AwardResult {
     }
   }
   if (state.mode === "infinita") meta.bestWave[id] = Math.max(meta.bestWave[id] ?? 0, state.cleared);
+  // Sfide della settimana: Perle in più, una volta per sfida.
+  {
+    const kinds = [...matchKinds];
+    const run = {
+      mode: state.mode,
+      won,
+      cleared: state.cleared,
+      lives: state.lives,
+      startLives: modeDef(state.mode, state.night)?.lives ?? RULES.startLives,
+      seconds: Math.floor(state.tick / TICKS_PER_SECOND),
+      kinds,
+      families: [...new Set(kinds.map((k) => TOWERS[k as TowerKind].family))],
+      towers: state.towers.length,
+      players: playerCount(state),
+    };
+    const res = weeklyCheck(meta.weekly, run, Date.now());
+    meta.weekly = res.state;
+    for (const w of res.won) {
+      meta.perle += w.perle;
+      out.perle += w.perle;
+      out.medals.push(`Sfida della settimana riuscita: ${w.text} (+${w.perle} Perle)`);
+    }
+  }
   const t = meta.totals;
   t.kills += state.kills;
   t.combos += state.combos;
@@ -1624,6 +1681,8 @@ function beginState(st: GameState) {
   myP = match && match.state === st ? Math.max(0, match.order.indexOf(match.me.id)) : 0;
   builtAt.clear();
   popAt.clear();
+  matchKinds.clear();
+  sentryShot.clear();
   fired.clear();
   shown.clear();
   goldFlash = 0;
@@ -1694,6 +1753,7 @@ function renderMenu() {
   if (!isAdmin()) $("adminPanel").hidden = true;
   setText($("gfxToggle"), `Grafica: ${gfx === "alta" ? "alta" : "leggera"}`);
   renderOnlineSection();
+  renderWeekly();
   renderMissions();
   renderMedals();
   renderNews();
@@ -2206,6 +2266,34 @@ function leaveMatch() {
 // del gioco: non basta un'impostazione salvata sul dispositivo, né una password scritta nel codice.
 function isAdmin(): boolean {
   return net.verified && !!net.session?.isAdmin;
+}
+
+function renderWeekly() {
+  const host = $("weekly");
+  host.innerHTML = "";
+  const now = Date.now();
+  const done = meta.weekly && meta.weekly.week === weekOf(now) ? meta.weekly.done : [];
+  const left = weekEndsIn(now);
+  const days = Math.floor(left / 86400000);
+  const hours = Math.floor((left % 86400000) / 3600000);
+  setText($("weeklyLeft"), days ? `cambiano tra ${days} g e ${hours} h` : `cambiano tra ${hours} h`);
+  for (const w of weeklyFor(weekOf(now))) {
+    const ok = done.includes(w.id);
+    const row = document.createElement("div");
+    row.className = `mission${ok ? " done" : ""}`;
+    const text = document.createElement("div");
+    text.className = "rowText";
+    const b = document.createElement("b");
+    b.textContent = w.text;
+    const small = document.createElement("small");
+    small.textContent = `premio ${w.perle} Perle`;
+    text.append(b, small);
+    const tag = document.createElement("span");
+    tag.className = "weeklyTag";
+    tag.textContent = ok ? "Fatta" : "Da fare";
+    row.append(text, tag);
+    host.append(row);
+  }
 }
 
 function renderMissions() {
@@ -2893,6 +2981,21 @@ function render(now: number) {
       if (v.e.hp <= 0 && !reducedMotion && (!many || v.e.boss)) fx.push({ kind: "corpse", x: v.x, y: v.y, a: v.h, en: v.e, born: performance.now(), life: v.e.boss ? 900 : 420 });
     }
   }
+  // Torrette dell'Ingegnere, attorno a lui.
+  for (const t of state.towers) {
+    if (!t.sentries?.length) continue;
+    const heavy = t.branch === "A";
+    const ang = aim.has(t.id) ? aim.get(t.id)! + turn() : -0.6;
+    for (let i = 0; i < t.sentries.length; i++) {
+      const at = sentrySpot(t, i);
+      const q = S(at.x, at.y);
+      const ago = now - (sentryShot.get(t.id * 8 + i) ?? -1e9);
+      ctx.save();
+      ctx.translate(q.x, q.y);
+      sentryFigure(ctx, pxT, ang, heavy, reducedMotion ? 0 : Math.max(0, 1 - ago / 140));
+      ctx.restore();
+    }
+  }
   for (const u of state.units) drawUnit(u, pxT, now);
 
   const faro = S(level.map.faro[0] * TILE + TILE / 2, level.map.faro[1] * TILE + TILE / 2);
@@ -2971,7 +3074,7 @@ function render(now: number) {
       // Martellata dello Sledger: un ventaglio di ghiaccio che svanisce.
       const r = toPx(f.r!, pxT);
       ctx.globalAlpha = (1 - k) * 0.55;
-      ctx.fillStyle = "#cfeeff";
+      ctx.fillStyle = f.color ?? "#cfeeff";
       ctx.beginPath();
       ctx.moveTo(p.x, p.y);
       ctx.arc(p.x, p.y, r * (0.6 + 0.4 * k), f.a! - f.w! / 2, f.a! + f.w! / 2);

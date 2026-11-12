@@ -163,7 +163,7 @@ export function decide(state: GameState, policy: BotPolicy): Command[] {
   // Nelle partite lunghe, prima di aggiungere torri si migliorano quelle che ci sono.
   const unfinished = state.towers.filter((t) => TOWERS[t.kind].family === "attacco" && t.level < 3).length;
   const growFirst = w >= 10 && unfinished >= 3;
-  const pick: Record<TowerKind, Branch> = { balestra: "B", mortaio: "A", soffio: "B", cecchino: "B", bobina: "A", officina: "A", grammofono: "A", capitano: "B", medico: "B", arpione: "B", mitragliera: "B", purificatore: "A", cometa: "A", custode: "A", campana: "A", sledger: "A", executioner: "B", starcannon: "A", accelerator: "A", kingpin: (globalThis as { BOT_KP?: Branch }).BOT_KP ?? "B" };
+  const pick: Record<TowerKind, Branch> = { ingegnere: "A", pistolero: "A", piromante: "A", balestra: "B", mortaio: "A", soffio: "B", cecchino: "B", bobina: "A", officina: "A", grammofono: "A", capitano: "B", medico: "B", arpione: "B", mitragliera: "B", purificatore: "A", cometa: "A", custode: "A", campana: "A", sledger: "A", executioner: "B", starcannon: "A", accelerator: "A", kingpin: (globalThis as { BOT_KP?: Branch }).BOT_KP ?? "B" };
   const ordered = [...state.towers].sort((a, b) => a.level - b.level || a.id - b.id);
   // Prima porta ogni torre almeno al livello 2: meglio poche torri forti che tante deboli.
   if (state.towers.length >= 3) {

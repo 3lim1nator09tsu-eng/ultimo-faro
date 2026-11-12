@@ -15,7 +15,7 @@ export type EnemyKind =
   | "dohoter" | "risvegliato" | "ombra" | "araldo" | "lancia" | "creator" | "jackobot" | "zucchetta";
 export type TowerKind =
   | "balestra" | "mortaio" | "soffio" | "cecchino" | "bobina" | "officina" | "grammofono" | "capitano" | "medico" | "arpione" | "mitragliera" | "purificatore"
-  | "custode" | "campana" | "cometa" | "kingpin" | "sledger" | "executioner" | "starcannon" | "accelerator";
+  | "custode" | "campana" | "cometa" | "kingpin" | "sledger" | "executioner" | "starcannon" | "accelerator" | "ingegnere" | "pistolero" | "piromante";
 export type Branch = "A" | "B";
 export type EnemyClass = "carne" | "corazza" | "meccanico";
 export type DamageType = "cinetico" | "gelo" | "elettrico" | "nessuno";
@@ -251,6 +251,17 @@ export interface TowerStats {
   // Executioner: ascia che rimbalza senza perdere forza
   bounceRange: number; // distanza massima del rimbalzo; 0 = quella del fulmine
   executeBp: number; // finisce i nemici (non boss) scesi sotto questa % di vita
+  // Ingegnere: costruisce torrette che sparano da sole
+  sentryMax: number; // torrette al massimo; 0 = non ne costruisce
+  sentryEvery: number; // tick per costruirne una
+  sentryDamage: number;
+  sentryCooldown: number;
+  // Pistolero: ogni tot colpi incassa cash
+  cashEvery: number; // colpi tra un incasso e l'altro; 0 = mai
+  cashAmount: number;
+  // Piromante: fiamme che continuano a bruciare
+  burnDamage: number; // danni ogni mezzo secondo, ignorano l'armatura
+  burnTicks: number; // durata della bruciatura
   // Star Cannon: si carica col tempo, chi gioca decide quando sparare
   chargeTicks: number; // tick per la carica piena; 0 = non è un cannone
   cannonMin: number; // danno se spara appena può
@@ -337,6 +348,14 @@ const base: TowerStats = {
   aftershockBp: 0,
   bounceRange: 0,
   executeBp: 0,
+  sentryMax: 0,
+  sentryEvery: 0,
+  sentryDamage: 0,
+  sentryCooldown: 0,
+  cashEvery: 0,
+  cashAmount: 0,
+  burnDamage: 0,
+  burnTicks: 0,
   chargeTicks: 0,
   cannonMin: 0,
   cannonMax: 0,
@@ -444,7 +463,7 @@ export const TOWERS = {
     family: "attacco",
     damageType: "cinetico",
     target: "first",
-    unlock: 900,
+    unlock: 1400,
     maxPerPlayer: 6,
     levels: [
       { ...base, cost: 300, damage: 22, cooldown: 14, range: 1800, coneDeg: 60, maxTargets: 3, chillBp: 1500, chillMax: 4500 },
@@ -456,6 +475,64 @@ export const TOWERS = {
       B: { ...base, name: "Scossa artica", summary: "Una seconda scossa colpisce di nuovo", cost: 650, damage: 127, cooldown: 12, range: 2200, coneDeg: 70, maxTargets: 7, chillBp: 3000, chillMax: 7000, freezeTicks: 18, aftershockBp: 4000 },
     },
   },
+  ingegnere: {
+    apex: "Fabbrica d'Assedio",
+    name: "Ingegnere",
+    role: "Spara chiodi e costruisce torrette che sparano da sole",
+    family: "attacco",
+    damageType: "cinetico",
+    target: "first",
+    unlock: 1600,
+    perle: 20,
+    maxPerPlayer: 4,
+    levels: [
+      { ...base, cost: 600, damage: 12, cooldown: 8, range: 3200, sentryMax: 1, sentryEvery: 150, sentryDamage: 6, sentryCooldown: 5 },
+      { ...base, cost: 500, damage: 18, cooldown: 7, range: 3400, sentryMax: 2, sentryEvery: 130, sentryDamage: 9, sentryCooldown: 5 },
+      { ...base, cost: 900, damage: 30, cooldown: 7, range: 3600, sentryMax: 2, sentryEvery: 120, sentryDamage: 20, sentryCooldown: 4 },
+    ],
+    branches: {
+      A: { ...base, name: "Torrette pesanti", summary: "Tre torrette corazzate che ignorano l'armatura", cost: 1800, damage: 44, cooldown: 6, range: 3800, sentryMax: 3, sentryEvery: 110, sentryDamage: 44, sentryCooldown: 4, pierce: true },
+      B: { ...base, name: "Officina da campo", summary: "Quattro torrette leggere, costruite in fretta, che vedono gli invisibili", cost: 1700, damage: 40, cooldown: 6, range: 4000, sentryMax: 4, sentryEvery: 60, sentryDamage: 22, sentryCooldown: 3, detect: true },
+    },
+  },
+  pistolero: {
+    apex: "Il Mucchio d'Oro",
+    name: "Pistolero",
+    role: "Revolver rapido: ogni sei colpi incassa cash",
+    family: "attacco",
+    damageType: "cinetico",
+    target: "first",
+    unlock: 700,
+    maxPerPlayer: 5,
+    levels: [
+      { ...base, cost: 250, damage: 9, cooldown: 7, range: 2800, cashEvery: 6, cashAmount: 3 },
+      { ...base, cost: 220, damage: 15, cooldown: 6, range: 3000, cashEvery: 6, cashAmount: 5 },
+      { ...base, cost: 420, damage: 27, cooldown: 6, range: 3200, cashEvery: 6, cashAmount: 8 },
+    ],
+    branches: {
+      A: { ...base, name: "Mano veloce", summary: "Spara il doppio più in fretta", cost: 800, damage: 30, cooldown: 3, range: 3400, cashEvery: 8, cashAmount: 9 },
+      B: { ...base, name: "Cercatore d'oro", summary: "Incassa più spesso e di più", cost: 750, damage: 42, cooldown: 6, range: 3400, cashEvery: 4, cashAmount: 14 },
+    },
+  },
+  piromante: {
+    apex: "Cuore di Brace",
+    name: "Piromante",
+    role: "Lanciafiamme a cono: le fiamme continuano a bruciare e ignorano l'armatura",
+    family: "attacco",
+    damageType: "nessuno",
+    target: "first",
+    unlock: 1200,
+    maxPerPlayer: 6,
+    levels: [
+      { ...base, cost: 400, damage: 6, cooldown: 5, range: 2000, coneDeg: 60, maxTargets: 4, burnDamage: 5, burnTicks: 30 },
+      { ...base, cost: 350, damage: 10, cooldown: 5, range: 2100, coneDeg: 60, maxTargets: 5, burnDamage: 10, burnTicks: 35 },
+      { ...base, cost: 650, damage: 18, cooldown: 4, range: 2200, coneDeg: 60, maxTargets: 6, burnDamage: 20, burnTicks: 40 },
+    ],
+    branches: {
+      A: { ...base, name: "Fiamma bianca", summary: "Bruciatura molto più forte", cost: 1100, damage: 24, cooldown: 4, range: 2300, coneDeg: 60, maxTargets: 7, burnDamage: 55, burnTicks: 40 },
+      B: { ...base, name: "Muro di fuoco", summary: "Cono più largo e lungo, brucia molti nemici a lungo", cost: 1000, damage: 20, cooldown: 4, range: 2800, coneDeg: 90, maxTargets: 12, burnDamage: 30, burnTicks: 60 },
+    },
+  },
   executioner: {
     apex: "Il Patibolo",
     name: "Executioner",
@@ -463,7 +540,7 @@ export const TOWERS = {
     family: "attacco",
     damageType: "cinetico",
     target: "first",
-    unlock: 1100,
+    unlock: 1700,
     maxPerPlayer: 8,
     levels: [
       { ...base, cost: 350, damage: 36, cooldown: 26, range: 5000, chains: 3, chainBp: 10000, bounceRange: 3000 },
@@ -482,8 +559,8 @@ export const TOWERS = {
     family: "attacco",
     damageType: "cinetico",
     target: "strong",
-    unlock: 2000,
-    perle: 40,
+    unlock: 3500,
+    perle: 60,
     maxPerPlayer: 1,
     size: 2,
     levels: [
@@ -503,8 +580,8 @@ export const TOWERS = {
     family: "attacco",
     damageType: "elettrico",
     target: "first",
-    unlock: 800,
-    perle: 50,
+    unlock: 1500,
+    perle: 70,
     levels: [
       { ...base, cost: 500, damage: 10, range: 4500, accCharge: 40, accBurst: 60, accTick: 2, cooldown: 2 },
       { ...base, cost: 700, damage: 10, range: 5000, accCharge: 40, accBurst: 65, accTick: 2, cooldown: 2 },
@@ -522,7 +599,7 @@ export const TOWERS = {
     family: "economia",
     damageType: "nessuno",
     target: "first",
-    unlock: 250,
+    unlock: 400,
     levels: [
       { ...base, cost: 175, income: 30 },
       { ...base, cost: 140, income: 50 },
@@ -540,7 +617,7 @@ export const TOWERS = {
     family: "supporto",
     damageType: "nessuno",
     target: "first",
-    unlock: 300,
+    unlock: 450,
     levels: [
       { ...base, cost: 200, range: 2500, auraBp: 1000 },
       { ...base, cost: 160, range: 2800, auraBp: 1500 },
@@ -558,7 +635,7 @@ export const TOWERS = {
     family: "supporto",
     damageType: "nessuno",
     target: "first",
-    unlock: 350,
+    unlock: 550,
     ability: { name: "Chiamata alle armi", summary: "+50% di cadenza per 10 s nell'area" },
     levels: [
       { ...base, cost: 225, range: 2500, hasteBp: 1000, abilityCooldown: 450, abilityTicks: 100, abilityBp: 5000 },
@@ -599,7 +676,7 @@ TOWERS.arpione = {
   damageType: "cinetico",
   target: "strong",
   unlock: 0,
-  perle: 30,
+  perle: 40,
   levels: [
     { ...base, cost: 250, damage: 110, cooldown: 30, range: 5000, pierce: true, markTicks: 30, markBp: 13000 },
     { ...base, cost: 180, damage: 204, cooldown: 30, range: 5300, pierce: true, markTicks: 35, markBp: 13000 },
@@ -618,7 +695,7 @@ TOWERS.mitragliera = {
   damageType: "cinetico",
   target: "first",
   unlock: 0,
-  perle: 45,
+  perle: 60,
   levels: [
     { ...base, cost: 275, damage: 8, cooldown: 2, range: 3200 },
     { ...base, cost: 200, damage: 15, cooldown: 2, range: 3200 },
@@ -637,7 +714,7 @@ TOWERS.purificatore = {
   damageType: "nessuno",
   target: "first",
   unlock: 0,
-  perle: 60,
+  perle: 75,
   levels: [
     { ...base, cost: 300, damage: 8, cooldown: 10, range: 2400, pulseAll: true, purify: true },
     { ...base, cost: 220, damage: 13, cooldown: 10, range: 2700, pulseAll: true, purify: true },
@@ -716,8 +793,8 @@ TOWERS.kingpin = {
   family: "attacco",
   damageType: "cinetico",
   target: "first",
-  unlock: 1000,
-  perle: 40,
+  unlock: 1800,
+  perle: 55,
   maxPerPlayer: 4,
   levels: [
     { ...base, cost: 800, damage: 30, cooldown: 4, range: 4200, detect: true, spawnEvery: 110, spawnMax: 2, unitSet: 1, unitBp: 10000, queueSlots: 1 },
@@ -778,7 +855,7 @@ for (const k of DETECTORS) {
   TOWERS[k].branches = { A: { ...TOWERS[k].branches.A, detect: true }, B: { ...TOWERS[k].branches.B, detect: true } };
 }
 
-export const TOWER_ORDER: TowerKind[] = ["balestra", "mortaio", "soffio", "cecchino", "bobina", "officina", "grammofono", "capitano", "medico", "kingpin", "sledger", "executioner", "starcannon", "arpione", "mitragliera", "purificatore", "accelerator", "cometa", "custode", "campana"];
+export const TOWER_ORDER: TowerKind[] = ["balestra", "mortaio", "soffio", "cecchino", "bobina", "officina", "grammofono", "capitano", "medico", "kingpin", "sledger", "executioner", "pistolero", "piromante", "ingegnere", "starcannon", "arpione", "mitragliera", "purificatore", "accelerator", "cometa", "custode", "campana"];
 export const HARDCORE_TOWERS: TowerKind[] = ["arpione", "mitragliera", "purificatore", "accelerator"];
 
 // Apex: il livello 6 della torre, uno per tipo e per partita, con il rango permanente almeno 3.
@@ -811,6 +888,10 @@ export function apexStats(s: TowerStats): TowerStats {
     cannonMax: up(s.cannonMax, 22000),
     cannonStun: s.cannonStun ? Math.min(50, up(s.cannonStun, 11200)) : 0,
     chargeTicks: s.chargeTicks ? up(s.chargeTicks, 9000) : 0,
+    sentryDamage: up(s.sentryDamage, 22000),
+    sentryMax: s.sentryMax ? s.sentryMax + 1 : 0,
+    cashAmount: up(s.cashAmount, 15000),
+    burnDamage: up(s.burnDamage, 22000),
     accBurst: s.accBurst ? up(s.accBurst, 14000) : 0,
     accCharge: s.accCharge ? Math.max(10, up(s.accCharge, 7000)) : 0,
     accTick: s.accTick ? 1 : 0,

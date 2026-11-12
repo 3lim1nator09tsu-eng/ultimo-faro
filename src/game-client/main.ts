@@ -11,6 +11,7 @@ import { AdminApi, BalanceEntry, BalanceKind, describeAll, describeEntry, render
 import { Balance, applyBalance, balanceSize, cleanBalance, emptyBalance, mergeBalance, pruneBalance } from "../sim-core/balance";
 import { ChangeEntry, MEDALS, MISSIONS, MissionSlot, Totals, GAME_VERSION, VERSION_NOTES, emptyTotals, levelFromXp, levelReward, missionProgress, missionTarget, missionText, newSlot, WeeklyState, weekEndsIn, weekOf, weeklyCheck, weeklyFor } from "./progress";
 import { sentryFigure } from "./figures";
+import { sfx, sound } from "./sound";
 import { COLORS, enemySize, applyMap, drawEnemy, drawEnemyBody, drawFaro, drawShoal, drawTide, drawTowerShape, mapToScreen, renderBackground, toPx } from "./draw";
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -123,7 +124,11 @@ let ghost: { cx: number; cy: number } | null = null;
 let dragFromCard = false;
 let selectedId: number | null = null;
 let dialogQueue: Line[] = [];
-let soundOn = store.get("faro.audio") !== "off";
+// Audio: tutto, solo effetti, muto.
+{
+  const saved = store.get("faro.audio");
+  sound.setMode(saved === "off" ? "off" : saved === "fx" ? "fx" : "all");
+}
 let endShown = false;
 let flash = 0;
 let background: HTMLCanvasElement | null = null;
@@ -539,62 +544,9 @@ const today = () => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 };
 
-// ---------- audio sintetizzato ----------
+// ---------- audio ----------
 
-let audio: AudioContext | null = null;
-const lastSound: Record<string, number> = {};
-
-function wakeAudio() {
-  if (audio) {
-    if (audio.state === "suspended") audio.resume().catch(() => {});
-    return;
-  }
-  try {
-    audio = new AudioContext();
-  } catch {
-    audio = null;
-  }
-}
-
-function tone(name: string, freq: number, to: number, dur: number, type: OscillatorType, gain: number, gapMs = 50) {
-  if (!soundOn || !audio || audio.state !== "running") return;
-  const now = performance.now();
-  if (now - (lastSound[name] ?? -1e9) < gapMs) return;
-  lastSound[name] = now;
-  const t = audio.currentTime;
-  const o = audio.createOscillator();
-  const g = audio.createGain();
-  o.type = type;
-  o.frequency.setValueAtTime(freq, t);
-  o.frequency.exponentialRampToValueAtTime(Math.max(20, to), t + dur);
-  g.gain.setValueAtTime(gain, t);
-  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-  o.connect(g).connect(audio.destination);
-  o.start(t);
-  o.stop(t + dur + 0.02);
-}
-
-const sfx = {
-  shot: () => tone("shot", 880, 420, 0.05, "triangle", 0.035, 70),
-  thump: () => tone("thump", 150, 60, 0.16, "sine", 0.14, 90),
-  blast: () => tone("blast", 110, 40, 0.28, "sawtooth", 0.05, 90),
-  kill: () => tone("kill", 520, 760, 0.07, "sine", 0.03, 60),
-  leak: () => tone("leak", 180, 70, 0.4, "square", 0.05, 200),
-  build: () => tone("build", 330, 660, 0.14, "triangle", 0.08),
-  coin: () => tone("coin", 980, 1320, 0.12, "sine", 0.06),
-  horn: () => tone("horn", 110, 92, 0.9, "sawtooth", 0.045, 500),
-  deny: () => tone("deny", 200, 150, 0.12, "square", 0.03, 120),
-  zap: () => tone("zap", 1600, 300, 0.09, "sawtooth", 0.025, 90),
-  sabotage: () => tone("sabotage", 300, 900, 0.18, "square", 0.04, 150),
-  heal: () => tone("heal", 660, 990, 0.25, "sine", 0.05, 200),
-  rally: () => tone("rally", 330, 440, 0.6, "sawtooth", 0.06, 400),
-  apex: () => tone("apex", 220, 880, 0.9, "triangle", 0.1, 600),
-  combo: () => tone("combo", 1200, 1800, 0.06, "square", 0.02, 120),
-  song: () => tone("song", 880, 660, 0.8, "sine", 0.07, 500),
-  roar: () => tone("roar", 90, 40, 1.2, "sawtooth", 0.12, 800),
-  beam: () => tone("beam", 520, 1400, 0.35, "triangle", 0.09, 200),
-  freeze: () => tone("freeze", 2200, 900, 0.5, "sine", 0.06, 300),
-};
+const wakeAudio = () => sound.wake();
 
 // ---------- impaginazione ----------
 
@@ -1015,7 +967,8 @@ function updatePanel() {
   $<HTMLButtonElement>("pause").setAttribute("aria-pressed", String(paused));
   setText($("pause"), paused ? "Riprendi" : "Pausa");
   $("speed").setAttribute("aria-pressed", String(speed === 2));
-  $("sound").setAttribute("aria-pressed", String(soundOn));
+  $("sound").setAttribute("aria-pressed", String(sound.mode !== "off"));
+  setText($("sound"), sound.mode === "all" ? "Audio" : sound.mode === "fx" ? "Solo effetti" : "Muto");
 }
 
 // Controlli delle torri di supporto: dischi del Grammofono e abilità di Capitano e Medico.
@@ -1176,10 +1129,12 @@ function handleEvents(events: GameEvent[]) {
               if (at.x === ev.x && at.y === ev.y) sentryShot.set(t.id * 8 + i, now);
             }
           }
+          sfx.tick();
           break;
         }
         setAim(ev.from, ev.x, ev.y, ev.tx, ev.ty);
-        sfx.shot();
+        if (ev.from > 0) sfx.gun(state.towers.find((t) => t.id === ev.from)?.kind ?? "");
+        else sfx.tick();
         break;
       case "zap":
         fx.push({ kind: "zap", x: ev.points[0], y: ev.points[1], pts: ev.points, born: now, life: 160 });
@@ -1189,12 +1144,12 @@ function handleEvents(events: GameEvent[]) {
       case "axe":
         fx.push({ kind: "axe", x: ev.points[0], y: ev.points[1], pts: ev.points, born: now, life: 140 + 70 * (ev.points.length / 2 - 1) });
         if (ev.points.length >= 4) setAim(ev.from, ev.points[0], ev.points[1], ev.points[2], ev.points[3]);
-        sfx.shot();
+        sfx.axe();
         break;
       case "swing":
         fx.push({ kind: "cone", x: ev.x, y: ev.y, r: ev.range, a: Math.atan2(ev.ty - ev.y, ev.tx - ev.x), w: (ev.cone * Math.PI) / 180, color: ev.fire ? "#ff9a3a" : undefined, born: now, life: ev.fire ? 320 : 240 });
         setAim(ev.from, ev.x, ev.y, ev.tx, ev.ty);
-        if (!ev.fire) sfx.blast();
+        (ev.fire ? sfx.flame : sfx.hammer)();
         break;
       case "sentry": {
         const tw = state.towers.find((t) => t.id === ev.from);
@@ -1203,18 +1158,19 @@ function handleEvents(events: GameEvent[]) {
           fx.push({ kind: "ring", x: at.x, y: at.y, r: 350, color: "#f0c93a", born: now, life: 320 });
           sentryShot.set(tw.id * 8 + ev.n - 1, -1e9);
         }
-        sfx.build();
+        sfx.ratchet();
         break;
       }
       case "tip":
         fx.push({ kind: "float", x: ev.x, y: ev.y - 500, text: `+${ev.amount}`, color: COLORS.brass, born: now, life: 700 });
+        sfx.tip();
         break;
       case "cannon":
         fx.push({ kind: "beam", x: ev.x, y: ev.y, r: ev.radius * 1.4, born: now, life: 700 + ev.power * 6 });
         fx.push({ kind: "ring", x: ev.x, y: ev.y, r: ev.radius, color: "#ffd86b", born: now, life: 600 });
         if (ev.power >= 100) fx.push({ kind: "float", x: ev.x, y: ev.y - 600, text: "Carica piena!", color: "#ffd86b", born: now, life: 1100 });
         fired.set(ev.from, now);
-        sfx.beam();
+        sfx.cannon();
         break;
       case "laser":
         fx.push({ kind: "zap", x: ev.x, y: ev.y, pts: [ev.x, ev.y, ev.tx, ev.ty], color: "#7fe3ff", born: now, life: 90 });
@@ -1349,7 +1305,7 @@ function handleEvents(events: GameEvent[]) {
         if (!mineAmount && !ev.lives) break;
         const text = `${mineAmount ? `+${mineAmount} cash` : ""}${mineAmount && ev.lives ? ", " : ""}${ev.lives ? `+${ev.lives} vite` : ""}`;
         fx.push({ kind: "float", x: fx0 - 2000, y: fy0, text, color: "#9fd28b", born: now, life: 1400 });
-        sfx.coin();
+        sfx.waveClear();
         break;
       }
       case "shell": {
@@ -1364,7 +1320,7 @@ function handleEvents(events: GameEvent[]) {
         break;
       case "kill":
         fx.push({ kind: "float", x: ev.x, y: ev.y, text: `+${ev.bounty}`, color: COLORS.brass, born: now, life: 650 });
-        sfx.kill();
+        (ev.boss ? sfx.bossDown : sfx.kill)();
         break;
       case "leak":
         flash = 1;
@@ -1388,11 +1344,11 @@ function handleEvents(events: GameEvent[]) {
         const tw = state.towers.find((t) => t.id === ev.id);
         if (tw) matchKinds.add(tw.kind);
         if (tw && ev.e === "upgraded") fx.push({ kind: "ring", x: tw.x, y: tw.y, r: 700, color: COLORS.brass, born: now, life: 380 });
-        sfx.build();
+        (ev.e === "upgraded" ? sfx.upgrade : sfx.build)();
         break;
       }
       case "sold":
-        sfx.coin();
+        sfx.sell();
         break;
       case "reject":
         if ((ev.p ?? 0) !== myP) break;
@@ -1628,6 +1584,7 @@ function finish(phase: "won" | "lost") {
   const res = award();
   const reward = res.schegge;
   const won = phase === "won";
+  (won ? sfx.win : sfx.lose)();
   const stars = starsFor(state.lives);
   const infinite = state.mode === "infinita";
   const md = modeDef(state.mode, state.night);
@@ -2767,9 +2724,15 @@ function bindButtons() {
     }
     speed = speed === 1 ? 2 : 1;
   });
+  // Ogni pulsante fa un piccolo clic.
+  document.addEventListener("click", (ev) => {
+    if ((ev.target as HTMLElement | null)?.closest?.("button")) sfx.click();
+  }, true);
   $("sound").addEventListener("click", () => {
-    soundOn = !soundOn;
-    store.set("faro.audio", soundOn ? "on" : "off");
+    // Tutto → solo effetti → muto → tutto.
+    const next = sound.mode === "all" ? "fx" : sound.mode === "fx" ? "off" : "all";
+    sound.setMode(next);
+    store.set("faro.audio", next === "all" ? "on" : next);
     wakeAudio();
   });
   $("btnUp").addEventListener("click", () => {
@@ -3597,7 +3560,20 @@ function updateBossBar() {
   setText($("bossInfo"), mods ? `Modificatori: ${mods}` : "");
 }
 
+/** La musica segue quello che succede: menu, tema della modalità, calma tra le ondate, spinta con un boss in campo. */
+let musicCheck = 0;
+function syncMusic(now: number) {
+  if (now - musicCheck < 400) return;
+  musicCheck = now;
+  if (!$("menu").hidden) return sound.music("menu", 0);
+  if (endShown) return sound.music(null);
+  const name = state.mode === "natale" ? "natale" : state.mode;
+  const boss = state.phase === "wave" && state.enemies.some((e) => e.boss);
+  sound.music(name, paused ? 0 : boss ? 2 : state.phase === "wave" ? 1 : 0);
+}
+
 function frame(now: number) {
+  syncMusic(now);
   const dt = Math.min(250, now - (lastFrame || now));
   lastFrame = now;
   adaptQuality(dt);
@@ -3684,6 +3660,8 @@ function start(saved: { snap?: string; log?: Array<[number, Command[]]>; seen?: 
       return state.seed;
     },
     debug: {
+      sound,
+      sfx,
       restart(seed: number, opts: GameOptions = {}) {
         newMatch(opts.mode ?? "campagna", opts.level ?? "porto", seed, opts);
         dialogQueue = [];

@@ -128,9 +128,21 @@ export const MEDALS: Array<{ id: string; name: string; text: string; ok: (m: Med
 // ---------- bacheca ----------
 
 /** Versione del gioco: chi ospita la comunica all'admin, che vede se i comandi nuovi possono funzionare. */
-export const GAME_VERSION = "0.17.0";
+export const GAME_VERSION = "0.18.0";
 
 export const VERSION_NOTES: ChangeEntry[] = [
+  {
+    date: "2026-11-12",
+    title: "Versione 0.18: suoni e musica nuovi",
+    kind: "versione",
+    items: [
+      "Ogni torre ha il suo sparo: lo schiocco del Cecchino, la raffica della Mitragliera, il revolver del Pistolero, il martello dello Sledger, le fiamme del Piromante, il boato dello Star Cannon",
+      "Esplosioni, fulmini, gelo, costruzione, miglioramento, vendita e incassi hanno suoni nuovi e più pieni",
+      "Musica: un tema per il menu e uno per ogni modalità; è calma tra le ondate, entra la batteria durante l'ondata e spinge di più quando c'è un boss",
+      "Fanfara di vittoria, tema di sconfitta e un boato quando cade un boss",
+      "Il pulsante Audio ora ha tre posizioni: tutto, solo effetti, muto",
+    ],
+  },
   {
     date: "2026-11-12",
     title: "Versione 0.17: tre torri nuove e sfide della settimana",

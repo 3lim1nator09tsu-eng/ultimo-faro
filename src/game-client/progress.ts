@@ -128,9 +128,22 @@ export const MEDALS: Array<{ id: string; name: string; text: string; ok: (m: Med
 // ---------- bacheca ----------
 
 /** Versione del gioco: chi ospita la comunica all'admin, che vede se i comandi nuovi possono funzionare. */
-export const GAME_VERSION = "0.15.0";
+export const GAME_VERSION = "0.16.0";
 
 export const VERSION_NOTES: ChangeEntry[] = [
+  {
+    date: "2026-11-11",
+    title: "Versione 0.16: nuovo bilanciamento",
+    kind: "versione",
+    items: [
+      "Migliorare una torre ora conviene: ogni livello rende di più per cash speso, e il ramo d'attacco rende il 30% in più della torre base",
+      "Balestra, Mortaio, Cecchino, Bobina, Sledger, Arpione e Mitragliera hanno più danno ai livelli alti; l'Executioner è stato rinforzato a tutti i livelli",
+      "Star Cannon: stesso danno, ma la carica piena richiede il doppio del tempo",
+      "I nemici delle ultime ondate hanno più vita, per reggere le torri migliorate",
+      "Nelle ondate con un boss la scorta è più rada e il boss resta il protagonista",
+      "I nemici hanno il 2% di vita in più per ogni livello del giocatore oltre il primo, fino a un massimo del 30%; in squadra conta la media dei livelli",
+    ],
+  },
   {
     date: "2026-11-11",
     title: "Versione 0.15: nuovi modelli e animazioni",

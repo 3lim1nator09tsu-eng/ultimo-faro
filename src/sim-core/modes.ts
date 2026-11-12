@@ -70,14 +70,14 @@ export const SURVIVAL: ModeDef[] = [
     curveA: 700,
     curveB: 25,
     hpBp: 13600,
-    rampBp: 14000,
+    rampBp: 19000,
     pool: [e("risacca", 1, 8, 80, 10), e("corridore", 3, 6, 60, 8), e("bruto", 5, 2, 35, 22), e("sabotatore", 12, 2, 15, 30)],
     maxGroups: 3,
     modsFrom: 0,
     modList: [],
     doubleModsFrom: 0,
-    minis: [{ wave: 10, kind: "bruto", hpBp: 40000 }],
-    boss: { wave: 20, kind: "bruto", hpBp: 100000 },
+    minis: [{ wave: 10, kind: "bruto", hpBp: 36000 }],
+    boss: { wave: 20, kind: "bruto", hpBp: 85000 },
     schegge: { perWave: 6, win: 80 },
     perle: NO_PERLE,
     unlock: null,
@@ -94,17 +94,17 @@ export const SURVIVAL: ModeDef[] = [
     curveA: 900,
     curveB: 35,
     hpBp: 16400,
-    rampBp: 16000,
+    rampBp: 21500,
     pool: [e("risacca", 1, 9, 90, 9), e("corridore", 2, 6, 70, 8), e("bruto", 4, 2, 40, 20), e("sabotatore", 6, 2, 20, 28)],
     maxGroups: 3,
     modsFrom: 15,
     modList: MODS_MILD,
     doubleModsFrom: 0,
     minis: [
-      { wave: 12, kind: "bruto", hpBp: 60000 },
-      { wave: 20, kind: "sirena", hpBp: 45000 },
+      { wave: 12, kind: "bruto", hpBp: 54000 },
+      { wave: 20, kind: "sirena", hpBp: 40000 },
     ],
-    boss: { wave: 25, kind: "annegato", hpBp: 110000 },
+    boss: { wave: 25, kind: "annegato", hpBp: 95000 },
     schegge: { perWave: 8, win: 120 },
     perle: NO_PERLE,
     unlock: "easy",
@@ -121,17 +121,17 @@ export const SURVIVAL: ModeDef[] = [
     curveA: 1000,
     curveB: 40,
     hpBp: 13100,
-    rampBp: 17000,
+    rampBp: 23000,
     pool: [e("risacca", 1, 8, 80, 9), e("tizzone", 1, 5, 70, 8), e("corridore", 3, 6, 60, 8), e("magmatico", 6, 2, 30, 24), e("bruto", 8, 2, 35, 20), e("sabotatore", 10, 2, 20, 26)],
     maxGroups: 3,
     modsFrom: 12,
     modList: MODS_MILD,
     doubleModsFrom: 0,
     minis: [
-      { wave: 15, kind: "annegato", hpBp: 70000 },
-      { wave: 25, kind: "colosso", hpBp: 40000 },
+      { wave: 15, kind: "annegato", hpBp: 63000 },
+      { wave: 25, kind: "colosso", hpBp: 36000 },
     ],
-    boss: { wave: 30, kind: "colosso", hpBp: 140000 },
+    boss: { wave: 30, kind: "colosso", hpBp: 120000 },
     schegge: { perWave: 10, win: 180 },
     perle: NO_PERLE,
     unlock: "medium",
@@ -148,17 +148,17 @@ export const SURVIVAL: ModeDef[] = [
     curveA: 1100,
     curveB: 45,
     hpBp: 11600,
-    rampBp: 17000,
+    rampBp: 23000,
     pool: [e("risacca", 1, 9, 80, 9), e("spettro", 3, 3, 50, 12), e("cavaliere", 6, 2, 30, 24), e("bruto", 5, 2, 35, 20), e("sabotatore", 8, 2, 20, 26), e("tizzone", 10, 5, 60, 8), e("magmatico", 14, 2, 25, 24)],
     maxGroups: 3,
     modsFrom: 8,
     modList: MODS_HARD,
     doubleModsFrom: 0,
     minis: [
-      { wave: 17, kind: "colosso", hpBp: 45000 },
-      { wave: 28, kind: "recaduto", hpBp: 40000 },
+      { wave: 17, kind: "colosso", hpBp: 40000 },
+      { wave: 28, kind: "recaduto", hpBp: 36000 },
     ],
-    boss: { wave: 35, kind: "recaduto", hpBp: 150000 },
+    boss: { wave: 35, kind: "recaduto", hpBp: 130000 },
     schegge: { perWave: 12, win: 250 },
     perle: NO_PERLE,
     unlock: "molten",
@@ -175,17 +175,17 @@ export const SURVIVAL: ModeDef[] = [
     curveA: 1200,
     curveB: 50,
     hpBp: 15200,
-    rampBp: 18000,
+    rampBp: 24500,
     pool: [e("risacca", 1, 9, 80, 9), e("brinato", 2, 3, 50, 14), e("corridore", 3, 6, 60, 8), e("orso", 6, 1, 25, 30), e("spettro", 8, 3, 45, 12), e("sabotatore", 10, 2, 20, 26), e("cavaliere", 12, 2, 25, 24)],
     maxGroups: 3,
     modsFrom: 6,
     modList: MODS_HARD,
     doubleModsFrom: 25,
     minis: [
-      { wave: 20, kind: "recaduto", hpBp: 35000 },
-      { wave: 32, kind: "regina", hpBp: 45000 },
+      { wave: 20, kind: "recaduto", hpBp: 32000 },
+      { wave: 32, kind: "regina", hpBp: 40000 },
     ],
-    boss: { wave: 40, kind: "regina", hpBp: 160000 },
+    boss: { wave: 40, kind: "regina", hpBp: 135000 },
     schegge: { perWave: 14, win: 350 },
     perle: NO_PERLE,
     unlock: "fallen",
@@ -204,7 +204,7 @@ export const HARDCORE: ModeDef = {
   curveA: 1300,
   curveB: 70,
   hpBp: 12600,
-  rampBp: 18000,
+  rampBp: 24500,
   pool: [
     e("risacca", 1, 9, 80, 9), e("corridore", 2, 6, 60, 8), e("bruto", 4, 2, 35, 20), e("sabotatore", 6, 2, 20, 26),
     e("tizzone", 8, 5, 60, 8), e("magmatico", 12, 2, 25, 24), e("spettro", 16, 3, 45, 12), e("cavaliere", 20, 2, 25, 24),
@@ -215,12 +215,12 @@ export const HARDCORE: ModeDef = {
   modList: MODS_HC,
   doubleModsFrom: 15,
   minis: [
-    { wave: 10, kind: "bruto", hpBp: 80000, mods: ["benedetto"] },
-    { wave: 20, kind: "colosso", hpBp: 55000 },
-    { wave: 30, kind: "recaduto", hpBp: 55000 },
-    { wave: 40, kind: "regina", hpBp: 60000 },
+    { wave: 10, kind: "bruto", hpBp: 72000, mods: ["benedetto"] },
+    { wave: 20, kind: "colosso", hpBp: 50000 },
+    { wave: 30, kind: "recaduto", hpBp: 50000 },
+    { wave: 40, kind: "regina", hpBp: 54000 },
   ],
-  boss: { wave: 50, kind: "leviatano", hpBp: 180000 },
+  boss: { wave: 50, kind: "leviatano", hpBp: 155000 },
   schegge: { perWave: 10, win: 400 },
   perle: { perWave: 1, win: 50, boss: 5 },
   unlock: "molten",
@@ -262,16 +262,16 @@ const night = (n: number, map: string, waves: number, boss: BossStep, minis: Bos
 });
 
 export const NIGHTS: NightDef[] = [
-  night(1, "vigilia", 20, { wave: 20, kind: "folletto", hpBp: 150000 }, [{ wave: 10, kind: "pupazzetto", hpBp: 50000 }], "Notte 1 · La Vigilia Rubata", "Il Folletto Ladro ruba il cash mentre avanza.", 17100, 16000),
-  night(2, "anelli", 25, { wave: 25, kind: "renna", hpBp: 65000 }, [{ wave: 12, kind: "folletto", hpBp: 60000 }], "Notte 2 · Zoccoli sul Ghiaccio", "La Renna Nera scatta all'improvviso.", 13500, 13000),
-  night(3, "spirale", 30, { wave: 30, kind: "pupazzo", hpBp: 480000 }, [{ wave: 15, kind: "renna", hpBp: 70000 }], "Notte 3 · Neve che Cammina", "Il Pupazzo Colossale si spezza in sei.", 13100, 13000),
-  night(4, "gemelle", 35, { wave: 35, kind: "befana", hpBp: 620000 }, [{ wave: 17, kind: "pupazzo", hpBp: 70000 }, { wave: 28, kind: "folletto", hpBp: 90000 }], "Notte 4 · Scope nel Buio", "La Befana vola invisibile: serve chi la vede.", 11600, 13000),
+  night(1, "vigilia", 20, { wave: 20, kind: "folletto", hpBp: 150000 }, [{ wave: 10, kind: "pupazzetto", hpBp: 50000 }], "Notte 1 · La Vigilia Rubata", "Il Folletto Ladro ruba il cash mentre avanza.", 17100, 21000),
+  night(2, "anelli", 25, { wave: 25, kind: "renna", hpBp: 65000 }, [{ wave: 12, kind: "folletto", hpBp: 60000 }], "Notte 2 · Zoccoli sul Ghiaccio", "La Renna Nera scatta all'improvviso.", 13500, 17000),
+  night(3, "spirale", 30, { wave: 30, kind: "pupazzo", hpBp: 480000 }, [{ wave: 15, kind: "renna", hpBp: 70000 }], "Notte 3 · Neve che Cammina", "Il Pupazzo Colossale si spezza in sei.", 13100, 17000),
+  night(4, "gemelle", 35, { wave: 35, kind: "befana", hpBp: 620000 }, [{ wave: 17, kind: "pupazzo", hpBp: 70000 }, { wave: 28, kind: "folletto", hpBp: 90000 }], "Notte 4 · Scope nel Buio", "La Befana vola invisibile: serve chi la vede.", 11600, 17000),
   night(5, "crocevia", 40, { wave: 40, kind: "krampus", hpBp: 500000 }, [
     { wave: 10, kind: "folletto", hpBp: 80000 },
     { wave: 20, kind: "renna", hpBp: 90000 },
     { wave: 28, kind: "pupazzo", hpBp: 90000 },
     { wave: 34, kind: "befana", hpBp: 100000 },
-  ], "Notte 5 · Il Gran Finale", "Krampus, e tutti quelli che lo hanno preceduto.", 10800, 13000),
+  ], "Notte 5 · Il Gran Finale", "Krampus, e tutti quelli che lo hanno preceduto.", 10800, 17000),
 ];
 
 export const SURVIVAL_IDS: GameMode[] = SURVIVAL.map((m) => m.id);
@@ -315,6 +315,9 @@ const target = (m: ModeDef, w: number) => 10000 + m.curveA * w + m.curveB * w * 
 const rampFor = (m: ModeDef, w: number) => (m.rampBp && m.waves > 1 ? Math.floor((m.hpBp * (10000 + Math.floor(((m.rampBp - 10000) * Math.min(w, m.waves - 1)) / (m.waves - 1)))) / 10000) : m.hpBp);
 export const hpMulFor = (m: ModeDef, w: number, bp: number) => Math.max(1000, Math.floor((Math.floor((bp * target(m, w)) / growth(w)) * rampFor(m, w)) / 10000));
 
+/** Quanta scorta accompagna un boss, rispetto a un'ondata normale. */
+export const BOSS_ESCORT_BP = 6500;
+
 const cache = new Map<string, WaveGroup[][]>();
 
 export function modeWaves(m: ModeDef, level: LevelDef): WaveGroup[][] {
@@ -334,9 +337,12 @@ export function modeWaves(m: ModeDef, level: LevelDef): WaveGroup[][] {
       const p = avail[(w * 7 + j) % avail.length];
       if (!chosen.includes(p)) chosen.push(p);
     }
+    // Nelle ondate con un boss la scorta è più rada: il protagonista è lui, non la folla.
+    const lead = m.boss.wave === w || m.minis.some((x) => x.wave === w);
+    const countBp = Math.floor(((m.countBp ?? 10000) * (lead ? BOSS_ESCORT_BP : 10000)) / 10000);
     const groups: WaveGroup[] = chosen.map((p, j) => ({
       enemy: p.kind,
-      count: Math.max(1, Math.floor(((p.count + Math.floor((p.step * (w - p.from)) / 100)) * (m.countBp ?? 10000)) / 10000)),
+      count: Math.max(1, Math.floor(((p.count + Math.floor((p.step * (w - p.from)) / 100)) * countBp) / 10000)),
       interval: p.interval,
       delay: j * 40,
       lane: (w + j) % lanes,

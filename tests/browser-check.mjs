@@ -389,9 +389,9 @@ for (const vp of [{ width: 390, height: 700 }, { width: 844, height: 390 }]) {
   check(`${tag}: la maniglia sposta il riquadro`, moved.y < small.y - 50 && moved.y >= stage.y, `${small.y} → ${moved.y}`);
   await page.screenshot({ path: `${outDir}/70-detail-min-${tag}.png` });
   await page.locator("#dMin").tap();
-  await page.waitForTimeout(80);
+  await page.waitForTimeout(250);
   const big = await page.locator("#detail").boundingBox();
-  check(`${tag}: riaperto, il riquadro resta nella carta`, big.y >= stage.y - 1 && big.y + big.height <= stage.y + stage.height + 1);
+  check(`${tag}: riaperto, il riquadro resta nella carta`, big.y >= stage.y - 1 && big.y + big.height <= stage.y + stage.height + 1, `${Math.round(big.y)}+${Math.round(big.height)} in ${Math.round(stage.y)}+${Math.round(stage.height)}`);
   await page.screenshot({ path: `${outDir}/71-detail-open-${tag}.png` });
   check(`${tag}: nessun errore nel riquadro`, errors.length === 0, errors.join(" | "));
   await context.close();

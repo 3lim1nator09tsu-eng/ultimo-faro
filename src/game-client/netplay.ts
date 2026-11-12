@@ -9,6 +9,7 @@ export interface Player {
   name: string;
   loadout: TowerKind[];
   ranks: Record<TowerKind, number>;
+  level?: number;
   seen: number;
   host?: boolean;
 }
@@ -178,6 +179,7 @@ export class NetMatch {
       players: list.map((p) => ({
         allowed: p.loadout.filter((k) => TOWER_ORDER.includes(k) && (!ADMIN_ONLY.includes(k) || this.adminIds.has(p.id))),
         ranks: p.ranks,
+        level: p.level ?? 1,
       })),
     };
   }

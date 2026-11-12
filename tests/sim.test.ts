@@ -1171,11 +1171,14 @@ test("Executioner: l'ascia rimbalza senza perdere forza; il Boia finisce i debol
   const lost = es.map((e) => 1000 - e.hp).filter((x) => x > 0);
   assert.ok(lost.length >= 3, `rimbalzi: ${lost.length}`);
   assert.ok(Math.max(...lost) === Math.min(...lost), `stesso danno a ogni rimbalzo: ${lost}`);
-  // Ramo A: chi resta sotto il 12% viene giustiziato.
+  // Ramo A: chi resta sotto il 5% viene giustiziato.
   step(s, [{ t: "upgrade", id: t.id }]);
   step(s, [{ t: "upgrade", id: t.id }]);
   step(s, [{ t: "spec", id: t.id, branch: "A" }]);
-  for (const e of es) e.hp = 60;
+  for (const e of es) {
+    e.maxHp = 100000;
+    e.hp = 5050; // un colpo lo porta sotto il 5% senza ucciderlo
+  }
   t.cooldown = 0;
   const ev2 = step(s, []);
   assert.ok(ev2.some((x) => x.e === "execute"));
@@ -1285,7 +1288,12 @@ test("Star Cannon: occupa 4 caselle, si carica, spara a mano o da solo, 2,5 s di
   e.hp = 1e7;
   e.stun = 0;
   step(s, [{ t: "cannonAuto", id: t.id, on: true }]);
-  for (let i = 0; i < st.chargeTicks + 30 && e.hp === 1e7; i++) step(s, []);
+  const hold = { dist: e.dist, x: e.x, y: e.y };
+  for (let i = 0; i < st.chargeTicks + 30 && e.hp === 1e7; i++) {
+    // La carica è lunga: il bersaglio resta fermo al suo posto.
+    Object.assign(e, hold);
+    step(s, []);
+  }
   assert.ok(1e7 - e.hp >= st.cannonMax, `carica piena: ${1e7 - e.hp}`);
   assert.ok(e.stun > 0);
   // Apex del ramo A: 160.000 a carica piena, 6.000 al minimo, 5 s di stordimento.
@@ -1338,4 +1346,40 @@ test("Onda nascosta: un'ondata nuova con Ombre, Araldi, Lance e il Re Risvegliat
   for (const k of ["ombra", "araldo", "lancia", "risvegliato"]) assert.ok(kinds.has(k as never), k);
   const r = effStats(s, s.towers[0]).range;
   assert.equal(r, Math.floor((towerStats(s.towers[0]).range * 8000) / 10000), "eclissi: gittata -20%");
+});
+
+import { levelHpBp } from "../src/sim-core/sim";
+import { BOSS_ESCORT_BP, waveFor as modeWaveFor } from "../src/sim-core/modes";
+
+test("Livello del giocatore: i nemici hanno più vita, fino al tetto; mai in prova; in squadra la media", () => {
+  assert.equal(levelHpBp({}), 0);
+  assert.equal(levelHpBp({ plevel: 1 }), 0);
+  assert.equal(levelHpBp({ plevel: 6 }), 5 * RULES.levelHpStepBp);
+  assert.equal(levelHpBp({ plevel: 999 }), RULES.levelHpCapBp);
+  assert.equal(levelHpBp({ plevel: 999, sandbox: true }), 0);
+  assert.equal(levelHpBp({ players: [{ allowed: [], ranks: {}, level: 1 }, { allowed: [], ranks: {}, level: 11 }] }), 5 * RULES.levelHpStepBp);
+  const hpOf = (plevel: number) => {
+    const s = createGame(5, { mode: "easy", level: "porto", plevel });
+    step(s, [{ t: "skip" }]);
+    for (let i = 0; i < 40 && !s.enemies.length; i++) step(s, []);
+    return s.enemies[0].maxHp;
+  };
+  const base = hpOf(1);
+  assert.ok(hpOf(11) > base && hpOf(11) <= Math.ceil(base * 1.2) + 1, `${base} → ${hpOf(11)}`);
+  assert.equal(hpOf(50), hpOf(200), "oltre il tetto non cresce");
+});
+
+test("Bilanciamento: migliorare rende più della torre base, e il boss ha la scorta più rada", () => {
+  for (const k of ["balestra", "mortaio", "cecchino", "bobina", "sledger", "executioner", "arpione", "mitragliera"] as const) {
+    const d = TOWERS[k];
+    const eff = (s: { damage: number; cooldown: number }, cost: number) => (s.damage * 10) / s.cooldown / cost;
+    const c1 = d.levels[0].cost, c2 = c1 + d.levels[1].cost, c3 = c2 + d.levels[2].cost;
+    const e1 = eff(d.levels[0], c1), e2 = eff(d.levels[1], c2), e3 = eff(d.levels[2], c3);
+    assert.ok(e2 > e1 && e3 > e2, `${k}: ${e1.toFixed(4)} ${e2.toFixed(4)} ${e3.toFixed(4)}`);
+    const best = Math.max(eff(d.branches.A, c3 + d.branches.A.cost), eff(d.branches.B, c3 + d.branches.B.cost));
+    assert.ok(best > e3, `${k}: il ramo migliore rende più del livello 3`);
+  }
+  const lvl = levelById("porto");
+  const count = (w: number) => modeWaveFor("easy", lvl, w - 1).filter((g) => !g.boss).reduce((a, g) => a + g.count, 0);
+  assert.ok(BOSS_ESCORT_BP < 10000 && count(20) < count(19) * 1.3, `${count(19)} → ${count(20)}`);
 });

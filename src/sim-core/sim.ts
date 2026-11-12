@@ -216,8 +216,10 @@ export interface GameOptions {
   sandbox?: boolean;
   night?: number;
   eventBp?: number;
+  /** Livello del giocatore: più è alto, più vita hanno i nemici (fino a un tetto). */
+  plevel?: number;
   /** Multigiocatore: squadra e ranghi di ogni giocatore, il primo è chi ospita. */
-  players?: Array<{ allowed: TowerKind[]; ranks: Partial<Record<TowerKind, number>> }>;
+  players?: Array<{ allowed: TowerKind[]; ranks: Partial<Record<TowerKind, number>>; level?: number }>;
 }
 
 export type Command = CommandBody & { p?: number }; // p: giocatore che manda il comando (0 in solitaria)
@@ -575,6 +577,14 @@ export function damageAgainst(base: number, type: DamageType, kind: EnemyKind, f
   return Math.max(raw, Math.max(1, Math.floor(base / RULES.minDamageDivisor)));
 }
 
+/** Vita in più per il livello dei giocatori: in squadra conta la media. Mai nelle partite di prova. */
+export function levelHpBp(opts: GameOptions): number {
+  if (opts.sandbox) return 0;
+  const levels = opts.players?.length ? opts.players.map((p) => p.level ?? 1) : [opts.plevel ?? 1];
+  const avg = Math.floor(levels.reduce((a, b) => a + Math.max(1, b | 0), 0) / levels.length);
+  return Math.min(RULES.levelHpCapBp, RULES.levelHpStepBp * (avg - 1));
+}
+
 export function hpForWave(hp: number, wave: number, hpMulBp: number): number {
   const growth = 10000 + RULES.hpGrowthA * wave + RULES.hpGrowthB * wave * wave;
   return Math.floor((Math.floor((hp * growth) / 10000) * hpMulBp) / 10000);
@@ -652,7 +662,7 @@ export function createGame(seed: number, opts: GameOptions = {}): GameState {
     bossKills: 0,
     night: nightN,
     others,
-    hpScaleBp: 10000 + 6000 * others.length,
+    hpScaleBp: Math.floor(((10000 + 6000 * others.length) * (10000 + levelHpBp(opts))) / 10000),
     eventBp: mode === "natale" ? Math.max(1000, Math.min(30000, opts.eventBp ?? 10000)) : 10000,
     allowed: pick(team ? team[0].allowed : opts.allowed),
     ranks,

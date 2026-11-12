@@ -1,6 +1,6 @@
 // Client del prototipo: disegna lo stato, raccoglie i tocchi, non decide mai le regole.
 import { ADMIN_ONLY, EVENT_TOWER, KINGPIN_QUEUE, SURVIVAL_MAPS, UNITS, UNIT_ORDER, ABILITIES, APEX_RANK, AbilityId, ENEMIES, GameMode, HARDCORE_TOWERS, LEVELS, MODS, LOADOUT_SIZE, MAP_H, MAP_W, MAX_RANK, RANK_COSTS, RULES, STARTER_TOWERS, TICKS_PER_SECOND, TILE, TOWERS, TOWER_ORDER, TRACKS, TowerKind, Track, Branch, levelById } from "../sim-core/content";
-import { Command, Enemy, GameEvent, GameOptions, GameState, modBit, playerCount, hiddenWon, canPlace, covers, sizeOf, abilityCdOf, allowedOf, cashOf, apexBlock, apexPrice, applyCommands, modsOf, perleFor, cellEmerged, createGame, effStats, hashState, isBuildable, laneIsOpen, levelOf, rankedStats, restore, rewardFor, sellValue, specPrice, statsIn, snapshot, starsFor, step, upgradePrice, waveCount, wavePreview } from "../sim-core/sim";
+import { Command, Enemy, GameEvent, levelHpBp, GameOptions, GameState, modBit, playerCount, hiddenWon, canPlace, covers, sizeOf, abilityCdOf, allowedOf, cashOf, apexBlock, apexPrice, applyCommands, modsOf, perleFor, cellEmerged, createGame, effStats, hashState, isBuildable, laneIsOpen, levelOf, rankedStats, restore, rewardFor, sellValue, specPrice, statsIn, snapshot, starsFor, step, upgradePrice, waveCount, wavePreview } from "../sim-core/sim";
 import { playBot } from "../sim-core/bot";
 import { drawTwist, qteKey, renderAim, renderChoice, renderQte, renderTwist, twistToast } from "./twist-ui";
 import { HARDCORE, ModeDef, NIGHTS, SURVIVAL, disgeloFor, modeDef } from "../sim-core/modes";
@@ -780,6 +780,12 @@ function bindDetailHandle() {
     detail.classList.toggle("min", min);
     $("dMin").setAttribute("aria-pressed", String(min));
     $("dMin").textContent = min ? "Apri" : "Riduci";
+    // Riaperto è più alto: se era stato spostato, rientra tutto nella carta.
+    if (detailY !== null) {
+      const stage = $("stage").getBoundingClientRect();
+      detailY = Math.max(6, Math.min(stage.height - detail.getBoundingClientRect().height - 6, detailY));
+      detail.style.top = `${Math.round(detailY)}px`;
+    }
   });
 }
 
@@ -1606,6 +1612,8 @@ const myCash = () => cashOf(state, myP);
 const myAllowed = () => allowedOf(state, myP);
 function newMatch(mode: GameMode, level = state.levelId, seed = newSeed(), opts?: GameOptions) {
   const o = opts ?? { mode, level, allowed: meta.loadout, ranks: meta.ranks };
+  // I nemici crescono con il livello del giocatore, fino al tetto.
+  if (!o.players && o.plevel === undefined) o.plevel = levelFromXp(meta.xp).level;
   lastOpts = o;
   beginState(createGame(seed, o));
 }
@@ -1679,7 +1687,8 @@ function renderMenu() {
   setText($("mPerle"), fmt(meta.perle));
   const lv = levelFromXp(meta.xp);
   setText($("mLevel"), `Livello ${lv.level}`);
-  setText($("mXp"), `${fmt(lv.into)} / ${fmt(lv.need)} XP`);
+  const tough = levelHpBp({ plevel: lv.level }) / 100;
+  setText($("mXp"), `${fmt(lv.into)} / ${fmt(lv.need)} XP${tough ? ` · nemici +${tough}% vita` : ""}`);
   $("mXpBar").style.setProperty("--p", String(lv.into / lv.need));
   $("adminOpen").hidden = !isAdmin();
   if (!isAdmin()) $("adminPanel").hidden = true;
@@ -1983,7 +1992,7 @@ async function checkServer() {
 }
 
 function me(): Player {
-  return { id: net.session?.userId ?? `ospite-${newSeed() >>> 0}`, name: net.session?.username ?? "ospite", loadout: [...meta.loadout], ranks: { ...meta.ranks }, seen: Date.now() };
+  return { id: net.session?.userId ?? `ospite-${newSeed() >>> 0}`, name: net.session?.username ?? "ospite", loadout: [...meta.loadout], ranks: { ...meta.ranks }, level: levelFromXp(meta.xp).level, seen: Date.now() };
 }
 
 function transportFor(code: string, local: boolean): Transport {

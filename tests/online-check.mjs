@@ -46,7 +46,7 @@ await A.page.fill("#adPubTitle", "Easy più dura");
 await A.page.click("#adPublish");
 await A.page.waitForTimeout(500);
 ok(db.balance.rev === 1 && JSON.stringify(db.balance.data.modes) === JSON.stringify([{ mode: "easy", field: "hpBp", value: 15000 }]), `pubblicato sul server: ${JSON.stringify(db.balance)}`);
-ok(db.log.length === 1 && db.log[0].title === "Easy più dura" && db.log[0].items[0].includes("136% → 150%"), `annotato in bacheca: ${JSON.stringify(db.log)}`);
+ok(db.log.length === 1 && db.log[0].title === "Easy più dura" && db.log[0].items[0].includes("144% → 150%"), `annotato in bacheca: ${JSON.stringify(db.log)}`);
 const draftAfter = await A.page.evaluate(() => window.__faro.debug.meta.draft);
 ok(draftAfter.modes.length === 0, "dopo la pubblicazione le prove sono vuote");
 ok((await A.page.locator("#adPubList li").count()) === 1, "la scheda mostra il valore pubblicato");

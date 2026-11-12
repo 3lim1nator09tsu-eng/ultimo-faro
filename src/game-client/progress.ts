@@ -128,9 +128,21 @@ export const MEDALS: Array<{ id: string; name: string; text: string; ok: (m: Med
 // ---------- bacheca ----------
 
 /** Versione del gioco: chi ospita la comunica all'admin, che vede se i comandi nuovi possono funzionare. */
-export const GAME_VERSION = "0.18.1";
+export const GAME_VERSION = "0.19.0";
 
 export const VERSION_NOTES: ChangeEntry[] = [
+  {
+    date: "2026-11-12",
+    title: "Versione 0.19: economia più ricca, Ingegnere rifatto",
+    kind: "versione",
+    items: [
+      "Ingegnere: la prima torretta è pronta appena lo costruisci, le altre arrivano in fretta e sono di più (da 1 a 5); torrette e chiodi fanno molto più danno, ora è tra le torri più forti",
+      "In partita: tutte le torri costano il 10% in più, ma il premio di fine ondata sale di circa il 30%, il cash iniziale del 10% e Officina e Pistolero incassano il 20% in più",
+      "A fine partita: circa il 25% di Schegge in più in ogni modalità, più Perle in Hardcore",
+      "Sbloccare le torri torna a costare come prima, più un 15%",
+      "Accelerator: parte a buon mercato e cresce fino a essere la torre con più danno su un bersaglio; Kingpin e Piromante ritoccati con danni misurati in partita",
+    ],
+  },
   {
     date: "2026-11-12",
     title: "Versione 0.18.1: fiamme del Piromante e danni riequilibrati",

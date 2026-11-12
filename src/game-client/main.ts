@@ -2883,10 +2883,11 @@ function render(now: number) {
     }
     const angle = aim.has(t.id) ? aim.get(t.id)! + turn() : -0.6;
     const shotAgo = now - (fired.get(t.id) ?? -1e9);
-    const kick = reducedMotion ? 0 : Math.max(0, 1 - shotAgo / (KICK_MS[t.kind] ?? 170));
+    // Gli orologi del disegno e degli eventi possono non coincidere: fuori dall'intervallo non si anima.
+    const kick = reducedMotion || shotAgo < 0 ? 0 : Math.max(0, 1 - shotAgo / (KICK_MS[t.kind] ?? 170));
     // Appena costruita o migliorata la torre fa un saltello.
     const born = (now - (popAt.get(t.id) ?? -1e9)) / 320;
-    const pop = reducedMotion || born >= 1 ? 1 : 1 + 0.22 * Math.sin(born * Math.PI) * (1 - born * 0.5);
+    const pop = reducedMotion || born >= 1 || born < 0 ? 1 : 1 + 0.22 * Math.sin(born * Math.PI) * (1 - born * 0.5);
     drawTowerShape(ctx, t.kind, p.x, p.y, pxT * sizeOf(t.kind) * pop, angle, t.level, t.branch, reducedMotion ? 0 : now, t.track, kick);
     towerStatus(t, p.x, p.y, pxT, now);
     if (t.id === selectedId) {
@@ -2955,7 +2956,7 @@ function render(now: number) {
       const ago = now - (sentryShot.get(t.id * 8 + i) ?? -1e9);
       ctx.save();
       ctx.translate(q.x, q.y);
-      sentryFigure(ctx, pxT, ang, heavy, reducedMotion ? 0 : Math.max(0, 1 - ago / 140));
+      sentryFigure(ctx, pxT * 1.35, ang, heavy, reducedMotion || ago < 0 ? 0 : Math.max(0, 1 - ago / 140));
       ctx.restore();
     }
   }

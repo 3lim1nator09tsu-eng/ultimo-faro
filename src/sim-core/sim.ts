@@ -846,9 +846,9 @@ export const eruptionNext = (state: GameState) => state.mode === "molten" && (st
 export const BURN_IMMUNE: EnemyKind[] = ["tizzone", "magmatico", "colosso"];
 /** Ogni quanti tick morde la bruciatura. */
 export const BURN_EVERY = 5;
-const SENTRY_SPOTS = [-620, -620, 620, -620, 620, 620, -620, 620, 0, -880];
+const SENTRY_SPOTS = [-620, -620, 620, -620, 620, 620, -620, 620, 0, -880, 0, 880];
 /** Dove sta la torretta numero i dell'Ingegnere, in unità di mappa. */
-export const sentrySpot = (t: Pick<Tower, "x" | "y">, i: number) => ({ x: t.x + SENTRY_SPOTS[(i % 5) * 2], y: t.y + SENTRY_SPOTS[(i % 5) * 2 + 1] });
+export const sentrySpot = (t: Pick<Tower, "x" | "y">, i: number) => ({ x: t.x + SENTRY_SPOTS[(i % 6) * 2], y: t.y + SENTRY_SPOTS[(i % 6) * 2 + 1] });
 
 const CONE_COS2: Record<number, number> = { 60: 7500, 70: 6710, 80: 5868, 90: 5000 };
 
@@ -2029,7 +2029,8 @@ export function step(state: GameState, commands: Command[] = []): GameEvent[] {
       const list = (t.sentries ??= []);
       if (list.length > s.sentryMax) list.length = s.sentryMax;
       if (list.length < s.sentryMax) {
-        t.sentryT = (t.sentryT ?? 0) + 1;
+        // La prima torretta è pronta subito; le altre richiedono il tempo di cantiere.
+        t.sentryT = (t.sentryT ?? (list.length ? 0 : s.sentryEvery)) + 1;
         if (t.sentryT >= s.sentryEvery) {
           t.sentryT = 0;
           list.push(0);
@@ -2044,7 +2045,7 @@ export function step(state: GameState, commands: Command[] = []): GameEvent[] {
         }
         if (aimAt === undefined) aimAt = pickTarget(state, t, s);
         if (!aimAt || aimAt.hp <= 0) break;
-        list[i] = s.sentryCooldown;
+        list[i] = s.sentryCooldown - 1;
         hit(state, aimAt, t, s, s.sentryDamage, events);
         const from = sentrySpot(t, i);
         events.push({ e: "shot", from: -1, to: aimAt.id, x: from.x, y: from.y, tx: aimAt.x, ty: aimAt.y });

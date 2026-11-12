@@ -69,7 +69,7 @@ async function tapCell(page, cx, cy) {
   await page.waitForTimeout(100);
   let st = await page.evaluate(() => window.__faro.state);
   check("toccare carta e casella costruisce la torre", st.towers.length === 1 && st.towers[0].cx === 5 && st.towers[0].cy === 3, JSON.stringify(st.towers.map((t) => [t.cx, t.cy])));
-  check("il costo viene scalato", st.cash === 220, String(st.cash));
+  check("il costo viene scalato", st.cash === 240, String(st.cash));
 
   // Casella proibita: nessuna costruzione.
   await page.locator('.card[data-kind="balestra"]').tap();
@@ -633,7 +633,7 @@ for (const vp of [{ width: 390, height: 760 }, { width: 844, height: 390 }]) {
   await page.locator('#arsenal button[data-kind="cecchino"]').tap();
   await page.locator('#arsenal button[data-kind="balestra"]').tap();
   const meta2 = await page.evaluate(() => window.__faro.debug.meta);
-  check("l'Arsenale sblocca e alza di rango", meta2.unlocked.includes("cecchino") && meta2.ranks.balestra === 2 && meta2.schegge === 1000 - 150 - 100, JSON.stringify(meta2));
+  check("l'Arsenale sblocca e alza di rango", meta2.unlocked.includes("cecchino") && meta2.ranks.balestra === 2 && meta2.schegge === 1000 - 175 - 100, JSON.stringify(meta2));
   await page.screenshot({ path: `${outDir}/14-arsenal.png` });
   // Il Kingpin vuole Schegge e Perle insieme.
   await page.evaluate(() => {
@@ -642,14 +642,14 @@ for (const vp of [{ width: 390, height: 760 }, { width: 844, height: 390 }]) {
     window.__faro.debug.setSchegge(2000);
   });
   const kp = page.locator('#arsenal button[data-kind="kingpin"]');
-  check("il Kingpin chiede Schegge e Perle", /1\.?800 Schegge \+ 55 Perle/.test(await kp.textContent()) && (await kp.isDisabled()), await kp.textContent());
+  check("il Kingpin chiede Schegge e Perle", /1\.?150 Schegge \+ 45 Perle/.test(await kp.textContent()) && (await kp.isDisabled()), await kp.textContent());
   await page.evaluate(() => {
     window.__faro.debug.meta.perle = 65;
     window.__faro.debug.setSchegge(2800);
   });
   await kp.tap();
   const meta3 = await page.evaluate(() => window.__faro.debug.meta);
-  check("con entrambe le valute il Kingpin si sblocca", meta3.unlocked.includes("kingpin") && meta3.schegge === 1000 && meta3.perle === 10, `${meta3.schegge} ${meta3.perle}`);
+  check("con entrambe le valute il Kingpin si sblocca", meta3.unlocked.includes("kingpin") && meta3.schegge === 2800 - 1150 && meta3.perle === 65 - 45, `${meta3.schegge} ${meta3.perle}`);
   if (meta3.loadout.includes("kingpin")) await page.locator('#arsenal button[data-squad="kingpin"]').tap();
   await page.locator("#mCampagna").tap();
   await page.waitForTimeout(150);

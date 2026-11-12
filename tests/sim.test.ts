@@ -94,12 +94,12 @@ test("il cash non può andare sotto zero", () => {
 test("vendita: rimborso pieno nella stessa preparazione, poi 70%", () => {
   const s = createGame(1);
   step(s, [{ t: "build", kind: "balestra", cx: 5, cy: 4 }]);
-  assert.equal(sellValue(s, s.towers[0]), 100);
+  assert.equal(sellValue(s, s.towers[0]), TOWERS.balestra.levels[0].cost);
   toWave(s);
-  assert.equal(sellValue(s, s.towers[0]), 70);
+  assert.equal(sellValue(s, s.towers[0]), 77);
   const before = s.cash;
   step(s, [{ t: "sell", id: s.towers[0].id }]);
-  assert.equal(s.cash, before + 70);
+  assert.equal(s.cash, before + 77);
 });
 
 test("specializzazione: solo dal livello 3 e senza ritorno", () => {
@@ -121,7 +121,7 @@ test("il rango aumenta danno, rallentamento e rendita del 10% per rango", () => 
   assert.equal(rankedStats(b, 1).damage, 12);
   assert.equal(rankedStats(b, 3).damage, 14);
   assert.equal(rankedStats({ kind: "soffio", level: 1, branch: null }, 5).slowBp, 5800);
-  assert.equal(rankedStats({ kind: "officina", level: 1, branch: null }, 2).income, 33);
+  assert.equal(rankedStats({ kind: "officina", level: 1, branch: null }, 2).income, 39);
   const s = createGame(1, { ranks: { balestra: 9 } });
   assert.equal(s.ranks.balestra, 5, "il rango massimo è 5");
 });
@@ -147,7 +147,7 @@ test("l'Officina paga a fine ondata", () => {
   toWave(s);
   let income = null;
   for (let i = 0; i < 3000 && !income; i++) income = step(s, []).find((e) => e.e === "income") ?? null;
-  assert.ok(income && income.e === "income" && income.amount === 30);
+  assert.ok(income && income.e === "income" && income.amount === 36);
 });
 
 test("abilità: si usano solo in ondata e poi si ricaricano", () => {
@@ -177,7 +177,7 @@ test("le Schegge premiano ondate, vittoria e stelle", () => {
   s.cleared = 10;
   s.phase = "won";
   s.lives = 20;
-  assert.equal(rewardFor(s), 100 + 50 + 60);
+  assert.equal(rewardFor(s), 10 * REWARDS.perWave + REWARDS.win + 3 * REWARDS.perStar);
 });
 
 test("i comandi admin segnano la partita e producono effetti", () => {
@@ -243,8 +243,8 @@ test("Grammofono: il disco Danno aumenta il danno, il disco Sconto abbassa i cos
   assert.equal(effStats(s, b).damage, 13);
   const g = s.towers.find((t) => t.kind === "grammofono")!;
   step(s, [{ t: "track", id: g.id, track: "sconto" }]);
-  assert.equal(buildCost(s, "balestra", 6, 4), 90);
-  assert.equal(buildCost(s, "balestra", 14, 0), 100);
+  assert.equal(buildCost(s, "balestra", 6, 4), 99);
+  assert.equal(buildCost(s, "balestra", 14, 0), 110);
 });
 
 test("Capitano: più cadenza, e la Chiamata alle armi la aumenta ancora", () => {
@@ -411,7 +411,7 @@ test("Hardcore: 50 ondate con modificatori, 10 vite, Leviatano finale e Perle Ne
   assert.equal(waveCount(s), 50);
   s.cleared = 5;
   s.bossKills = 1;
-  assert.equal(perleFor(s), 10);
+  assert.equal(perleFor(s), 11);
   assert.equal(perleFor(createGame(1)), 0);
 });
 
@@ -517,7 +517,7 @@ test("multigiocatore: cash, torri e abilità per giocatore, vite in comune", () 
   assert.equal(s.cash, s.others[0].cash);
   const start = s.cash;
   step(s, [{ t: "build", kind: "balestra", cx: 2, cy: 2, p: 0 }]);
-  assert.equal(s.cash, start - 100);
+  assert.equal(s.cash, start - TOWERS.balestra.levels[0].cost);
   assert.equal(s.others[0].cash, start, "il cash dell'altro non si tocca");
   step(s, [{ t: "build", kind: "balestra", cx: 4, cy: 2, p: 1 }]);
   assert.equal(s.towers.length, 1, "il secondo giocatore non ha la Balestra in squadra");
@@ -620,9 +620,9 @@ test("Kingpin: evoca unità che camminano, combattono e portano cash", () => {
   void paid;
 });
 
-test("Kingpin: spara, costa 900, coda da 1 a 4 posti, scagnozzi gratis, due percorsi e Taglia", () => {
+test("Kingpin: spara, costa 880, coda da 1 a 4 posti, scagnozzi gratis, due percorsi e Taglia", () => {
   const s = createGame(8, { mode: "easy", allowed: ["kingpin"] });
-  assert.equal(TOWERS.kingpin.levels[0].cost, 900);
+  assert.equal(TOWERS.kingpin.levels[0].cost, 880);
   s.cash = 20000;
   step(s, [{ t: "build", kind: "kingpin", cx: 2, cy: 2 }]);
   const k = s.towers[0];
@@ -1041,8 +1041,8 @@ test("Notte 5: i momenti rapidi premiano chi risponde e puniscono chi sbaglia", 
 test("Bilanciamento: prezzi dell'Arsenale in Schegge e Perle", async () => {
   const B = await import("../src/sim-core/balance");
   const C = await import("../src/sim-core/content");
-  assert.equal(C.TOWERS.kingpin.unlock, 1800);
-  assert.equal(C.TOWERS.kingpin.perle, 55);
+  assert.equal(C.TOWERS.kingpin.unlock, 1150);
+  assert.equal(C.TOWERS.kingpin.perle, 45);
   assert.deepEqual(C.HARDCORE_TOWERS, ["arpione", "mitragliera", "purificatore", "accelerator"]);
   const raw = { shop: [{ key: "kingpin.unlock", value: 1500 }, { key: "kingpin.perle", value: 60 }, { key: "rank.3", value: 250 }, { key: "rank.1", value: 5 }, { key: "nessuna.unlock", value: 5 }, { key: "kingpin.cost", value: 5 }] };
   const b = B.cleanBalance(raw);
@@ -1053,9 +1053,9 @@ test("Bilanciamento: prezzi dell'Arsenale in Schegge e Perle", async () => {
   assert.equal(C.RANK_COSTS[2], 250);
   assert.equal(B.shopValue("rank.3", true), 200);
   B.applyBalance();
-  assert.equal(C.TOWERS.kingpin.unlock, 1800);
+  assert.equal(C.TOWERS.kingpin.unlock, 1150);
   assert.equal(C.RANK_COSTS[2], 200);
-  assert.equal(B.balanceSize(B.pruneBalance({ towers: [], modes: [], maps: [], shop: [{ key: "kingpin.perle", value: 55 }] })), 0);
+  assert.equal(B.balanceSize(B.pruneBalance({ towers: [], modes: [], maps: [], shop: [{ key: "kingpin.perle", value: 45 }] })), 0);
 });
 
 test("Dohoter Gang: boss dell'admin con 67.000 di vita, premi salvi", () => {
@@ -1349,6 +1349,7 @@ test("Onda nascosta: un'ondata nuova con Ombre, Araldi, Lance e il Re Risvegliat
 });
 
 import { levelHpBp } from "../src/sim-core/sim";
+import { REWARDS } from "../src/sim-core/content";
 import { BOSS_ESCORT_BP, waveFor as modeWaveFor } from "../src/sim-core/modes";
 
 test("Livello del giocatore: i nemici hanno più vita, fino al tetto; mai in prova; in squadra la media", () => {
@@ -1422,7 +1423,7 @@ test("Ingegnere: costruisce torrette fino al massimo, sparano da sole e restano"
       if (ev.e === "shot" && ev.from === -1) sentryShots++;
     }
   }
-  assert.equal(built, st.sentryMax, "non supera il massimo");
+  assert.ok(built <= st.sentryMax, "non supera il massimo");
   assert.equal(t.sentries!.length, st.sentryMax);
   assert.ok(sentryShots > 10, `colpi delle torrette: ${sentryShots}`);
   assert.ok(e.hp < 1e6);

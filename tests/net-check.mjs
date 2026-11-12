@@ -75,7 +75,7 @@ await A.waitForTimeout(600);
 const own = await A.evaluate(() => window.__faro.state.towers.map((t) => `${t.kind}:${t.owner}`).join(","));
 ok(own === "balestra:0,mortaio:1", `ogni torre ha il suo proprietario (${own})`);
 const [cashA0, cashA1] = await A.evaluate(() => [window.__faro.state.cash, window.__faro.state.others[0].cash]);
-ok(cashA1 - cashA0 === 677, `cash separati: Balestra 100 a chi ospita, Mortaio 200 e 777 di cash admin solo a chi partecipa (${cashA0} / ${cashA1})`);
+ok(cashA1 - cashA0 === 667, `cash separati: Balestra 110 a chi ospita, Mortaio 220 e 777 di cash admin solo a chi partecipa (${cashA0} / ${cashA1})`);
 const shownB = await B.evaluate(() => document.getElementById("cash").textContent.replace(/\D/g, ""));
 ok(Number(shownB) === cashA1, `chi partecipa vede il suo cash (${shownB})`);
 const balId = await A.evaluate(() => window.__faro.state.towers.find((t) => t.kind === "balestra").id);

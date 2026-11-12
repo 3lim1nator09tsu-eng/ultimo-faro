@@ -375,13 +375,13 @@ export const TOWERS = {
     target: "first",
     unlock: 0,
     levels: [
-      { ...base, cost: 100, damage: 12, cooldown: 10, range: 3400 },
-      { ...base, cost: 80, damage: 23, cooldown: 10, range: 3400 },
-      { ...base, cost: 150, damage: 41, cooldown: 9, range: 3800 },
+      { ...base, cost: 110, damage: 12, cooldown: 10, range: 3400 },
+      { ...base, cost: 90, damage: 23, cooldown: 10, range: 3400 },
+      { ...base, cost: 165, damage: 41, cooldown: 9, range: 3800 },
     ],
     branches: {
-      A: { ...base, name: "Raffica", summary: "Spara al doppio della velocità", cost: 260, damage: 37, cooldown: 4, range: 3800 },
-      B: { ...base, name: "Dardo perforante", summary: "Ignora l'armatura dei Bruti", cost: 280, damage: 81, cooldown: 11, range: 4400, pierce: true },
+      A: { ...base, name: "Raffica", summary: "Spara al doppio della velocità", cost: 285, damage: 37, cooldown: 4, range: 3800 },
+      B: { ...base, name: "Dardo perforante", summary: "Ignora l'armatura dei Bruti", cost: 310, damage: 81, cooldown: 11, range: 4400, pierce: true },
     },
   },
   mortaio: {
@@ -393,13 +393,13 @@ export const TOWERS = {
     target: "first",
     unlock: 0,
     levels: [
-      { ...base, cost: 200, damage: 30, cooldown: 28, range: 4200, radius: 1000 },
-      { ...base, cost: 150, damage: 57, cooldown: 28, range: 4200, radius: 1000 },
-      { ...base, cost: 250, damage: 97, cooldown: 26, range: 4600, radius: 1200 },
+      { ...base, cost: 220, damage: 30, cooldown: 28, range: 4200, radius: 1000 },
+      { ...base, cost: 165, damage: 57, cooldown: 28, range: 4200, radius: 1000 },
+      { ...base, cost: 275, damage: 97, cooldown: 26, range: 4600, radius: 1200 },
     ],
     branches: {
-      A: { ...base, name: "Grappolo", summary: "Esplosione molto più ampia", cost: 380, damage: 136, cooldown: 26, range: 4600, radius: 1800 },
-      B: { ...base, name: "Concussione", summary: "Può stordire chi viene colpito", cost: 360, damage: 174, cooldown: 26, range: 4600, radius: 1200, stunTicks: 10, stunChanceBp: 5000 },
+      A: { ...base, name: "Grappolo", summary: "Esplosione molto più ampia", cost: 420, damage: 136, cooldown: 26, range: 4600, radius: 1800 },
+      B: { ...base, name: "Concussione", summary: "Può stordire chi viene colpito", cost: 395, damage: 174, cooldown: 26, range: 4600, radius: 1200, stunTicks: 10, stunChanceBp: 5000 },
     },
   },
   soffio: {
@@ -411,13 +411,13 @@ export const TOWERS = {
     target: "first",
     unlock: 0,
     levels: [
-      { ...base, cost: 150, range: 2400, slowBp: 7000 },
-      { ...base, cost: 120, range: 2600, slowBp: 6200 },
-      { ...base, cost: 200, range: 3000, slowBp: 5500 },
+      { ...base, cost: 165, range: 2400, slowBp: 7000 },
+      { ...base, cost: 130, range: 2600, slowBp: 6200 },
+      { ...base, cost: 220, range: 3000, slowBp: 5500 },
     ],
     branches: {
-      A: { ...base, name: "Aura ampia", summary: "Rallenta da molto più lontano", cost: 300, range: 4200, slowBp: 5500 },
-      B: { ...base, name: "Fragilità", summary: "I nemici nell'aura subiscono +25% di danno", cost: 320, range: 3000, slowBp: 6000, fragileBp: 12500 },
+      A: { ...base, name: "Aura ampia", summary: "Rallenta da molto più lontano", cost: 330, range: 4200, slowBp: 5500 },
+      B: { ...base, name: "Fragilità", summary: "I nemici nell'aura subiscono +25% di danno", cost: 350, range: 3000, slowBp: 6000, fragileBp: 12500 },
     },
   },
   cecchino: {
@@ -427,15 +427,15 @@ export const TOWERS = {
     family: "attacco",
     damageType: "cinetico",
     target: "strong",
-    unlock: 150,
+    unlock: 175,
     levels: [
-      { ...base, cost: 175, damage: 55, cooldown: 24, range: 6000 },
-      { ...base, cost: 130, damage: 99, cooldown: 23, range: 6500 },
-      { ...base, cost: 220, damage: 175, cooldown: 22, range: 7000 },
+      { ...base, cost: 195, damage: 55, cooldown: 24, range: 6000 },
+      { ...base, cost: 145, damage: 99, cooldown: 23, range: 6500 },
+      { ...base, cost: 240, damage: 175, cooldown: 22, range: 7000 },
     ],
     branches: {
-      A: { ...base, name: "Colpo pesante", summary: "Colpi enormi, ancora più lenti", cost: 340, damage: 412, cooldown: 28, range: 7500 },
-      B: { ...base, name: "Spezza-corazza", summary: "Ignora l'armatura e spara più spesso", cost: 320, damage: 177, cooldown: 16, range: 7000, pierce: true },
+      A: { ...base, name: "Colpo pesante", summary: "Colpi enormi, ancora più lenti", cost: 375, damage: 412, cooldown: 28, range: 7500 },
+      B: { ...base, name: "Spezza-corazza", summary: "Ignora l'armatura e spara più spesso", cost: 350, damage: 177, cooldown: 16, range: 7000, pierce: true },
     },
   },
   bobina: {
@@ -445,15 +445,15 @@ export const TOWERS = {
     family: "attacco",
     damageType: "elettrico",
     target: "first",
-    unlock: 200,
+    unlock: 225,
     levels: [
-      { ...base, cost: 160, damage: 16, cooldown: 12, range: 3000, chains: 3 },
-      { ...base, cost: 120, damage: 30, cooldown: 12, range: 3000, chains: 4 },
-      { ...base, cost: 200, damage: 51, cooldown: 11, range: 3300, chains: 5 },
+      { ...base, cost: 175, damage: 16, cooldown: 12, range: 3000, chains: 3 },
+      { ...base, cost: 130, damage: 30, cooldown: 12, range: 3000, chains: 4 },
+      { ...base, cost: 220, damage: 51, cooldown: 11, range: 3300, chains: 5 },
     ],
     branches: {
-      A: { ...base, name: "Catena lunga", summary: "Il fulmine salta su 10 nemici", cost: 320, damage: 73, cooldown: 11, range: 3300, chains: 10, chainBp: 8500 },
-      B: { ...base, name: "Sovraccarico", summary: "Ogni salto può stordire", cost: 340, damage: 98, cooldown: 11, range: 3300, chains: 5, stunTicks: 6, stunChanceBp: 3500 },
+      A: { ...base, name: "Catena lunga", summary: "Il fulmine salta su 10 nemici", cost: 350, damage: 73, cooldown: 11, range: 3300, chains: 10, chainBp: 8500 },
+      B: { ...base, name: "Sovraccarico", summary: "Ogni salto può stordire", cost: 375, damage: 98, cooldown: 11, range: 3300, chains: 5, stunTicks: 6, stunChanceBp: 3500 },
     },
   },
   sledger: {
@@ -463,22 +463,22 @@ export const TOWERS = {
     family: "attacco",
     damageType: "cinetico",
     target: "first",
-    unlock: 1400,
+    unlock: 1050,
     maxPerPlayer: 6,
     levels: [
-      { ...base, cost: 300, damage: 22, cooldown: 14, range: 1800, coneDeg: 60, maxTargets: 3, chillBp: 1500, chillMax: 4500 },
-      { ...base, cost: 220, damage: 38, cooldown: 13, range: 1900, coneDeg: 60, maxTargets: 4, chillBp: 2000, chillMax: 5000 },
-      { ...base, cost: 380, damage: 71, cooldown: 13, range: 2000, coneDeg: 60, maxTargets: 5, chillBp: 2500, chillMax: 6000, freezeTicks: 15 },
+      { ...base, cost: 330, damage: 22, cooldown: 14, range: 1800, coneDeg: 60, maxTargets: 3, chillBp: 1500, chillMax: 4500 },
+      { ...base, cost: 240, damage: 38, cooldown: 13, range: 1900, coneDeg: 60, maxTargets: 4, chillBp: 2000, chillMax: 5000 },
+      { ...base, cost: 420, damage: 71, cooldown: 13, range: 2000, coneDeg: 60, maxTargets: 5, chillBp: 2500, chillMax: 6000, freezeTicks: 15 },
     ],
     branches: {
-      A: { ...base, name: "Rompighiaccio", summary: "Danno doppio a chi è congelato o rallentato", cost: 600, damage: 94, cooldown: 12, range: 2100, coneDeg: 60, maxTargets: 6, chillBp: 3000, chillMax: 7000, freezeTicks: 15, iceBreaker: true },
-      B: { ...base, name: "Scossa artica", summary: "Una seconda scossa colpisce di nuovo", cost: 650, damage: 127, cooldown: 12, range: 2200, coneDeg: 70, maxTargets: 7, chillBp: 3000, chillMax: 7000, freezeTicks: 18, aftershockBp: 4000 },
+      A: { ...base, name: "Rompighiaccio", summary: "Danno doppio a chi è congelato o rallentato", cost: 660, damage: 94, cooldown: 12, range: 2100, coneDeg: 60, maxTargets: 6, chillBp: 3000, chillMax: 7000, freezeTicks: 15, iceBreaker: true },
+      B: { ...base, name: "Scossa artica", summary: "Una seconda scossa colpisce di nuovo", cost: 715, damage: 127, cooldown: 12, range: 2200, coneDeg: 70, maxTargets: 7, chillBp: 3000, chillMax: 7000, freezeTicks: 18, aftershockBp: 4000 },
     },
   },
   ingegnere: {
     apex: "Fabbrica d'Assedio",
     name: "Ingegnere",
-    role: "Spara chiodi e costruisce torrette che sparano da sole",
+    role: "Spara chiodi e costruisce torrette che sparano da sole: il grosso del danno lo fanno loro",
     family: "attacco",
     damageType: "cinetico",
     target: "first",
@@ -486,13 +486,13 @@ export const TOWERS = {
     perle: 20,
     maxPerPlayer: 4,
     levels: [
-      { ...base, cost: 600, damage: 24, cooldown: 8, range: 3200, sentryMax: 1, sentryEvery: 150, sentryDamage: 15, sentryCooldown: 5 },
-      { ...base, cost: 500, damage: 33, cooldown: 7, range: 3400, sentryMax: 2, sentryEvery: 130, sentryDamage: 18, sentryCooldown: 5 },
-      { ...base, cost: 900, damage: 56, cooldown: 7, range: 3600, sentryMax: 2, sentryEvery: 120, sentryDamage: 30, sentryCooldown: 4 },
+      { ...base, cost: 660, damage: 31, cooldown: 8, range: 3200, sentryMax: 1, sentryEvery: 80, sentryDamage: 20, sentryCooldown: 5 },
+      { ...base, cost: 550, damage: 44, cooldown: 7, range: 3400, sentryMax: 2, sentryEvery: 70, sentryDamage: 24, sentryCooldown: 5 },
+      { ...base, cost: 990, damage: 58, cooldown: 7, range: 3600, sentryMax: 3, sentryEvery: 60, sentryDamage: 31, sentryCooldown: 4 },
     ],
     branches: {
-      A: { ...base, name: "Torrette pesanti", summary: "Tre torrette corazzate che ignorano l'armatura", cost: 1800, damage: 90, cooldown: 6, range: 3800, sentryMax: 3, sentryEvery: 110, sentryDamage: 46, sentryCooldown: 4, pierce: true },
-      B: { ...base, name: "Officina da campo", summary: "Quattro torrette leggere, costruite in fretta, che vedono gli invisibili", cost: 1700, damage: 66, cooldown: 6, range: 4000, sentryMax: 4, sentryEvery: 60, sentryDamage: 20, sentryCooldown: 3, detect: true },
+      A: { ...base, name: "Torrette pesanti", summary: "Quattro torrette corazzate che ignorano l'armatura", cost: 1980, damage: 99, cooldown: 6, range: 3800, sentryMax: 4, sentryEvery: 50, sentryDamage: 51, sentryCooldown: 4, pierce: true },
+      B: { ...base, name: "Officina da campo", summary: "Cinque torrette leggere, costruite in fretta, che vedono gli invisibili", cost: 1870, damage: 79, cooldown: 6, range: 4000, sentryMax: 5, sentryEvery: 35, sentryDamage: 24, sentryCooldown: 3, detect: true },
     },
   },
   pistolero: {
@@ -505,13 +505,13 @@ export const TOWERS = {
     unlock: 700,
     maxPerPlayer: 5,
     levels: [
-      { ...base, cost: 250, damage: 15, cooldown: 7, range: 2800, cashEvery: 6, cashAmount: 3 },
-      { ...base, cost: 220, damage: 26, cooldown: 6, range: 3000, cashEvery: 6, cashAmount: 5 },
-      { ...base, cost: 420, damage: 52, cooldown: 6, range: 3200, cashEvery: 6, cashAmount: 8 },
+      { ...base, cost: 275, damage: 15, cooldown: 7, range: 2800, cashEvery: 6, cashAmount: 4 },
+      { ...base, cost: 240, damage: 26, cooldown: 6, range: 3000, cashEvery: 6, cashAmount: 6 },
+      { ...base, cost: 460, damage: 52, cooldown: 6, range: 3200, cashEvery: 6, cashAmount: 10 },
     ],
     branches: {
-      A: { ...base, name: "Mano veloce", summary: "Spara il doppio più in fretta", cost: 800, damage: 55, cooldown: 3, range: 3400, cashEvery: 8, cashAmount: 9 },
-      B: { ...base, name: "Cercatore d'oro", summary: "Incassa più spesso e di più", cost: 750, damage: 83, cooldown: 6, range: 3400, cashEvery: 4, cashAmount: 14 },
+      A: { ...base, name: "Mano veloce", summary: "Spara il doppio più in fretta", cost: 880, damage: 55, cooldown: 3, range: 3400, cashEvery: 8, cashAmount: 11 },
+      B: { ...base, name: "Cercatore d'oro", summary: "Incassa più spesso e di più", cost: 825, damage: 83, cooldown: 6, range: 3400, cashEvery: 4, cashAmount: 17 },
     },
   },
   piromante: {
@@ -524,13 +524,13 @@ export const TOWERS = {
     unlock: 1200,
     maxPerPlayer: 6,
     levels: [
-      { ...base, cost: 400, damage: 5, cooldown: 5, range: 2000, coneDeg: 60, maxTargets: 4, burnDamage: 4, burnTicks: 30 },
-      { ...base, cost: 350, damage: 9, cooldown: 5, range: 2100, coneDeg: 60, maxTargets: 5, burnDamage: 9, burnTicks: 35 },
-      { ...base, cost: 650, damage: 14, cooldown: 4, range: 2200, coneDeg: 60, maxTargets: 6, burnDamage: 19, burnTicks: 40 },
+      { ...base, cost: 440, damage: 7, cooldown: 5, range: 2000, coneDeg: 60, maxTargets: 4, burnDamage: 6, burnTicks: 30 },
+      { ...base, cost: 385, damage: 13, cooldown: 5, range: 2100, coneDeg: 60, maxTargets: 5, burnDamage: 13, burnTicks: 35 },
+      { ...base, cost: 715, damage: 21, cooldown: 4, range: 2200, coneDeg: 60, maxTargets: 6, burnDamage: 29, burnTicks: 40 },
     ],
     branches: {
-      A: { ...base, name: "Fiamma bianca", summary: "Bruciatura molto più forte", cost: 1100, damage: 22, cooldown: 4, range: 2300, coneDeg: 60, maxTargets: 7, burnDamage: 45, burnTicks: 40 },
-      B: { ...base, name: "Muro di fuoco", summary: "Cono più largo e lungo, brucia molti nemici a lungo", cost: 1000, damage: 18, cooldown: 4, range: 2800, coneDeg: 90, maxTargets: 12, burnDamage: 31, burnTicks: 60 },
+      A: { ...base, name: "Fiamma bianca", summary: "Bruciatura molto più forte", cost: 1210, damage: 35, cooldown: 4, range: 2300, coneDeg: 60, maxTargets: 7, burnDamage: 71, burnTicks: 40 },
+      B: { ...base, name: "Muro di fuoco", summary: "Cono più largo e lungo, brucia molti nemici a lungo", cost: 1100, damage: 28, cooldown: 4, range: 2800, coneDeg: 90, maxTargets: 12, burnDamage: 48, burnTicks: 60 },
     },
   },
   executioner: {
@@ -540,16 +540,16 @@ export const TOWERS = {
     family: "attacco",
     damageType: "cinetico",
     target: "first",
-    unlock: 1700,
+    unlock: 1250,
     maxPerPlayer: 8,
     levels: [
-      { ...base, cost: 350, damage: 36, cooldown: 26, range: 5000, chains: 3, chainBp: 10000, bounceRange: 3000 },
-      { ...base, cost: 280, damage: 49, cooldown: 18, range: 5000, chains: 3, chainBp: 10000, bounceRange: 3000 },
-      { ...base, cost: 520, damage: 128, cooldown: 24, range: 6000, chains: 5, chainBp: 10000, bounceRange: 3400, detect: true },
+      { ...base, cost: 385, damage: 36, cooldown: 26, range: 5000, chains: 3, chainBp: 10000, bounceRange: 3000 },
+      { ...base, cost: 310, damage: 49, cooldown: 18, range: 5000, chains: 3, chainBp: 10000, bounceRange: 3000 },
+      { ...base, cost: 570, damage: 128, cooldown: 24, range: 6000, chains: 5, chainBp: 10000, bounceRange: 3400, detect: true },
     ],
     branches: {
-      A: { ...base, name: "Boia", summary: "Finisce chi scende sotto il 5% di vita (non i boss)", cost: 900, damage: 235, cooldown: 22, range: 6000, chains: 5, chainBp: 10000, bounceRange: 3400, detect: true, executeBp: 500 },
-      B: { ...base, name: "Tempesta d'asce", summary: "L'ascia rimbalza su 9 nemici", cost: 950, damage: 185, cooldown: 22, range: 6500, chains: 9, chainBp: 10000, bounceRange: 3800, detect: true },
+      A: { ...base, name: "Boia", summary: "Finisce chi scende sotto il 5% di vita (non i boss)", cost: 990, damage: 235, cooldown: 22, range: 6000, chains: 5, chainBp: 10000, bounceRange: 3400, detect: true, executeBp: 500 },
+      B: { ...base, name: "Tempesta d'asce", summary: "L'ascia rimbalza su 9 nemici", cost: 1045, damage: 185, cooldown: 22, range: 6500, chains: 9, chainBp: 10000, bounceRange: 3800, detect: true },
     },
   },
   starcannon: {
@@ -559,18 +559,18 @@ export const TOWERS = {
     family: "attacco",
     damageType: "cinetico",
     target: "strong",
-    unlock: 3500,
-    perle: 60,
+    unlock: 2300,
+    perle: 45,
     maxPerPlayer: 1,
     size: 2,
     levels: [
-      { ...base, cost: 2000, range: 9000, radius: 1200, cooldown: 25, chargeTicks: 400, cannonMin: 300, cannonMax: 6000, cannonStun: 20, pierce: true },
-      { ...base, cost: 2200, range: 9500, radius: 1300, cooldown: 25, chargeTicks: 380, cannonMin: 500, cannonMax: 12000, cannonStun: 25, pierce: true },
-      { ...base, cost: 3500, range: 10000, radius: 1400, cooldown: 25, chargeTicks: 360, cannonMin: 1000, cannonMax: 24000, cannonStun: 30, pierce: true },
+      { ...base, cost: 1650, range: 9000, radius: 1200, cooldown: 25, chargeTicks: 400, cannonMin: 300, cannonMax: 6000, cannonStun: 20, pierce: true },
+      { ...base, cost: 2420, range: 9500, radius: 1300, cooldown: 25, chargeTicks: 380, cannonMin: 500, cannonMax: 12000, cannonStun: 25, pierce: true },
+      { ...base, cost: 3850, range: 10000, radius: 1400, cooldown: 25, chargeTicks: 360, cannonMin: 1000, cannonMax: 24000, cannonStun: 30, pierce: true },
     ],
     branches: {
-      A: { ...base, name: "Supernova", summary: "Un colpo devastante: fino a 160.000 come Apex", cost: 7000, range: 10500, radius: 1600, cooldown: 25, chargeTicks: 340, cannonMin: 2730, cannonMax: 72730, cannonStun: 45, pierce: true },
-      B: { ...base, name: "Pioggia di stelle", summary: "Carica più veloce e area molto più grande", cost: 7500, range: 10500, radius: 2200, cooldown: 25, chargeTicks: 220, cannonMin: 1500, cannonMax: 36000, cannonStun: 35, pierce: true },
+      A: { ...base, name: "Supernova", summary: "Un colpo devastante: fino a 160.000 come Apex", cost: 7700, range: 10500, radius: 1600, cooldown: 25, chargeTicks: 340, cannonMin: 2730, cannonMax: 72730, cannonStun: 45, pierce: true },
+      B: { ...base, name: "Pioggia di stelle", summary: "Carica più veloce e area molto più grande", cost: 8250, range: 10500, radius: 2200, cooldown: 25, chargeTicks: 220, cannonMin: 1500, cannonMax: 36000, cannonStun: 35, pierce: true },
     },
   },
   accelerator: {
@@ -580,16 +580,16 @@ export const TOWERS = {
     family: "attacco",
     damageType: "elettrico",
     target: "first",
-    unlock: 1500,
-    perle: 70,
+    unlock: 900,
+    perle: 55,
     levels: [
-      { ...base, cost: 1500, damage: 45, range: 4500, accCharge: 40, accBurst: 60, accTick: 2, cooldown: 2 },
-      { ...base, cost: 700, damage: 69, range: 5000, accCharge: 40, accBurst: 65, accTick: 2, cooldown: 2 },
-      { ...base, cost: 1500, damage: 125, range: 6000, accCharge: 40, accBurst: 65, accTick: 2, cooldown: 2 },
+      { ...base, cost: 550, damage: 31, range: 4500, accCharge: 40, accBurst: 60, accTick: 2, cooldown: 2 },
+      { ...base, cost: 770, damage: 79, range: 5000, accCharge: 40, accBurst: 65, accTick: 2, cooldown: 2 },
+      { ...base, cost: 1650, damage: 195, range: 6000, accCharge: 40, accBurst: 65, accTick: 2, cooldown: 2 },
     ],
     branches: {
-      A: { ...base, name: "Supercarica", summary: "Colpisce due volte più spesso", cost: 3500, damage: 136, range: 6300, accCharge: 40, accBurst: 65, accTick: 1, cooldown: 1, detect: true },
-      B: { ...base, name: "Raffica lunga", summary: "Carica in metà tempo, raffica quasi doppia", cost: 4000, damage: 162, range: 6300, accCharge: 20, accBurst: 120, accTick: 2, cooldown: 2, detect: true },
+      A: { ...base, name: "Supercarica", summary: "Colpisce due volte più spesso", cost: 3850, damage: 253, range: 6300, accCharge: 40, accBurst: 65, accTick: 1, cooldown: 1, detect: true },
+      B: { ...base, name: "Raffica lunga", summary: "Carica in metà tempo, raffica quasi doppia", cost: 4400, damage: 314, range: 6300, accCharge: 20, accBurst: 120, accTick: 2, cooldown: 2, detect: true },
     },
   },
   officina: {
@@ -599,15 +599,15 @@ export const TOWERS = {
     family: "economia",
     damageType: "nessuno",
     target: "first",
-    unlock: 400,
+    unlock: 300,
     levels: [
-      { ...base, cost: 175, income: 30 },
-      { ...base, cost: 140, income: 50 },
-      { ...base, cost: 200, income: 75 },
+      { ...base, cost: 195, income: 36 },
+      { ...base, cost: 155, income: 60 },
+      { ...base, cost: 220, income: 90 },
     ],
     branches: {
-      A: { ...base, name: "Interessi", summary: "+6% del cash a fine ondata, fino a 150", cost: 350, income: 75, interestBp: 600, interestCap: 150 },
-      B: { ...base, name: "Riparazioni", summary: "+1 vita a fine ondata, fino a 20", cost: 300, income: 60, lifePerWave: 1 },
+      A: { ...base, name: "Interessi", summary: "+6% del cash a fine ondata, fino a 150", cost: 385, income: 90, interestBp: 600, interestCap: 150 },
+      B: { ...base, name: "Riparazioni", summary: "+1 vita a fine ondata, fino a 20", cost: 330, income: 72, lifePerWave: 1 },
     },
   },
   grammofono: {
@@ -617,15 +617,15 @@ export const TOWERS = {
     family: "supporto",
     damageType: "nessuno",
     target: "first",
-    unlock: 450,
+    unlock: 350,
     levels: [
-      { ...base, cost: 200, range: 2500, auraBp: 1000 },
-      { ...base, cost: 160, range: 2800, auraBp: 1500 },
-      { ...base, cost: 240, range: 3200, auraBp: 2000 },
+      { ...base, cost: 220, range: 2500, auraBp: 1000 },
+      { ...base, cost: 175, range: 2800, auraBp: 1500 },
+      { ...base, cost: 265, range: 3200, auraBp: 2000 },
     ],
     branches: {
-      A: { ...base, name: "Remix", summary: "Il disco vale il 30%", cost: 380, range: 3200, auraBp: 3000 },
-      B: { ...base, name: "Casse potenti", summary: "Arriva molto più lontano", cost: 360, range: 4600, auraBp: 2000 },
+      A: { ...base, name: "Remix", summary: "Il disco vale il 30%", cost: 420, range: 3200, auraBp: 3000 },
+      B: { ...base, name: "Casse potenti", summary: "Arriva molto più lontano", cost: 395, range: 4600, auraBp: 2000 },
     },
   },
   capitano: {
@@ -635,16 +635,16 @@ export const TOWERS = {
     family: "supporto",
     damageType: "nessuno",
     target: "first",
-    unlock: 550,
+    unlock: 400,
     ability: { name: "Chiamata alle armi", summary: "+50% di cadenza per 10 s nell'area" },
     levels: [
-      { ...base, cost: 225, range: 2500, hasteBp: 1000, abilityCooldown: 450, abilityTicks: 100, abilityBp: 5000 },
-      { ...base, cost: 175, range: 2800, hasteBp: 1500, abilityCooldown: 450, abilityTicks: 100, abilityBp: 5000 },
-      { ...base, cost: 250, range: 3200, hasteBp: 2000, abilityCooldown: 420, abilityTicks: 100, abilityBp: 5000 },
+      { ...base, cost: 250, range: 2500, hasteBp: 1000, abilityCooldown: 450, abilityTicks: 100, abilityBp: 5000 },
+      { ...base, cost: 195, range: 2800, hasteBp: 1500, abilityCooldown: 450, abilityTicks: 100, abilityBp: 5000 },
+      { ...base, cost: 275, range: 3200, hasteBp: 2000, abilityCooldown: 420, abilityTicks: 100, abilityBp: 5000 },
     ],
     branches: {
-      A: { ...base, name: "Chiamata lunga", summary: "La Chiamata alle armi dura 18 s", cost: 380, range: 3200, hasteBp: 2000, abilityCooldown: 420, abilityTicks: 180, abilityBp: 6000 },
-      B: { ...base, name: "Stendardo", summary: "+25% cadenza e +15% gittata sempre", cost: 400, range: 3400, hasteBp: 2500, rangeBuffBp: 1500, abilityCooldown: 420, abilityTicks: 100, abilityBp: 5000 },
+      A: { ...base, name: "Chiamata lunga", summary: "La Chiamata alle armi dura 18 s", cost: 420, range: 3200, hasteBp: 2000, abilityCooldown: 420, abilityTicks: 180, abilityBp: 6000 },
+      B: { ...base, name: "Stendardo", summary: "+25% cadenza e +15% gittata sempre", cost: 440, range: 3400, hasteBp: 2500, rangeBuffBp: 1500, abilityCooldown: 420, abilityTicks: 100, abilityBp: 5000 },
     },
   },
   medico: {
@@ -654,16 +654,16 @@ export const TOWERS = {
     family: "supporto",
     damageType: "nessuno",
     target: "first",
-    unlock: 200,
+    unlock: 225,
     ability: { name: "Cura totale", summary: "Libera ogni torre della mappa e la protegge per 6 s" },
     levels: [
-      { ...base, cost: 150, range: 2500, pulse: 40, immune: 20, abilityCooldown: 600, abilityTicks: 60 },
-      { ...base, cost: 120, range: 3000, pulse: 30, immune: 30, abilityCooldown: 600, abilityTicks: 60 },
-      { ...base, cost: 180, range: 3500, pulse: 25, immune: 40, abilityCooldown: 550, abilityTicks: 60 },
+      { ...base, cost: 165, range: 2500, pulse: 40, immune: 20, abilityCooldown: 600, abilityTicks: 60 },
+      { ...base, cost: 130, range: 3000, pulse: 30, immune: 30, abilityCooldown: 600, abilityTicks: 60 },
+      { ...base, cost: 200, range: 3500, pulse: 25, immune: 40, abilityCooldown: 550, abilityTicks: 60 },
     ],
     branches: {
-      A: { ...base, name: "Vaccino", summary: "Le torri curate restano protette 12 s", cost: 300, range: 3500, pulse: 25, immune: 120, abilityCooldown: 550, abilityTicks: 90 },
-      B: { ...base, name: "Primo soccorso", summary: "Cura ogni secondo, da più lontano", cost: 280, range: 4500, pulse: 10, immune: 30, abilityCooldown: 550, abilityTicks: 60 },
+      A: { ...base, name: "Vaccino", summary: "Le torri curate restano protette 12 s", cost: 330, range: 3500, pulse: 25, immune: 120, abilityCooldown: 550, abilityTicks: 90 },
+      B: { ...base, name: "Primo soccorso", summary: "Cura ogni secondo, da più lontano", cost: 310, range: 4500, pulse: 10, immune: 30, abilityCooldown: 550, abilityTicks: 60 },
     },
   },
 } as Record<TowerKind, TowerDef>;
@@ -676,15 +676,15 @@ TOWERS.arpione = {
   damageType: "cinetico",
   target: "strong",
   unlock: 0,
-  perle: 40,
+  perle: 35,
   levels: [
-    { ...base, cost: 250, damage: 110, cooldown: 30, range: 5000, pierce: true, markTicks: 30, markBp: 13000 },
-    { ...base, cost: 180, damage: 204, cooldown: 30, range: 5300, pierce: true, markTicks: 35, markBp: 13000 },
-    { ...base, cost: 260, damage: 329, cooldown: 28, range: 5600, pierce: true, markTicks: 40, markBp: 13500 },
+    { ...base, cost: 275, damage: 110, cooldown: 30, range: 5000, pierce: true, markTicks: 30, markBp: 13000 },
+    { ...base, cost: 200, damage: 204, cooldown: 30, range: 5300, pierce: true, markTicks: 35, markBp: 13000 },
+    { ...base, cost: 285, damage: 329, cooldown: 28, range: 5600, pierce: true, markTicks: 40, markBp: 13500 },
   ],
   branches: {
-    A: { ...base, name: "Arpione a catena", summary: "Marchia anche i nemici vicini", cost: 420, damage: 456, cooldown: 28, range: 5600, pierce: true, markTicks: 45, markBp: 13500, markRadius: 1500 },
-    B: { ...base, name: "Fiocina pesante", summary: "Colpo enorme, doppio sui boss", cost: 450, damage: 782, cooldown: 36, range: 6000, pierce: true, markTicks: 40, markBp: 13500, bossBp: 20000 },
+    A: { ...base, name: "Arpione a catena", summary: "Marchia anche i nemici vicini", cost: 460, damage: 456, cooldown: 28, range: 5600, pierce: true, markTicks: 45, markBp: 13500, markRadius: 1500 },
+    B: { ...base, name: "Fiocina pesante", summary: "Colpo enorme, doppio sui boss", cost: 495, damage: 782, cooldown: 36, range: 6000, pierce: true, markTicks: 40, markBp: 13500, bossBp: 20000 },
   },
 };
 TOWERS.mitragliera = {
@@ -695,15 +695,15 @@ TOWERS.mitragliera = {
   damageType: "cinetico",
   target: "first",
   unlock: 0,
-  perle: 60,
+  perle: 50,
   levels: [
-    { ...base, cost: 275, damage: 8, cooldown: 2, range: 3200 },
-    { ...base, cost: 200, damage: 15, cooldown: 2, range: 3200 },
-    { ...base, cost: 300, damage: 26, cooldown: 2, range: 3500 },
+    { ...base, cost: 300, damage: 8, cooldown: 2, range: 3200 },
+    { ...base, cost: 220, damage: 15, cooldown: 2, range: 3200 },
+    { ...base, cost: 330, damage: 26, cooldown: 2, range: 3500 },
   ],
   branches: {
-    A: { ...base, name: "Canne rotanti", summary: "Spara a ogni tick", cost: 480, damage: 24, cooldown: 1, range: 3500 },
-    B: { ...base, name: "Proiettili sacri", summary: "Blocca la rigenerazione di chi colpisce", cost: 450, damage: 36, cooldown: 2, range: 3500, sacred: true },
+    A: { ...base, name: "Canne rotanti", summary: "Spara a ogni tick", cost: 530, damage: 24, cooldown: 1, range: 3500 },
+    B: { ...base, name: "Proiettili sacri", summary: "Blocca la rigenerazione di chi colpisce", cost: 495, damage: 36, cooldown: 2, range: 3500, sacred: true },
   },
 };
 TOWERS.purificatore = {
@@ -714,15 +714,15 @@ TOWERS.purificatore = {
   damageType: "nessuno",
   target: "first",
   unlock: 0,
-  perle: 75,
+  perle: 70,
   levels: [
-    { ...base, cost: 300, damage: 8, cooldown: 10, range: 2400, pulseAll: true, purify: true },
-    { ...base, cost: 220, damage: 13, cooldown: 10, range: 2700, pulseAll: true, purify: true },
-    { ...base, cost: 320, damage: 20, cooldown: 10, range: 3100, pulseAll: true, purify: true },
+    { ...base, cost: 330, damage: 8, cooldown: 10, range: 2400, pulseAll: true, purify: true },
+    { ...base, cost: 240, damage: 13, cooldown: 10, range: 2700, pulseAll: true, purify: true },
+    { ...base, cost: 350, damage: 20, cooldown: 10, range: 3100, pulseAll: true, purify: true },
   ],
   branches: {
-    A: { ...base, name: "Luce bianca", summary: "Rallenta del 25% chi purifica", cost: 450, damage: 24, cooldown: 10, range: 3100, pulseAll: true, purify: true, slowBp: 7500 },
-    B: { ...base, name: "Esorcismo", summary: "Triplo danno sui boss", cost: 480, damage: 30, cooldown: 10, range: 3100, pulseAll: true, purify: true, bossBp: 30000 },
+    A: { ...base, name: "Luce bianca", summary: "Rallenta del 25% chi purifica", cost: 495, damage: 24, cooldown: 10, range: 3100, pulseAll: true, purify: true, slowBp: 7500 },
+    B: { ...base, name: "Esorcismo", summary: "Triplo danno sui boss", cost: 530, damage: 30, cooldown: 10, range: 3100, pulseAll: true, purify: true, bossBp: 30000 },
   },
 };
 
@@ -737,13 +737,13 @@ TOWERS.custode = {
   unlock: 0,
   exclusive: "admin",
   levels: [
-    { ...base, cost: 500, damage: 420, cooldown: 15, range: 7000, pierce: true },
-    { ...base, cost: 400, damage: 700, cooldown: 14, range: 7500, pierce: true },
-    { ...base, cost: 600, damage: 1100, cooldown: 13, range: 8000, pierce: true },
+    { ...base, cost: 550, damage: 420, cooldown: 15, range: 7000, pierce: true },
+    { ...base, cost: 440, damage: 700, cooldown: 14, range: 7500, pierce: true },
+    { ...base, cost: 660, damage: 1100, cooldown: 13, range: 8000, pierce: true },
   ],
   branches: {
-    A: { ...base, name: "Luce che giudica", summary: "Un colpo devastante, doppio sui boss", cost: 900, damage: 2600, cooldown: 20, range: 9000, pierce: true, bossBp: 20000 },
-    B: { ...base, name: "Raggio continuo", summary: "Un raggio che non smette mai", cost: 900, damage: 260, cooldown: 2, range: 6500, pierce: true },
+    A: { ...base, name: "Luce che giudica", summary: "Un colpo devastante, doppio sui boss", cost: 990, damage: 2600, cooldown: 20, range: 9000, pierce: true, bossBp: 20000 },
+    B: { ...base, name: "Raggio continuo", summary: "Un raggio che non smette mai", cost: 990, damage: 260, cooldown: 2, range: 6500, pierce: true },
   },
 };
 TOWERS.campana = {
@@ -756,13 +756,13 @@ TOWERS.campana = {
   unlock: 0,
   exclusive: "admin",
   levels: [
-    { ...base, cost: 450, range: 3000, auraBp: 2000, hasteBp: 1500, rangeBuffBp: 1000, immune: 10 },
-    { ...base, cost: 350, range: 3500, auraBp: 3000, hasteBp: 2000, rangeBuffBp: 1500, immune: 10 },
-    { ...base, cost: 500, range: 4000, auraBp: 4000, hasteBp: 2500, rangeBuffBp: 2000, immune: 10 },
+    { ...base, cost: 495, range: 3000, auraBp: 2000, hasteBp: 1500, rangeBuffBp: 1000, immune: 10 },
+    { ...base, cost: 385, range: 3500, auraBp: 3000, hasteBp: 2000, rangeBuffBp: 1500, immune: 10 },
+    { ...base, cost: 550, range: 4000, auraBp: 4000, hasteBp: 2500, rangeBuffBp: 2000, immune: 10 },
   ],
   branches: {
-    A: { ...base, name: "Rintocco profondo", summary: "Bonus fortissimi da vicino", cost: 800, range: 4000, auraBp: 6000, hasteBp: 3500, rangeBuffBp: 2500, immune: 10 },
-    B: { ...base, name: "Eco lontana", summary: "Copre mezza mappa", cost: 800, range: 7000, auraBp: 3500, hasteBp: 2500, rangeBuffBp: 2000, immune: 10 },
+    A: { ...base, name: "Rintocco profondo", summary: "Bonus fortissimi da vicino", cost: 880, range: 4000, auraBp: 6000, hasteBp: 3500, rangeBuffBp: 2500, immune: 10 },
+    B: { ...base, name: "Eco lontana", summary: "Copre mezza mappa", cost: 880, range: 7000, auraBp: 3500, hasteBp: 2500, rangeBuffBp: 2000, immune: 10 },
   },
 };
 TOWERS.cometa = {
@@ -775,13 +775,13 @@ TOWERS.cometa = {
   unlock: 0,
   exclusive: "evento",
   levels: [
-    { ...base, cost: 350, damage: 95, cooldown: 18, range: 5500, radius: 1500 },
-    { ...base, cost: 280, damage: 160, cooldown: 17, range: 5800, radius: 1500 },
-    { ...base, cost: 420, damage: 250, cooldown: 16, range: 6200, radius: 1700 },
+    { ...base, cost: 385, damage: 95, cooldown: 18, range: 5500, radius: 1500 },
+    { ...base, cost: 310, damage: 160, cooldown: 17, range: 5800, radius: 1500 },
+    { ...base, cost: 460, damage: 250, cooldown: 16, range: 6200, radius: 1700 },
   ],
   branches: {
-    A: { ...base, name: "Pioggia di stelle", summary: "Esplosioni molto più ampie", cost: 650, damage: 320, cooldown: 16, range: 6500, radius: 2600 },
-    B: { ...base, name: "Coda di ghiaccio", summary: "Spesso congela chi colpisce", cost: 650, damage: 360, cooldown: 16, range: 6200, radius: 1700, stunTicks: 15, stunChanceBp: 6000 },
+    A: { ...base, name: "Pioggia di stelle", summary: "Esplosioni molto più ampie", cost: 715, damage: 320, cooldown: 16, range: 6500, radius: 2600 },
+    B: { ...base, name: "Coda di ghiaccio", summary: "Spesso congela chi colpisce", cost: 715, damage: 360, cooldown: 16, range: 6200, radius: 1700, stunTicks: 15, stunChanceBp: 6000 },
   },
 };
 // Kingpin: spara con il suo mitra e manda sul percorso gli scagnozzi che scegli nella coda (gratis).
@@ -793,34 +793,34 @@ TOWERS.kingpin = {
   family: "attacco",
   damageType: "cinetico",
   target: "first",
-  unlock: 1800,
-  perle: 55,
+  unlock: 1150,
+  perle: 45,
   maxPerPlayer: 4,
   levels: [
-    { ...base, cost: 900, damage: 29, cooldown: 4, range: 4200, detect: true, spawnEvery: 110, spawnMax: 2, unitSet: 1, unitBp: 10000, queueSlots: 1 },
-    { ...base, cost: 550, damage: 50, cooldown: 4, range: 4400, detect: true, spawnEvery: 100, spawnMax: 3, unitSet: 3, unitBp: 12000, queueSlots: 2 },
-    { ...base, cost: 1000, damage: 68, cooldown: 3, range: 4700, detect: true, spawnEvery: 90, spawnMax: 4, unitSet: 7, unitBp: 14000, queueSlots: 3 },
+    { ...base, cost: 880, damage: 29, cooldown: 4, range: 4200, detect: true, spawnEvery: 110, spawnMax: 2, unitSet: 1, unitBp: 10000, queueSlots: 1 },
+    { ...base, cost: 605, damage: 50, cooldown: 4, range: 4400, detect: true, spawnEvery: 100, spawnMax: 3, unitSet: 3, unitBp: 12000, queueSlots: 2 },
+    { ...base, cost: 880, damage: 68, cooldown: 3, range: 4700, detect: true, spawnEvery: 90, spawnMax: 4, unitSet: 7, unitBp: 14000, queueSlots: 3 },
   ],
   branches: {
     A: {
-      ...base, name: "La Famiglia", summary: "Scagnozzi più spesso, arriva il Sicario, abilità Taglia", cost: 1400,
-      damage: 65, cooldown: 3, range: 4700, detect: true, spawnEvery: 70, spawnMax: 5, unitSet: 15, unitBp: 16000, queueSlots: 4,
+      ...base, name: "La Famiglia", summary: "Scagnozzi più spesso, arriva il Sicario, abilità Taglia", cost: 1320,
+      damage: 80, cooldown: 3, range: 4700, detect: true, spawnEvery: 70, spawnMax: 5, unitSet: 15, unitBp: 16000, queueSlots: 4,
       abilityCooldown: 200, abilityTicks: 100, abilityBp: 30000,
     },
     B: {
-      ...base, name: "Il Boss", summary: "Il Kingpin spara molto più forte, gli scagnozzi meno", cost: 1200,
-      damage: 114, cooldown: 3, range: 5300, detect: true, spawnEvery: 110, spawnMax: 3, unitSet: 7, unitBp: 11000, queueSlots: 4,
+      ...base, name: "Il Boss", summary: "Il Kingpin spara molto più forte, gli scagnozzi meno", cost: 1320,
+      damage: 138, cooldown: 3, range: 5300, detect: true, spawnEvery: 110, spawnMax: 3, unitSet: 7, unitBp: 11000, queueSlots: 4,
     },
   },
   branches2: {
     A: {
-      ...base, name: "La Cupola", summary: "Uno scagnozzo ogni 5,5 s, fino a 6, Taglia più lunga e più ricca", cost: 2000,
-      damage: 98, cooldown: 3, range: 4900, detect: true, spawnEvery: 55, spawnMax: 6, unitSet: 15, unitBp: 20000, queueSlots: 4,
+      ...base, name: "La Cupola", summary: "Uno scagnozzo ogni 5,5 s, fino a 6, Taglia più lunga e più ricca", cost: 2200,
+      damage: 120, cooldown: 3, range: 4900, detect: true, spawnEvery: 55, spawnMax: 6, unitSet: 15, unitBp: 20000, queueSlots: 4,
       abilityCooldown: 200, abilityTicks: 150, abilityBp: 40000,
     },
     B: {
-      ...base, name: "Il Don", summary: "Raffiche che ignorano l'armatura", cost: 2000,
-      damage: 190, cooldown: 3, range: 5900, detect: true, pierce: true, spawnEvery: 120, spawnMax: 3, unitSet: 7, unitBp: 10000, queueSlots: 4,
+      ...base, name: "Il Don", summary: "Raffiche che ignorano l'armatura", cost: 2200,
+      damage: 250, cooldown: 3, range: 5900, detect: true, pierce: true, spawnEvery: 120, spawnMax: 3, unitSet: 7, unitBp: 10000, queueSlots: 4,
     },
   },
 };
@@ -1095,7 +1095,7 @@ export const LEVELS: LevelDef[] = [
     name: "Il Porto",
     sub: "Una corsia. Impara le basi.",
     map: PORTO,
-    startCash: 320,
+    startCash: 350,
     waveBonusBp: 10000,
     waves: [
       [g("risacca", 10, 12)],
@@ -1115,7 +1115,7 @@ export const LEVELS: LevelDef[] = [
     name: "La Doppia Foce",
     sub: "Due corsie che si uniscono. Arrivano i Sabotatori.",
     map: FOCE,
-    startCash: 380,
+    startCash: 420,
     waveBonusBp: 14000,
     waves: thin([
       [g("risacca", 10, 12, 0, 0), g("risacca", 8, 14, 40, 1)],
@@ -1135,7 +1135,7 @@ export const LEVELS: LevelDef[] = [
     name: "La Bassa Marea",
     sub: "La mappa cambia: si apre un canale, emergono le secche.",
     map: MAREA,
-    startCash: 500,
+    startCash: 550,
     waveBonusBp: 18000,
     waves: thin([
       [g("risacca", 12, 10)],
@@ -1229,7 +1229,7 @@ const LUNGOMARE = simpleMap(
   [15.1, 4.0],
 );
 
-const eventLevel = (id: string, map: MapDef, sub: string): LevelDef => ({ id, name: map.name, sub, map, startCash: 450, waveBonusBp: 15000, waves: LEVELS[2].waves });
+const eventLevel = (id: string, map: MapDef, sub: string): LevelDef => ({ id, name: map.name, sub, map, startCash: 500, waveBonusBp: 15000, waves: LEVELS[2].waves });
 
 export const EVENT_LEVELS: LevelDef[] = [
   eventLevel("vigilia", VIGILIA, "Un anello: il percorso torna su sé stesso."),
@@ -1298,16 +1298,16 @@ export function waveAt(level: LevelDef, n: number, mode: GameMode = "campagna"):
 }
 
 export const RULES = {
-  startCash: 320,
+  startCash: 350,
   startLives: 20,
   hardcoreLives: 10,
-  hardcoreCash: 200, // cash iniziale in più in Hardcore
+  hardcoreCash: 220, // cash iniziale in più in Hardcore
   prepTicks: 200,
   firstPrepTicks: 300,
   skipBonusPerSecond: 2,
   sellBp: 7000,
-  waveBonusBase: 35,
-  waveBonusStep: 6,
+  waveBonusBase: 45,
+  waveBonusStep: 8,
   levelHpStepBp: 200, // vita dei nemici in più per ogni livello del giocatore oltre il primo
   levelHpCapBp: 3000, // tetto: oltre non sale, altrimenti il gioco diventa impossibile
   hpGrowthA: 1100, // 0,11 per ondata, in punti base
@@ -1318,10 +1318,10 @@ export const RULES = {
 
 // Schegge guadagnate a fine partita.
 export const REWARDS = {
-  perWave: 10,
-  infinitePerWaveBonus: 5, // in Infinita, +5 per ogni ondata oltre la decima
-  win: 50,
-  perStar: 20,
+  perWave: 13,
+  infinitePerWaveBonus: 6, // in Infinita, +5 per ogni ondata oltre la decima
+  win: 65,
+  perStar: 25,
   perlePerWave: 2,
   perleWin: 30,
   perleBoss: 5,

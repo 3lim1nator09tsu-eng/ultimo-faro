@@ -620,9 +620,9 @@ test("Kingpin: evoca unità che camminano, combattono e portano cash", () => {
   void paid;
 });
 
-test("Kingpin: spara, costa 800, coda da 1 a 4 posti, scagnozzi gratis, due percorsi e Taglia", () => {
+test("Kingpin: spara, costa 900, coda da 1 a 4 posti, scagnozzi gratis, due percorsi e Taglia", () => {
   const s = createGame(8, { mode: "easy", allowed: ["kingpin"] });
-  assert.equal(TOWERS.kingpin.levels[0].cost, 800);
+  assert.equal(TOWERS.kingpin.levels[0].cost, 900);
   s.cash = 20000;
   step(s, [{ t: "build", kind: "kingpin", cx: 2, cy: 2 }]);
   const k = s.towers[0];

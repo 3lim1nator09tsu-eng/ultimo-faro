@@ -128,9 +128,19 @@ export const MEDALS: Array<{ id: string; name: string; text: string; ok: (m: Med
 // ---------- bacheca ----------
 
 /** Versione del gioco: chi ospita la comunica all'admin, che vede se i comandi nuovi possono funzionare. */
-export const GAME_VERSION = "0.18.0";
+export const GAME_VERSION = "0.18.1";
 
 export const VERSION_NOTES: ChangeEntry[] = [
+  {
+    date: "2026-11-12",
+    title: "Versione 0.18.1: fiamme del Piromante e danni riequilibrati",
+    kind: "versione",
+    items: [
+      "Piromante: il getto di fiamme ora esce dall'ugello e arriva fino ai nemici, invece del ventaglio che lampeggiava",
+      "Kingpin e Accelerator seguono la stessa regola delle altre torri: restano tra le più forti, ma ogni livello rende in proporzione a quanto costa",
+      "Pistolero, Ingegnere e Piromante riequilibrati con la stessa regola",
+    ],
+  },
   {
     date: "2026-11-12",
     title: "Versione 0.18: suoni e musica nuovi",

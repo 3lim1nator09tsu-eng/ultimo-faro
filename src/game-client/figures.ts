@@ -464,12 +464,8 @@ export function towerFigure(c: C, kind: TowerKind, T: number, angle: number, lev
           const lick = 0.7 + 0.3 * Math.sin(time * 0.03);
           // Fiammella pilota sempre accesa; quando spara, la vampata.
           shape(c, [2.0 * s, -0.1 * s, 2.3 * s * lick + 0.1 * s, 0, 2.0 * s, 0.1 * s], "#ffb347", 0);
-          if (kick > 0.05) {
-            c.globalAlpha = Math.min(1, kick * 1.4);
-            shape(c, [2.0 * s, -0.22 * s, (2.9 + lick * 0.5) * s, -0.5 * s, (3.4 + lick * 0.4) * s, 0, (2.9 + lick * 0.5) * s, 0.5 * s, 2.0 * s, 0.22 * s], "#ff8a3a", 0);
-            shape(c, [2.0 * s, -0.12 * s, (2.6 + lick * 0.3) * s, -0.22 * s, (2.9 + lick * 0.3) * s, 0, (2.6 + lick * 0.3) * s, 0.22 * s, 2.0 * s, 0.12 * s], "#ffe08a", 0);
-            c.globalAlpha = 1;
-          }
+          // Mentre spara l'ugello è incandescente; il getto vero lo disegna la carta.
+          if (kick > 0.05) dot(c, 2.05 * s, 0, s * (0.2 + 0.12 * lick), "#fff3c4");
         },
         hat: (hx, hr, q) => {
           helmet(c, hx, hr, q, "#5a1a16");

@@ -174,10 +174,10 @@ const fired = new Map<number, number>();
 const popAt = new Map<number, number>();
 /** Ultimo aspetto di ogni nemico: direzione, vita e posizione, per girarlo, farlo lampeggiare e farlo cadere. */
 const shown = new Map<number, { e: Enemy; x: number; y: number; h: number; hp: number; hitAt: number }>();
-const KICK_MS: Partial<Record<TowerKind, number>> = { piromante: 420, pistolero: 150, sledger: 340, mortaio: 320, starcannon: 520, executioner: 420, arpione: 380, cecchino: 240, balestra: 220 };
+const KICK_MS: Partial<Record<TowerKind, number>> = { piromante: 520, pistolero: 150, sledger: 340, mortaio: 320, starcannon: 520, executioner: 420, arpione: 380, cecchino: 240, balestra: 220 };
 
 interface Fx {
-  kind: "tracer" | "blast" | "float" | "zap" | "beam" | "ring" | "cone" | "axe" | "corpse";
+  kind: "tracer" | "blast" | "float" | "zap" | "beam" | "ring" | "cone" | "axe" | "corpse" | "flame";
   en?: Enemy; // chi sta cadendo
   a?: number; // direzione del cono, in radianti
   w?: number; // ampiezza del cono, in radianti
@@ -1147,7 +1147,7 @@ function handleEvents(events: GameEvent[]) {
         sfx.axe();
         break;
       case "swing":
-        fx.push({ kind: "cone", x: ev.x, y: ev.y, r: ev.range, a: Math.atan2(ev.ty - ev.y, ev.tx - ev.x), w: (ev.cone * Math.PI) / 180, color: ev.fire ? "#ff9a3a" : undefined, born: now, life: ev.fire ? 320 : 240 });
+        fx.push({ kind: ev.fire ? "flame" : "cone", x: ev.x, y: ev.y, r: ev.range, a: Math.atan2(ev.ty - ev.y, ev.tx - ev.x), w: (ev.cone * Math.PI) / 180, born: now, life: ev.fire ? 620 : 240 });
         setAim(ev.from, ev.x, ev.y, ev.tx, ev.ty);
         (ev.fire ? sfx.flame : sfx.hammer)();
         break;
@@ -3033,6 +3033,32 @@ function render(now: number) {
         ctx.lineTo(q.x, q.y);
       }
       ctx.stroke();
+    } else if (f.kind === "flame") {
+      // Getto del Piromante: sbuffi che partono dall'ugello, si allargano e sfumano dal bianco al rosso.
+      const reach = toPx(f.r!, pxT);
+      const dir = f.a! + turn();
+      const seed = f.born * 0.37;
+      const puffs = light() ? 12 : 24;
+      const nozzle = pxT * 0.46;
+      // Due passate: fuori l'arancio che vira al rosso, dentro il cuore giallo.
+      for (let pass = 0; pass < 2; pass++) {
+        for (let i = 0; i < puffs; i++) {
+          // Ogni sbuffo parte un po' dopo il precedente: il getto esce, resta teso, poi la coda si stacca.
+          const q = k * 1.6 - (i / puffs) * 0.9;
+          if (q <= 0 || q >= 1 || (pass === 1 && q > 0.7)) continue;
+          const h = Math.sin(seed + i * 12.9898) * 43758.5453;
+          const spread = (h - Math.floor(h) - 0.5) * f.w! * 0.9;
+          const d = nozzle + (reach - nozzle) * (1 - (1 - q) * (1 - q) * 0.6 - 0.4 * (1 - q));
+          const x = p.x + Math.cos(dir + spread * q) * d;
+          const y = p.y + Math.sin(dir + spread * q) * d;
+          const r = pxT * (0.1 + 0.25 * q) * (pass ? 0.55 : 1);
+          ctx.globalAlpha = (q > 0.75 ? (1 - q) / 0.25 : 1) * (pass ? 0.95 : 0.8);
+          ctx.fillStyle = pass ? (q < 0.3 ? "#fff6d6" : "#ffd86b") : q < 0.45 ? "#ff9a3a" : q < 0.75 ? "#f0662a" : "#b8321a";
+          ctx.beginPath();
+          ctx.arc(x, y, r, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
     } else if (f.kind === "cone") {
       // Martellata dello Sledger: un ventaglio di ghiaccio che svanisce.
       const r = toPx(f.r!, pxT);

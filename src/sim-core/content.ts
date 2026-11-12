@@ -486,13 +486,13 @@ export const TOWERS = {
     perle: 20,
     maxPerPlayer: 4,
     levels: [
-      { ...base, cost: 600, damage: 12, cooldown: 8, range: 3200, sentryMax: 1, sentryEvery: 150, sentryDamage: 6, sentryCooldown: 5 },
-      { ...base, cost: 500, damage: 18, cooldown: 7, range: 3400, sentryMax: 2, sentryEvery: 130, sentryDamage: 9, sentryCooldown: 5 },
-      { ...base, cost: 900, damage: 30, cooldown: 7, range: 3600, sentryMax: 2, sentryEvery: 120, sentryDamage: 20, sentryCooldown: 4 },
+      { ...base, cost: 600, damage: 24, cooldown: 8, range: 3200, sentryMax: 1, sentryEvery: 150, sentryDamage: 15, sentryCooldown: 5 },
+      { ...base, cost: 500, damage: 33, cooldown: 7, range: 3400, sentryMax: 2, sentryEvery: 130, sentryDamage: 18, sentryCooldown: 5 },
+      { ...base, cost: 900, damage: 56, cooldown: 7, range: 3600, sentryMax: 2, sentryEvery: 120, sentryDamage: 30, sentryCooldown: 4 },
     ],
     branches: {
-      A: { ...base, name: "Torrette pesanti", summary: "Tre torrette corazzate che ignorano l'armatura", cost: 1800, damage: 44, cooldown: 6, range: 3800, sentryMax: 3, sentryEvery: 110, sentryDamage: 44, sentryCooldown: 4, pierce: true },
-      B: { ...base, name: "Officina da campo", summary: "Quattro torrette leggere, costruite in fretta, che vedono gli invisibili", cost: 1700, damage: 40, cooldown: 6, range: 4000, sentryMax: 4, sentryEvery: 60, sentryDamage: 22, sentryCooldown: 3, detect: true },
+      A: { ...base, name: "Torrette pesanti", summary: "Tre torrette corazzate che ignorano l'armatura", cost: 1800, damage: 90, cooldown: 6, range: 3800, sentryMax: 3, sentryEvery: 110, sentryDamage: 46, sentryCooldown: 4, pierce: true },
+      B: { ...base, name: "Officina da campo", summary: "Quattro torrette leggere, costruite in fretta, che vedono gli invisibili", cost: 1700, damage: 66, cooldown: 6, range: 4000, sentryMax: 4, sentryEvery: 60, sentryDamage: 20, sentryCooldown: 3, detect: true },
     },
   },
   pistolero: {
@@ -505,13 +505,13 @@ export const TOWERS = {
     unlock: 700,
     maxPerPlayer: 5,
     levels: [
-      { ...base, cost: 250, damage: 9, cooldown: 7, range: 2800, cashEvery: 6, cashAmount: 3 },
-      { ...base, cost: 220, damage: 15, cooldown: 6, range: 3000, cashEvery: 6, cashAmount: 5 },
-      { ...base, cost: 420, damage: 27, cooldown: 6, range: 3200, cashEvery: 6, cashAmount: 8 },
+      { ...base, cost: 250, damage: 15, cooldown: 7, range: 2800, cashEvery: 6, cashAmount: 3 },
+      { ...base, cost: 220, damage: 26, cooldown: 6, range: 3000, cashEvery: 6, cashAmount: 5 },
+      { ...base, cost: 420, damage: 52, cooldown: 6, range: 3200, cashEvery: 6, cashAmount: 8 },
     ],
     branches: {
-      A: { ...base, name: "Mano veloce", summary: "Spara il doppio più in fretta", cost: 800, damage: 30, cooldown: 3, range: 3400, cashEvery: 8, cashAmount: 9 },
-      B: { ...base, name: "Cercatore d'oro", summary: "Incassa più spesso e di più", cost: 750, damage: 42, cooldown: 6, range: 3400, cashEvery: 4, cashAmount: 14 },
+      A: { ...base, name: "Mano veloce", summary: "Spara il doppio più in fretta", cost: 800, damage: 55, cooldown: 3, range: 3400, cashEvery: 8, cashAmount: 9 },
+      B: { ...base, name: "Cercatore d'oro", summary: "Incassa più spesso e di più", cost: 750, damage: 83, cooldown: 6, range: 3400, cashEvery: 4, cashAmount: 14 },
     },
   },
   piromante: {
@@ -524,13 +524,13 @@ export const TOWERS = {
     unlock: 1200,
     maxPerPlayer: 6,
     levels: [
-      { ...base, cost: 400, damage: 6, cooldown: 5, range: 2000, coneDeg: 60, maxTargets: 4, burnDamage: 5, burnTicks: 30 },
-      { ...base, cost: 350, damage: 10, cooldown: 5, range: 2100, coneDeg: 60, maxTargets: 5, burnDamage: 10, burnTicks: 35 },
-      { ...base, cost: 650, damage: 18, cooldown: 4, range: 2200, coneDeg: 60, maxTargets: 6, burnDamage: 20, burnTicks: 40 },
+      { ...base, cost: 400, damage: 5, cooldown: 5, range: 2000, coneDeg: 60, maxTargets: 4, burnDamage: 4, burnTicks: 30 },
+      { ...base, cost: 350, damage: 9, cooldown: 5, range: 2100, coneDeg: 60, maxTargets: 5, burnDamage: 9, burnTicks: 35 },
+      { ...base, cost: 650, damage: 14, cooldown: 4, range: 2200, coneDeg: 60, maxTargets: 6, burnDamage: 19, burnTicks: 40 },
     ],
     branches: {
-      A: { ...base, name: "Fiamma bianca", summary: "Bruciatura molto più forte", cost: 1100, damage: 24, cooldown: 4, range: 2300, coneDeg: 60, maxTargets: 7, burnDamage: 55, burnTicks: 40 },
-      B: { ...base, name: "Muro di fuoco", summary: "Cono più largo e lungo, brucia molti nemici a lungo", cost: 1000, damage: 20, cooldown: 4, range: 2800, coneDeg: 90, maxTargets: 12, burnDamage: 30, burnTicks: 60 },
+      A: { ...base, name: "Fiamma bianca", summary: "Bruciatura molto più forte", cost: 1100, damage: 22, cooldown: 4, range: 2300, coneDeg: 60, maxTargets: 7, burnDamage: 45, burnTicks: 40 },
+      B: { ...base, name: "Muro di fuoco", summary: "Cono più largo e lungo, brucia molti nemici a lungo", cost: 1000, damage: 18, cooldown: 4, range: 2800, coneDeg: 90, maxTargets: 12, burnDamage: 31, burnTicks: 60 },
     },
   },
   executioner: {
@@ -564,7 +564,7 @@ export const TOWERS = {
     maxPerPlayer: 1,
     size: 2,
     levels: [
-      { ...base, cost: 1500, range: 9000, radius: 1200, cooldown: 25, chargeTicks: 400, cannonMin: 300, cannonMax: 6000, cannonStun: 20, pierce: true },
+      { ...base, cost: 2000, range: 9000, radius: 1200, cooldown: 25, chargeTicks: 400, cannonMin: 300, cannonMax: 6000, cannonStun: 20, pierce: true },
       { ...base, cost: 2200, range: 9500, radius: 1300, cooldown: 25, chargeTicks: 380, cannonMin: 500, cannonMax: 12000, cannonStun: 25, pierce: true },
       { ...base, cost: 3500, range: 10000, radius: 1400, cooldown: 25, chargeTicks: 360, cannonMin: 1000, cannonMax: 24000, cannonStun: 30, pierce: true },
     ],
@@ -583,13 +583,13 @@ export const TOWERS = {
     unlock: 1500,
     perle: 70,
     levels: [
-      { ...base, cost: 500, damage: 10, range: 4500, accCharge: 40, accBurst: 60, accTick: 2, cooldown: 2 },
-      { ...base, cost: 700, damage: 10, range: 5000, accCharge: 40, accBurst: 65, accTick: 2, cooldown: 2 },
-      { ...base, cost: 1500, damage: 16, range: 5000, accCharge: 40, accBurst: 65, accTick: 2, cooldown: 2 },
+      { ...base, cost: 1500, damage: 45, range: 4500, accCharge: 40, accBurst: 60, accTick: 2, cooldown: 2 },
+      { ...base, cost: 700, damage: 69, range: 5000, accCharge: 40, accBurst: 65, accTick: 2, cooldown: 2 },
+      { ...base, cost: 1500, damage: 125, range: 6000, accCharge: 40, accBurst: 65, accTick: 2, cooldown: 2 },
     ],
     branches: {
-      A: { ...base, name: "Supercarica", summary: "Colpisce due volte più spesso", cost: 3500, damage: 18, range: 5300, accCharge: 40, accBurst: 65, accTick: 1, cooldown: 1, detect: true },
-      B: { ...base, name: "Raffica lunga", summary: "Carica in metà tempo, raffica quasi doppia", cost: 4000, damage: 22, range: 5300, accCharge: 20, accBurst: 120, accTick: 2, cooldown: 2, detect: true },
+      A: { ...base, name: "Supercarica", summary: "Colpisce due volte più spesso", cost: 3500, damage: 136, range: 6300, accCharge: 40, accBurst: 65, accTick: 1, cooldown: 1, detect: true },
+      B: { ...base, name: "Raffica lunga", summary: "Carica in metà tempo, raffica quasi doppia", cost: 4000, damage: 162, range: 6300, accCharge: 20, accBurst: 120, accTick: 2, cooldown: 2, detect: true },
     },
   },
   officina: {
@@ -797,30 +797,30 @@ TOWERS.kingpin = {
   perle: 55,
   maxPerPlayer: 4,
   levels: [
-    { ...base, cost: 800, damage: 30, cooldown: 4, range: 4200, detect: true, spawnEvery: 110, spawnMax: 2, unitSet: 1, unitBp: 10000, queueSlots: 1 },
-    { ...base, cost: 550, damage: 44, cooldown: 4, range: 4400, detect: true, spawnEvery: 100, spawnMax: 3, unitSet: 3, unitBp: 12000, queueSlots: 2 },
-    { ...base, cost: 800, damage: 55, cooldown: 3, range: 4700, detect: true, spawnEvery: 90, spawnMax: 4, unitSet: 7, unitBp: 14000, queueSlots: 3 },
+    { ...base, cost: 900, damage: 29, cooldown: 4, range: 4200, detect: true, spawnEvery: 110, spawnMax: 2, unitSet: 1, unitBp: 10000, queueSlots: 1 },
+    { ...base, cost: 550, damage: 50, cooldown: 4, range: 4400, detect: true, spawnEvery: 100, spawnMax: 3, unitSet: 3, unitBp: 12000, queueSlots: 2 },
+    { ...base, cost: 1000, damage: 68, cooldown: 3, range: 4700, detect: true, spawnEvery: 90, spawnMax: 4, unitSet: 7, unitBp: 14000, queueSlots: 3 },
   ],
   branches: {
     A: {
-      ...base, name: "La Famiglia", summary: "Scagnozzi più spesso, arriva il Sicario, abilità Taglia", cost: 1200,
-      damage: 58, cooldown: 3, range: 4700, detect: true, spawnEvery: 70, spawnMax: 5, unitSet: 15, unitBp: 16000, queueSlots: 4,
+      ...base, name: "La Famiglia", summary: "Scagnozzi più spesso, arriva il Sicario, abilità Taglia", cost: 1400,
+      damage: 65, cooldown: 3, range: 4700, detect: true, spawnEvery: 70, spawnMax: 5, unitSet: 15, unitBp: 16000, queueSlots: 4,
       abilityCooldown: 200, abilityTicks: 100, abilityBp: 30000,
     },
     B: {
       ...base, name: "Il Boss", summary: "Il Kingpin spara molto più forte, gli scagnozzi meno", cost: 1200,
-      damage: 100, cooldown: 3, range: 5300, detect: true, spawnEvery: 110, spawnMax: 3, unitSet: 7, unitBp: 11000, queueSlots: 4,
+      damage: 114, cooldown: 3, range: 5300, detect: true, spawnEvery: 110, spawnMax: 3, unitSet: 7, unitBp: 11000, queueSlots: 4,
     },
   },
   branches2: {
     A: {
       ...base, name: "La Cupola", summary: "Uno scagnozzo ogni 5,5 s, fino a 6, Taglia più lunga e più ricca", cost: 2000,
-      damage: 66, cooldown: 3, range: 4900, detect: true, spawnEvery: 55, spawnMax: 6, unitSet: 15, unitBp: 20000, queueSlots: 4,
+      damage: 98, cooldown: 3, range: 4900, detect: true, spawnEvery: 55, spawnMax: 6, unitSet: 15, unitBp: 20000, queueSlots: 4,
       abilityCooldown: 200, abilityTicks: 150, abilityBp: 40000,
     },
     B: {
       ...base, name: "Il Don", summary: "Raffiche che ignorano l'armatura", cost: 2000,
-      damage: 160, cooldown: 3, range: 5900, detect: true, pierce: true, spawnEvery: 120, spawnMax: 3, unitSet: 7, unitBp: 10000, queueSlots: 4,
+      damage: 190, cooldown: 3, range: 5900, detect: true, pierce: true, spawnEvery: 120, spawnMax: 3, unitSet: 7, unitBp: 10000, queueSlots: 4,
     },
   },
 };

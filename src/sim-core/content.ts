@@ -15,7 +15,7 @@ export type EnemyKind =
   | "dohoter" | "risvegliato" | "ombra" | "araldo" | "lancia" | "creator" | "jackobot" | "zucchetta";
 export type TowerKind =
   | "balestra" | "mortaio" | "soffio" | "cecchino" | "bobina" | "officina" | "grammofono" | "capitano" | "medico" | "arpione" | "mitragliera" | "purificatore"
-  | "custode" | "campana" | "cometa" | "kingpin" | "sledger" | "executioner" | "starcannon" | "accelerator" | "ingegnere" | "pistolero" | "piromante" | "slasher";
+  | "custode" | "campana" | "cometa" | "kingpin" | "sledger" | "executioner" | "starcannon" | "accelerator" | "ingegnere" | "pistolero" | "piromante" | "slasher" | "gladiatore";
 export type Branch = "A" | "B";
 export type EnemyClass = "carne" | "corazza" | "meccanico";
 export type DamageType = "cinetico" | "gelo" | "elettrico" | "nessuno";
@@ -263,6 +263,7 @@ export interface TowerStats {
   burnDamage: number; // danni ogni mezzo secondo, ignorano l'armatura
   burnTicks: number; // durata della bruciatura
   // Slasher: colpi ravvicinati, critico ogni tot colpi, sanguinamento che si accumula
+  sweep: number; // Gladiatore: quanti nemici intorno colpisce a ogni fendente; 0 = non spazza
   critEvery: number; // ogni quanti colpi arriva il critico; 0 = mai
   critBp: number; // danno del critico rispetto al colpo normale
   bleedHit: number; // cariche di sanguinamento per colpo
@@ -366,6 +367,7 @@ const base: TowerStats = {
   cashAmount: 0,
   burnDamage: 0,
   burnTicks: 0,
+  sweep: 0,
   critEvery: 0,
   critBp: 10000,
   bleedHit: 0,
@@ -549,6 +551,26 @@ export const TOWERS = {
     branches: {
       A: { ...base, name: "Fiamma bianca", summary: "Bruciatura molto più forte", cost: 1210, damage: 39, cooldown: 4, range: 2300, coneDeg: 60, maxTargets: 7, burnDamage: 80, burnTicks: 40 },
       B: { ...base, name: "Muro di fuoco", summary: "Cono più largo e lungo, brucia molti nemici a lungo", cost: 1100, damage: 31, cooldown: 4, range: 2800, coneDeg: 90, maxTargets: 12, burnDamage: 54, burnTicks: 60 },
+    },
+  },
+  gladiatore: {
+    apex: "Il Campione dell'Arena",
+    name: "Gladiatore",
+    role: "Spazza con la spada tutti i nemici che ha intorno; il Grido di guerra lo fa colpire il 65% più in fretta",
+    family: "attacco",
+    damageType: "cinetico",
+    target: "first",
+    unlock: 1100,
+    maxPerPlayer: 5,
+    ability: { name: "Grido di guerra", summary: "+65% di velocità d'attacco per 8 s" },
+    levels: [
+      { ...base, cost: 350, damage: 10, cooldown: 10, range: 1500, sweep: 4, abilityCooldown: 300, abilityTicks: 80, abilityBp: 6500 },
+      { ...base, cost: 300, damage: 15, cooldown: 10, range: 1500, sweep: 5, abilityCooldown: 300, abilityTicks: 80, abilityBp: 6500 },
+      { ...base, cost: 650, damage: 24, cooldown: 9, range: 1600, sweep: 6, abilityCooldown: 300, abilityTicks: 80, abilityBp: 6500 },
+    ],
+    branches: {
+      A: { ...base, name: "Campione", summary: "Colpi pesanti che ignorano l'armatura; il grido dura 10 s", cost: 1300, damage: 62, cooldown: 9, range: 1700, sweep: 8, pierce: true, abilityCooldown: 300, abilityTicks: 100, abilityBp: 6500 },
+      B: { ...base, name: "Mirmillone", summary: "Spada più lunga e più rapida, colpisce fino a 12 nemici; il grido torna prima", cost: 1200, damage: 42, cooldown: 7, range: 2000, sweep: 12, abilityCooldown: 220, abilityTicks: 80, abilityBp: 6500 },
     },
   },
   slasher: {
@@ -893,7 +915,7 @@ for (const k of DETECTORS) {
   TOWERS[k].branches = { A: { ...TOWERS[k].branches.A, detect: true }, B: { ...TOWERS[k].branches.B, detect: true } };
 }
 
-export const TOWER_ORDER: TowerKind[] = ["balestra", "mortaio", "soffio", "cecchino", "bobina", "officina", "grammofono", "capitano", "medico", "kingpin", "sledger", "executioner", "pistolero", "piromante", "slasher", "ingegnere", "starcannon", "arpione", "mitragliera", "purificatore", "accelerator", "cometa", "custode", "campana"];
+export const TOWER_ORDER: TowerKind[] = ["balestra", "mortaio", "soffio", "cecchino", "bobina", "officina", "grammofono", "capitano", "medico", "kingpin", "sledger", "executioner", "pistolero", "piromante", "slasher", "gladiatore", "ingegnere", "starcannon", "arpione", "mitragliera", "purificatore", "accelerator", "cometa", "custode", "campana"];
 export const HARDCORE_TOWERS: TowerKind[] = ["arpione", "mitragliera", "purificatore", "accelerator"];
 
 // Apex: il livello 6 della torre, uno per tipo e per partita, con il rango permanente almeno 3.

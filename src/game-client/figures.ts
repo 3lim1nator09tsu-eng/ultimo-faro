@@ -401,6 +401,44 @@ export function towerFigure(c: C, kind: TowerKind, T: number, angle: number, lev
       });
       break;
     }
+    case "gladiatore": {
+      // Quando colpisce fa un giro completo con la spada tesa.
+      c.rotate(angle + kick * kick * TAU);
+      person(c, s * 1.08, { skin: "#d9a577", shirt: "#8a5a33", sleeve: "#d9a577", arms: "none" }, {
+        back: (q) => {
+          if (level >= 3) cape(c, s, 0, "#b0202c", q, 1.2);
+        },
+        chest: (q) => {
+          box(c, -0.42 * s, -0.5 * s, 0.84 * s, s, 0.1 * s, "#c9973a", q * 0.7);
+          pads(BRASS)(q);
+        },
+        held: (q) => {
+          // Scudo tondo a sinistra, gladio a destra.
+          limb(c, 0.05 * s, 0.9 * s, 0.75 * s, 0.75 * s, 0.34 * s, "#d9a577", q);
+          dot(c, 0.95 * s, 0.75 * s, 0.6 * s, accent ?? "#b0202c", q);
+          dot(c, 0.95 * s, 0.75 * s, 0.22 * s, BRASS, q * 0.7);
+          limb(c, 0.05 * s, -0.9 * s, 0.9 * s, -0.75 * s, 0.34 * s, "#d9a577", q);
+          dot(c, 0.9 * s, -0.75 * s, 0.25 * s, "#d9a577", q);
+          box(c, 0.95 * s, -1.02 * s, 0.14 * s, 0.54 * s, 0.04 * s, BRASS, q * 0.7);
+          shape(c, [1.1 * s, -0.9 * s, 2.2 * s, -0.86 * s, 2.45 * s, -0.75 * s, 2.2 * s, -0.64 * s, 1.1 * s, -0.6 * s], "#dfe7ea", q * 0.8);
+          if (kick > 0.25) {
+            c.globalAlpha = Math.min(1, kick);
+            c.strokeStyle = "#ffffff";
+            c.lineWidth = Math.max(1, s * 0.18);
+            c.beginPath();
+            c.arc(0, 0, 2.4 * s, -2.2, -0.35);
+            c.stroke();
+            c.globalAlpha = 1;
+          }
+        },
+        hat: (hx, hr, q) => {
+          helmet(c, hx, hr, q, "#c9973a", "#8a6a2a");
+          limb(c, hx + hr * 0.35, 0, hx - hr * 1.45, 0, hr * 0.42, "#b0202c", q * 0.7);
+          box(c, hx + hr * 0.3, -hr * 0.62, hr * 0.28, hr * 1.24, hr * 0.1, "#0d1418", 0);
+        },
+      });
+      break;
+    }
     case "slasher": {
       c.rotate(angle);
       // Due lame: una affonda quando colpisce, l'altra resta di guardia.

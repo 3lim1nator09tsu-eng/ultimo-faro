@@ -128,9 +128,19 @@ export const MEDALS: Array<{ id: string; name: string; text: string; ok: (m: Med
 // ---------- bacheca ----------
 
 /** Versione del gioco: chi ospita la comunica all'admin, che vede se i comandi nuovi possono funzionare. */
-export const GAME_VERSION = "0.20.3";
+export const GAME_VERSION = "0.21.0";
 
 export const VERSION_NOTES: ChangeEntry[] = [
+  {
+    date: "2026-11-16",
+    title: "Versione 0.21: il Gladiatore",
+    kind: "versione",
+    items: [
+      "Gladiatore: torre da mischia che a ogni fendente colpisce tutti i nemici che ha intorno (da 4 a 12 secondo il livello) — 1.100 Schegge",
+      "Grido di guerra: abilità da premere sulla torre, per 8 secondi il Gladiatore colpisce il 65% più in fretta; si ricarica in 30 secondi",
+      "Campione: colpi pesanti che ignorano l'armatura. Mirmillone: spada più lunga e rapida, grido che torna prima",
+    ],
+  },
   {
     date: "2026-11-16",
     title: "Versione 0.20.3: Slasher più lento ai livelli alti",

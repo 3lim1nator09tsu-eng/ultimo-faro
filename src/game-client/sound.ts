@@ -267,6 +267,15 @@ export const sfx = {
     tone("sine", 1180, 1180, 0.07, 0.04);
     tone("sine", 1570, 1570, 0.16, 0.045, { at: 0.06 });
   }),
+  sweep: fx("sweep", 120, () => {
+    noise(700, 3200, 0.22, 0.07, { q: 1.8, attack: 0.04 });
+    tone("triangle", vary(1400), 600, 0.08, 0.03, { at: 0.16 });
+  }),
+  warcry: fx("warcry", 600, () => {
+    for (const d of [-9, 0, 8]) tone("sawtooth", 140, 230, 0.7, 0.07, { detune: d, attack: 0.06, lp: 1500 });
+    noise(900, 1800, 0.7, 0.07, { q: 0.7, attack: 0.08 });
+    tone("sine", 70, 60, 0.6, 0.12);
+  }, true),
   slash: fx("slash", 70, () => {
     noise(vary(2600), 6500, 0.07, 0.045, { type: "bandpass", q: 2.5, attack: 0.01 });
     tone("triangle", vary(1900), 1200, 0.04, 0.012, { at: 0.03 });

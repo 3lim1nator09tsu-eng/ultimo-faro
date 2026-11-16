@@ -303,6 +303,8 @@ export type GameEvent =
   | { e: "swing"; from: number; x: number; y: number; tx: number; ty: number; range: number; cone: number; fire?: boolean }
   | { e: "sentry"; from: number; n: number }
   | { e: "tip"; x: number; y: number; amount: number }
+  | { e: "sweep"; from: number; x: number; y: number; tx: number; ty: number; range: number }
+  | { e: "warcry"; x: number; y: number }
   | { e: "slash"; from: number; x: number; y: number; tx: number; ty: number; crit: boolean }
   | { e: "bleedBurst"; x: number; y: number; amount: number }
   | { e: "axe"; from: number; points: number[] }
@@ -1190,6 +1192,11 @@ function applyCommand(state: GameState, cmd: Command, events: GameEvent[]): void
           e.bountyBp = s.abilityBp;
         }
         events.push({ e: "bounty", x: t.x, y: t.y });
+      } else if (t.kind === "gladiatore") {
+        // Grido di guerra: finché dura, i suoi fendenti arrivano più in fretta.
+        t.abilityLeft = s.abilityTicks;
+        t.cooldown = Math.min(t.cooldown, 1);
+        events.push({ e: "warcry", x: t.x, y: t.y });
       } else if (t.kind === "medico") {
         for (const o of state.towers) {
           o.stun = 0;
@@ -2089,6 +2096,15 @@ export function step(state: GameState, commands: Command[] = []): GameEvent[] {
     const target = pickTarget(state, t, s);
     if (!target) continue;
     t.cooldown = s.cooldown;
+    if (s.sweep > 0) {
+      // Gladiatore: un fendente a tutto tondo su chi gli sta intorno, i più avanti per primi.
+      const near = state.enemies.filter((e) => e.hp > 0 && canSee(e, s) && inRange(t.x, t.y, e.x, e.y, s.range));
+      near.sort((a, b) => b.dist - a.dist || a.id - b.id);
+      for (const e of near.slice(0, s.sweep)) hit(state, e, t, s, s.damage, events);
+      if (t.abilityLeft > 0) t.cooldown = Math.max(1, Math.floor((s.cooldown * 10000) / (10000 + s.abilityBp)));
+      events.push({ e: "sweep", from: t.id, x: t.x, y: t.y, tx: target.x, ty: target.y, range: s.range });
+      continue;
+    }
     if (s.coneDeg > 0) {
       swing(state, t, s, target, events);
       continue;

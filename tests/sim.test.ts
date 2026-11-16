@@ -499,7 +499,7 @@ test("divisione, gelo alla morte, furto e immunità al rallentamento", () => {
 
 test("sandbox e comandi admin: tutte le torri, nessun premio, vite infinite, salto d'ondata", () => {
   const s = createGame(1, { sandbox: true, allowed: ["balestra"] });
-  assert.equal(s.allowed.length, 24);
+  assert.equal(s.allowed.length, 25);
   assert.ok(s.cash >= 100000);
   step(s, [{ t: "adminGod", on: true }, { t: "adminSpawn", enemy: "corridore", count: 5, mods: ["agile"] }]);
   for (let i = 0; i < 600; i++) step(s, []);
@@ -1389,7 +1389,7 @@ import { WEEKLY, weekOf, weeklyCheck, weeklyFor } from "../src/game-client/progr
 import { BURN_EVERY, sentrySpot } from "../src/sim-core/sim";
 
 /** Un nemico fermo e robusto davanti a una torre appena costruita. */
-function duel(kind: "ingegnere" | "pistolero" | "piromante" | "slasher", level = 1) {
+function duel(kind: "ingegnere" | "pistolero" | "piromante" | "slasher" | "gladiatore", level = 1) {
   const s = createGame(77, { mode: "campagna", level: "porto", allowed: [kind] });
   s.cash = 90000;
   // La casella libera più vicina al sentiero: anche chi colpisce da vicino ci arriva.
@@ -1596,5 +1596,38 @@ test("Slasher: critico ogni terzo colpo, cariche di sanguinamento, emorragia al 
   for (let i = 0; i < 40; i++) step(ghost.s, []);
   assert.ok(!ghost.e.bleed, "il Pupazzo di neve non sanguina");
   assert.ok(ghost.e.hp < 1e6, "ma i colpi li prende");
+  assert.equal(hashState(restore(snapshot(s))), hashState(s));
+});
+
+test("Gladiatore: il fendente colpisce chi ha intorno, il Grido di guerra lo fa colpire il 65% più in fretta", () => {
+  const { s, t, e } = duel("gladiatore");
+  const st = towerStats(t);
+  // Tre nemici addosso: un fendente li prende tutti.
+  const others = [1, 2].map((i) => ({ ...e, id: s.nextId++, dist: e.dist + i * 150 }));
+  s.enemies.push(...others);
+  const hp0 = [e, ...others].map((x) => x.hp);
+  let sweeps = 0;
+  for (let i = 0; i < st.cooldown + 2 && !sweeps; i++) for (const ev of step(s, [])) if (ev.e === "sweep") sweeps++;
+  assert.equal(sweeps, 1);
+  assert.ok([e, ...others].every((x, i) => x.hp < hp0[i]), "tutti e tre colpiti da un solo fendente");
+  // Cadenza normale su 30 secondi…
+  const count = (ticks: number) => {
+    let n = 0;
+    for (let i = 0; i < ticks; i++) for (const ev of step(s, [])) if (ev.e === "sweep") n++;
+    return n;
+  };
+  assert.equal(count(st.cooldown * 6), 6);
+  // …e con il grido: 65% più in fretta finché dura, poi torna normale.
+  const ev = step(s, [{ t: "towerAbility", id: t.id }]);
+  assert.ok(ev.some((x) => x.e === "warcry"));
+  assert.equal(st.abilityBp, 6500);
+  const fast = Math.floor((st.cooldown * 10000) / 16500);
+  const during = count(st.abilityTicks - 1) + ev.filter((x) => x.e === "sweep").length;
+  assert.ok(Math.abs(during - st.abilityTicks / fast) <= 1.5, `colpi durante il grido: ${during}, attesi circa ${st.abilityTicks / fast}`);
+  assert.ok(during >= Math.floor((st.abilityTicks / st.cooldown) * 1.6), "almeno il 60% di colpi in più");
+  count(st.cooldown);
+  assert.equal(count(st.cooldown * 4), 4, "finito il grido torna alla cadenza normale");
+  const again = step(s, [{ t: "towerAbility", id: t.id }]);
+  assert.ok(again.some((x) => x.e === "reject") && !again.some((x) => x.e === "warcry"), "il grido deve ricaricarsi");
   assert.equal(hashState(restore(snapshot(s))), hashState(s));
 });

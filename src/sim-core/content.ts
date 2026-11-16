@@ -556,12 +556,13 @@ export const TOWERS = {
   gladiatore: {
     apex: "Il Campione dell'Arena",
     name: "Gladiatore",
-    role: "Spazza con la spada tutti i nemici che ha intorno; il Grido di guerra lo fa colpire il 65% più in fretta",
+    role: "Spazza con la spada tutti i nemici che ha intorno; il Grido di guerra lo fa colpire il 65% più in fretta. Niente lo stordisce",
     family: "attacco",
     damageType: "cinetico",
     target: "first",
     unlock: 1100,
     maxPerPlayer: 5,
+    stunImmune: true,
     ability: { name: "Grido di guerra", summary: "+65% di velocità d'attacco per 8 s" },
     levels: [
       { ...base, cost: 350, damage: 10, cooldown: 10, range: 1500, sweep: 4, abilityCooldown: 300, abilityTicks: 80, abilityBp: 6500 },

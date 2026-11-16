@@ -1574,13 +1574,16 @@ test("Slasher: critico ogni terzo colpo, cariche di sanguinamento, emorragia al 
   }
   // Niente stordisce lo Slasher: né sabotatori, né la lava.
   {
-    const sab = duel("slasher");
-    sab.e.kind = "sabotatore" as never;
-    sab.e.act = 0;
-    sab.e.stun = 0;
-    sab.e.speedBp = 0;
-    for (let i = 0; i < 60; i++) step(sab.s, []);
-    assert.equal(sab.t.stun, 0, "il Sabotatore non lo ferma");
+    for (const kind of ["slasher", "gladiatore"] as const) {
+      const sab = duel(kind);
+      sab.e.kind = "sabotatore" as never;
+      sab.e.act = 0;
+      sab.e.stun = 0;
+      sab.e.speedBp = 0;
+      for (let i = 0; i < 60; i++) step(sab.s, []);
+      assert.equal(sab.t.stun, 0, `il Sabotatore non ferma ${kind}`);
+      assert.ok(TOWERS[kind].stunImmune);
+    }
     const cmp = duel("pistolero");
     cmp.e.kind = "sabotatore" as never;
     cmp.e.act = 0;

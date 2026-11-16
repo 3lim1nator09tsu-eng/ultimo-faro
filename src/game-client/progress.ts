@@ -128,9 +128,15 @@ export const MEDALS: Array<{ id: string; name: string; text: string; ok: (m: Med
 // ---------- bacheca ----------
 
 /** Versione del gioco: chi ospita la comunica all'admin, che vede se i comandi nuovi possono funzionare. */
-export const GAME_VERSION = "0.21.0";
+export const GAME_VERSION = "0.21.1";
 
 export const VERSION_NOTES: ChangeEntry[] = [
+  {
+    date: "2026-11-16",
+    title: "Versione 0.21.1: Gladiatore immune agli stordimenti",
+    kind: "versione",
+    items: ["Niente può stordire il Gladiatore: né sabotatori, né boss, né la lava"],
+  },
   {
     date: "2026-11-16",
     title: "Versione 0.21: il Gladiatore",

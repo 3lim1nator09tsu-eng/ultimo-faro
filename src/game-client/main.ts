@@ -165,6 +165,7 @@ let inspectId: number | null = null;
 let hoverId: number | null = null;
 const drawnAt = new Map<number, { x: number; y: number }>();
 const aim = new Map<number, number>();
+let lastCritText = 0;
 /** Tipi di torre costruiti in questa partita, per le sfide della settimana. */
 const matchKinds = new Set<string>();
 /** Ultimo colpo di ogni torretta dell'Ingegnere (id torre * 8 + numero). */
@@ -174,10 +175,10 @@ const fired = new Map<number, number>();
 const popAt = new Map<number, number>();
 /** Ultimo aspetto di ogni nemico: direzione, vita e posizione, per girarlo, farlo lampeggiare e farlo cadere. */
 const shown = new Map<number, { e: Enemy; x: number; y: number; h: number; hp: number; hitAt: number }>();
-const KICK_MS: Partial<Record<TowerKind, number>> = { piromante: 520, pistolero: 150, sledger: 340, mortaio: 320, starcannon: 520, executioner: 420, arpione: 380, cecchino: 240, balestra: 220 };
+const KICK_MS: Partial<Record<TowerKind, number>> = { slasher: 200, piromante: 520, pistolero: 150, sledger: 340, mortaio: 320, starcannon: 520, executioner: 420, arpione: 380, cecchino: 240, balestra: 220 };
 
 interface Fx {
-  kind: "tracer" | "blast" | "float" | "zap" | "beam" | "ring" | "cone" | "axe" | "corpse" | "flame";
+  kind: "tracer" | "blast" | "float" | "zap" | "beam" | "ring" | "cone" | "axe" | "corpse" | "flame" | "cut";
   en?: Enemy; // chi sta cadendo
   a?: number; // direzione del cono, in radianti
   w?: number; // ampiezza del cono, in radianti
@@ -796,6 +797,7 @@ function statsLine(kind: TowerKind, level: number, branch: Branch | null, rank =
     return `Martellata a cono: ${s.damage} danni a ${s.maxTargets} nemici, ${num(TICKS_PER_SECOND / s.cooldown)} colpi/s, portata ${range}. Ogni colpo rallenta del ${pct(s.chillBp)} fino al ${pct(s.chillMax)}.${ice}${s.iceBreaker ? " Danno doppio a chi è gelato." : ""}${s.aftershockBp ? ` Seconda scossa del ${pct(s.aftershockBp)}.` : ""}`;
   }
   if (kind === "ingegnere") return `Chiodi: ${s.damage} danni, ${num(TICKS_PER_SECOND / s.cooldown)} colpi/s, gittata ${range}. Costruisce una torretta ogni ${num(s.sentryEvery / TICKS_PER_SECOND)} s, fino a ${s.sentryMax}: ognuna fa ${s.sentryDamage} danni, ${num(TICKS_PER_SECOND / s.sentryCooldown)} colpi/s. Le torrette restano tra un'ondata e l'altra.${s.pierce ? " Ignora l'armatura." : ""}${s.detect ? " Vede gli invisibili." : ""}`;
+  if (kind === "slasher") return `Lame: ${s.damage} danni, ${num(TICKS_PER_SECOND / s.cooldown)} colpi/s, portata ${range}; ogni ${s.critEvery}° colpo è un critico da ${Math.floor((s.damage * s.critBp) / 10000)} (in media ${num((s.damage * (s.critEvery - 1 + s.critBp / 10000) * TICKS_PER_SECOND) / s.critEvery / s.cooldown)} danni/s). Ogni colpo aggiunge ${s.bleedHit} cariche di sanguinamento: il nemico ne perde ${s.bleedDrain * 2} al secondo e ognuna è un danno. A ${s.bleedMax} cariche scatta l'emorragia: ${fmt(s.bleedBurst)} danni che ignorano l'armatura, poi per ${num(s.bleedLock / TICKS_PER_SECOND)} s non sanguina. Non fa sanguinare spettri, ombre, pupazzi di neve e macchine.`;
   if (kind === "pistolero") return `Revolver: ${s.damage} danni, ${num(TICKS_PER_SECOND / s.cooldown)} colpi/s, gittata ${range}. Ogni ${s.cashEvery} colpi a segno incassa ${s.cashAmount} cash.`;
   if (kind === "piromante") return `Fiammata a cono: ${s.damage} danni a ${s.maxTargets} nemici, ${num(TICKS_PER_SECOND / s.cooldown)} fiammate/s, portata ${range}. Chi è colpito brucia per ${num(s.burnTicks / TICKS_PER_SECOND)} s: ${s.burnDamage * 2} danni al secondo che ignorano l'armatura. Non brucia i nemici di brace.`;
   if (kind === "starcannon") return `Si carica in ${num(s.chargeTicks / TICKS_PER_SECOND)} s: a carica piena ${fmt(s.cannonMax)} danni e ${num(s.cannonStun / TICKS_PER_SECOND)} s di stordimento in un'area di ${num(s.radius / TILE)}; se spari prima, da ${fmt(s.cannonMin)} in su. Poi ${num(s.cooldown / TICKS_PER_SECOND)} s di pausa. Gittata ${range}. Occupa 4 caselle.`;
@@ -1161,6 +1163,25 @@ function handleEvents(events: GameEvent[]) {
         sfx.ratchet();
         break;
       }
+      case "slash": {
+        // Fendente: un taglio sul bersaglio, più grande e dorato se è un critico.
+        const a0 = Math.atan2(ev.ty - ev.y, ev.tx - ev.x);
+        fx.push({ kind: "cut", x: ev.tx, y: ev.ty, a: a0 + (ev.crit ? 0 : ((now * 0.37) % 2) - 1), color: ev.crit ? "#ffd86b" : "#ffffff", w: ev.crit ? 1.6 : 1, born: now, life: ev.crit ? 260 : 170 });
+        // La scritta al massimo due volte al secondo: con molte lame coprirebbe tutto.
+        if (ev.crit && now - lastCritText > 500) {
+          lastCritText = now;
+          fx.push({ kind: "float", x: ev.tx, y: ev.ty - 450, text: "Critico!", color: "#ffd86b", born: now, life: 600 });
+        }
+        setAim(ev.from, ev.x, ev.y, ev.tx, ev.ty);
+        (ev.crit ? sfx.crit : sfx.slash)();
+        break;
+      }
+      case "bleedBurst":
+        fx.push({ kind: "ring", x: ev.x, y: ev.y, r: 900, color: "#d0202c", born: now, life: 420 });
+        fx.push({ kind: "blast", x: ev.x, y: ev.y, r: 500, color: "#b0202c", born: now, life: 300 });
+        fx.push({ kind: "float", x: ev.x, y: ev.y - 700, text: `Emorragia -${fmt(ev.amount)}`, color: "#ff6b6b", born: now, life: 1000 });
+        sfx.bleed();
+        break;
       case "tip":
         fx.push({ kind: "float", x: ev.x, y: ev.y - 500, text: `+${ev.amount}`, color: COLORS.brass, born: now, life: 700 });
         sfx.tip();
@@ -3033,6 +3054,18 @@ function render(now: number) {
         ctx.lineTo(mx, my);
         ctx.lineTo(q.x, q.y);
       }
+      ctx.stroke();
+    } else if (f.kind === "cut") {
+      // Taglio: una linea che si allunga e sbiadisce.
+      const len = pxT * 0.42 * (f.w ?? 1) * (0.4 + 0.6 * Math.min(1, k * 3));
+      const dir = (f.a ?? 0) + turn() + Math.PI / 2;
+      ctx.globalAlpha = 1 - k;
+      ctx.strokeStyle = f.color ?? "#ffffff";
+      ctx.lineCap = "round";
+      ctx.lineWidth = Math.max(1.5, pxT * 0.07 * (f.w ?? 1) * (1 - k * 0.6));
+      ctx.beginPath();
+      ctx.moveTo(p.x - Math.cos(dir) * len, p.y - Math.sin(dir) * len);
+      ctx.lineTo(p.x + Math.cos(dir) * len, p.y + Math.sin(dir) * len);
       ctx.stroke();
     } else if (f.kind === "flame") {
       // Getto del Piromante: sbuffi che partono dall'ugello, si allargano e sfumano dal bianco al rosso.

@@ -118,8 +118,8 @@ test("specializzazione: solo dal livello 3 e senza ritorno", () => {
 
 test("il rango aumenta danno, rallentamento e rendita del 10% per rango", () => {
   const b = { kind: "balestra" as const, level: 1, branch: null };
-  assert.equal(rankedStats(b, 1).damage, 12);
-  assert.equal(rankedStats(b, 3).damage, 14);
+  assert.equal(rankedStats(b, 1).damage, 13);
+  assert.equal(rankedStats(b, 3).damage, 15);
   assert.equal(rankedStats({ kind: "soffio", level: 1, branch: null }, 5).slowBp, 5800);
   assert.equal(rankedStats({ kind: "officina", level: 1, branch: null }, 2).income, 39);
   const s = createGame(1, { ranks: { balestra: 9 } });
@@ -240,7 +240,7 @@ test("Grammofono: il disco Danno aumenta il danno, il disco Sconto abbassa i cos
   step(s, [{ t: "build", kind: "grammofono", cx: 5, cy: 4 }, { t: "build", kind: "balestra", cx: 5, cy: 3 }]);
   step(s, []);
   const b = s.towers.find((t) => t.kind === "balestra")!;
-  assert.equal(effStats(s, b).damage, 13);
+  assert.equal(effStats(s, b).damage, 14);
   const g = s.towers.find((t) => t.kind === "grammofono")!;
   step(s, [{ t: "track", id: g.id, track: "sconto" }]);
   assert.equal(buildCost(s, "balestra", 6, 4), 99);
@@ -499,7 +499,7 @@ test("divisione, gelo alla morte, furto e immunità al rallentamento", () => {
 
 test("sandbox e comandi admin: tutte le torri, nessun premio, vite infinite, salto d'ondata", () => {
   const s = createGame(1, { sandbox: true, allowed: ["balestra"] });
-  assert.equal(s.allowed.length, 23);
+  assert.equal(s.allowed.length, 24);
   assert.ok(s.cash >= 100000);
   step(s, [{ t: "adminGod", on: true }, { t: "adminSpawn", enemy: "corridore", count: 5, mods: ["agile"] }]);
   for (let i = 0; i < 600; i++) step(s, []);
@@ -1389,10 +1389,20 @@ import { WEEKLY, weekOf, weeklyCheck, weeklyFor } from "../src/game-client/progr
 import { BURN_EVERY, sentrySpot } from "../src/sim-core/sim";
 
 /** Un nemico fermo e robusto davanti a una torre appena costruita. */
-function duel(kind: "ingegnere" | "pistolero" | "piromante", level = 1) {
+function duel(kind: "ingegnere" | "pistolero" | "piromante" | "slasher", level = 1) {
   const s = createGame(77, { mode: "campagna", level: "porto", allowed: [kind] });
   s.cash = 90000;
-  step(s, [{ t: "build", kind, cx: 5, cy: 3 }]);
+  // La casella libera più vicina al sentiero: anche chi colpisce da vicino ci arriva.
+  let spot: [number, number] = [5, 3], near = Infinity;
+  for (let cy = 0; cy < 9; cy++) for (let cx = 0; cx < 16; cx++) {
+    if (!canPlace(s, kind, cx, cy)) continue;
+    for (let d = 3000; d < 30000; d += 100) {
+      const p = lanePoint(levelById("porto"), 0, d);
+      const q = (p.x - (cx * 1000 + 500)) ** 2 + (p.y - (cy * 1000 + 500)) ** 2;
+      if (q < near) { near = q; spot = [cx, cy]; }
+    }
+  }
+  step(s, [{ t: "build", kind, cx: spot[0], cy: spot[1] }]);
   const t = s.towers[0];
   for (let i = 1; i < level; i++) step(s, [{ t: "upgrade", id: t.id }]);
   toWave(s);
@@ -1492,4 +1502,49 @@ test("Sfide della settimana: tre a settimana, uguali per tutti, premio una volta
   const c = weeklyCheck(a.state, run, monday + 7 * 86400000);
   assert.equal(c.state.week, w + 1);
   assert.ok(!c.state.done.includes(target.id) || weeklyFor(w + 1).some((x) => x.id === target.id));
+});
+
+import { BLEED_IMMUNE } from "../src/sim-core/sim";
+
+test("Slasher: critico ogni terzo colpo, cariche di sanguinamento, emorragia al massimo e pausa di 5 secondi", () => {
+  const { s, t, e } = duel("slasher");
+  const st = towerStats(t);
+  assert.equal(st.critEvery, 3);
+  assert.equal(Math.round((st.damage * (2 + st.critBp / 10000) * 10) / 3 / st.cooldown), 33, "33 danni al secondo al primo livello");
+  const crits: boolean[] = [];
+  let bursts = 0, burstAt = -1, burstAmount = 0;
+  let peak = 0;
+  for (let i = 0; i < 400; i++) {
+    for (const ev of step(s, [])) {
+      if (ev.e === "slash") crits.push(ev.crit);
+      if (ev.e === "bleedBurst") {
+        bursts++;
+        burstAmount = ev.amount;
+        if (burstAt < 0) burstAt = s.tick;
+      }
+    }
+    peak = Math.max(peak, e.bleed ?? 0);
+    if (burstAt >= 0 && s.tick > burstAt && s.tick < burstAt + st.bleedLock - 1) assert.equal(e.bleed ?? 0, 0, "durante la pausa non sanguina");
+  }
+  assert.deepEqual(crits.slice(0, 6), [false, false, true, false, false, true]);
+  assert.ok(peak > st.bleedHit && peak < st.bleedMax, `le cariche salgono senza superare il massimo: ${peak}`);
+  assert.ok(bursts >= 2, `emorragie: ${bursts}`);
+  assert.equal(burstAmount, st.bleedBurst);
+  // Smette di colpire: le cariche calano fino a zero e ognuna è un danno.
+  for (let i = 0; i < 300 && (e.bleed ?? 0) < 20; i++) step(s, []);
+  const had = e.bleed ?? 0;
+  assert.ok(had > 0, "ha cariche addosso");
+  step(s, [{ t: "sell", id: t.id }]);
+  const hp = e.hp;
+  for (let i = 0; i < 400 && (e.bleed ?? 0) > 0; i++) step(s, []);
+  assert.equal(e.bleed ?? 0, 0);
+  assert.equal(hp - e.hp, had, "perde tanta vita quante cariche aveva");
+  // Chi non ha sangue non sanguina.
+  const ghost = duel("slasher");
+  assert.ok(BLEED_IMMUNE.includes("pupazzo"));
+  ghost.e.kind = "pupazzo" as never;
+  for (let i = 0; i < 40; i++) step(ghost.s, []);
+  assert.ok(!ghost.e.bleed, "il Pupazzo di neve non sanguina");
+  assert.ok(ghost.e.hp < 1e6, "ma i colpi li prende");
+  assert.equal(hashState(restore(snapshot(s))), hashState(s));
 });

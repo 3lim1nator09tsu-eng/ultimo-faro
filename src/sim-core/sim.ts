@@ -78,6 +78,10 @@ export interface Enemy {
   burn?: number; // Piromante: danni ogni mezzo secondo
   burnT?: number; // tick di bruciatura rimasti
   burnBy?: number; // torre che l'ha acceso
+  bleed?: number; // Slasher: cariche di sanguinamento accumulate
+  bleedDrain?: number; // cariche perse ogni mezzo secondo
+  bleedLock?: number; // tick prima di poter sanguinare di nuovo
+  bleedBy?: number; // torre che l'ha ferito per ultima
   frozen?: number; // tick di congelamento rimasti
 }
 
@@ -125,6 +129,7 @@ export interface Tower {
   sentries?: number[]; // Ingegnere: una voce per torretta costruita, con i tick al prossimo colpo
   sentryT?: number; // Ingegnere: tick di cantiere accumulati
   shots?: number; // Pistolero: colpi dall'ultimo incasso
+  hits?: number; // Slasher: colpi dall'ultimo critico
 }
 
 /** Unità del Kingpin: camminano dal Faro verso il mare e combattono i nemici che incontrano. */
@@ -297,6 +302,8 @@ export type GameEvent =
   | { e: "swing"; from: number; x: number; y: number; tx: number; ty: number; range: number; cone: number; fire?: boolean }
   | { e: "sentry"; from: number; n: number }
   | { e: "tip"; x: number; y: number; amount: number }
+  | { e: "slash"; from: number; x: number; y: number; tx: number; ty: number; crit: boolean }
+  | { e: "bleedBurst"; x: number; y: number; amount: number }
   | { e: "axe"; from: number; points: number[] }
   | { e: "execute"; x: number; y: number }
   | { e: "iced"; x: number; y: number }
@@ -493,6 +500,7 @@ export function rankedStats(t: Pick<Tower, "kind" | "level" | "branch">, rank: n
     ...s,
     damage: scale(s.damage),
     sentryDamage: scale(s.sentryDamage),
+    bleedBurst: scale(s.bleedBurst),
     burnDamage: scale(s.burnDamage),
     slowBp: s.slowBp < 10000 ? 10000 - scale(10000 - s.slowBp) : s.slowBp,
     income: scale(s.income),
@@ -844,6 +852,8 @@ export const eruptionNext = (state: GameState) => state.mode === "molten" && (st
 /** Coseno al quadrato del mezzo cono, in bp: niente trigonometria, stesso risultato su ogni dispositivo. */
 /** Chi è fatto di brace non brucia. */
 export const BURN_IMMUNE: EnemyKind[] = ["tizzone", "magmatico", "colosso"];
+/** Chi non ha sangue non sanguina: spettri, ombre, pupazzi di neve e macchine. */
+export const BLEED_IMMUNE: EnemyKind[] = ["spettro", "ombra", "pupazzetto", "pupazzo", "jackobot", "zucchetta"];
 /** Ogni quanti tick morde la bruciatura. */
 export const BURN_EVERY = 5;
 const SENTRY_SPOTS = [-620, -620, 620, -620, 620, 620, -620, 620, 0, -880, 0, 880];
@@ -1978,6 +1988,15 @@ export function step(state: GameState, commands: Command[] = []): GameEvent[] {
       }
       if (!e.burnT) e.burn = 0;
     }
+    if (e.bleedLock) e.bleedLock -= 1;
+    if (e.bleed && e.hp > 0 && state.tick % BURN_EVERY === 0) {
+      // Sanguinamento: le cariche calano e ognuna persa è un danno, finché non arrivano a zero.
+      const lost = Math.min(e.bleed, Math.max(1, e.bleedDrain ?? 1));
+      e.bleed -= lost;
+      const done = applyDamage(e, lost);
+      const by = state.towers.find((t) => t.id === e.bleedBy);
+      if (by) by.damageDone += done;
+    }
   }
 
   // Movimento dei nemici.
@@ -2110,6 +2129,26 @@ export function step(state: GameState, commands: Command[] = []): GameEvent[] {
         current = next;
       }
       events.push(s.bounceRange ? { e: "axe", from: t.id, points } : { e: "zap", from: t.id, points });
+    } else if (s.critEvery > 0) {
+      // Slasher: ogni terzo colpo è un critico; ogni colpo aggiunge cariche di sanguinamento.
+      t.hits = (t.hits ?? 0) + 1;
+      const crit = t.hits >= s.critEvery;
+      if (crit) t.hits = 0;
+      hit(state, target, t, s, crit ? Math.floor((s.damage * s.critBp) / 10000) : s.damage, events);
+      events.push({ e: "slash", from: t.id, x: t.x, y: t.y, tx: target.x, ty: target.y, crit });
+      if (s.bleedHit > 0 && target.hp > 0 && !(target.bleedLock ?? 0) && !BLEED_IMMUNE.includes(target.kind)) {
+        target.bleed = (target.bleed ?? 0) + s.bleedHit;
+        target.bleedDrain = Math.max(target.bleedDrain ?? 0, s.bleedDrain);
+        target.bleedBy = t.id;
+        if (target.bleed >= s.bleedMax) {
+          // Emorragia: un colpo solo, grosso, che ignora l'armatura; poi il nemico non sanguina per un po'.
+          const done = applyDamage(target, s.bleedBurst);
+          t.damageDone += done;
+          target.bleed = 0;
+          target.bleedLock = s.bleedLock;
+          events.push({ e: "bleedBurst", x: target.x, y: target.y, amount: done });
+        }
+      }
     } else {
       hit(state, target, t, s, s.damage, events);
       events.push({ e: "shot", from: t.id, to: target.id, x: t.x, y: t.y, tx: target.x, ty: target.y });
@@ -2298,6 +2337,8 @@ export function hashState(state: GameState): string {
     mix(e.chillT ?? 0);
     mix(e.burn ?? 0);
     mix(e.burnT ?? 0);
+    mix(e.bleed ?? 0);
+    mix(e.bleedLock ?? 0);
     mix(e.frozen ?? 0);
     mix(e.lane);
     mix(e.dist);
@@ -2336,6 +2377,7 @@ export function hashState(state: GameState): string {
     mix(t.lock ?? 0);
     mix(t.sentryT ?? 0);
     mix(t.shots ?? 0);
+    mix(t.hits ?? 0);
     for (const c of t.sentries ?? []) mix(c + 1);
     mix(t.abilityCd);
     mix(t.abilityLeft);

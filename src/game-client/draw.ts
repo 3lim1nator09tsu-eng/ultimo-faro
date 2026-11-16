@@ -618,6 +618,19 @@ export function drawEnemy(ctx: CanvasRenderingContext2D, e: Enemy, x: number, y:
     ctx.arc(x, y, T * (enemySize(e) + 0.1), 0, Math.PI * 2);
     ctx.stroke();
   }
+  if (e.bleed) {
+    // Sanguina: gocce rosse che cadono; più cariche, più gocce.
+    const drops = Math.min(4, 1 + Math.floor(e.bleed / 40));
+    ctx.fillStyle = "#d0202c";
+    for (let i = 0; i < drops; i++) {
+      const fall = ((time * 0.0022 + i * 0.37 + e.id * 0.13) % 1 + 1) % 1;
+      ctx.globalAlpha = 1 - fall;
+      ctx.beginPath();
+      ctx.arc(x + (i - (drops - 1) / 2) * T * 0.11, y + T * (0.02 + fall * 0.28), Math.max(1, T * 0.035), 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
   if (e.burnT) {
     // Brucia: fiammelle che guizzano sopra la testa.
     for (let i = -1; i <= 1; i++) {

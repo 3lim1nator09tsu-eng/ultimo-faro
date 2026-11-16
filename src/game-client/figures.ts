@@ -401,6 +401,49 @@ export function towerFigure(c: C, kind: TowerKind, T: number, angle: number, lev
       });
       break;
     }
+    case "slasher": {
+      c.rotate(angle);
+      // Due lame: una affonda quando colpisce, l'altra resta di guardia.
+      const swing = kick * kick;
+      person(c, s, { skin: "#f1ece0", shirt: "#3a2a3f", sleeve: "#2a1f2e", arms: "none", eyes: INK }, {
+        back: pack("#5a1a1f"),
+        chest: (q) => {
+          c.fillStyle = "#b0202c";
+          c.fillRect(-0.42 * s, -0.12 * s, 0.84 * s, 0.24 * s);
+          pads("#5c4a63")(q);
+        },
+        held: (q) => {
+          const blade = (side: number, reach: number, rot: number) => {
+            c.save();
+            c.translate(0.05 * s, side * 0.84 * s);
+            c.rotate(rot);
+            limb(c, 0, 0, reach * s, 0, 0.34 * s, "#2a1f2e", q);
+            dot(c, reach * s, 0, 0.25 * s, "#f1ece0", q);
+            box(c, reach * s + 0.1 * s, -0.16 * s, 0.16 * s, 0.32 * s, 0.04 * s, BRASS, q * 0.7);
+            shape(c, [(reach + 0.25) * s, -0.11 * s, (reach + 1.25) * s, -0.05 * s, (reach + 1.45) * s, 0.1 * s, (reach + 0.25) * s, 0.12 * s], accent ?? "#dfe7ea", q * 0.8);
+            c.restore();
+          };
+          blade(-1, 0.9 + swing * 0.5, 0.75 - swing * 1.5);
+          blade(1, 0.85, -0.55 + (level >= 3 ? swing * 0.9 : 0));
+          if (kick > 0.45) {
+            // Scia del fendente.
+            c.globalAlpha = (kick - 0.45) * 1.6;
+            c.strokeStyle = "#ffffff";
+            c.lineWidth = Math.max(1, s * 0.16);
+            c.beginPath();
+            c.arc(0, 0, 2.2 * s, -0.9, 0.5);
+            c.stroke();
+            c.globalAlpha = 1;
+          }
+        },
+        hat: (hx, hr, q) => {
+          hood(c, hx, hr, q, "#2a1f2e");
+          // Maschera: tre fori.
+          for (const [x, y] of [[0.5, -0.38], [0.5, 0.38], [0.15, 0]]) dot(c, hx + hr * x, hr * y, hr * 0.09, "#b0202c");
+        },
+      });
+      break;
+    }
     case "ingegnere": {
       c.rotate(angle);
       person(c, s, { skin: SKIN, shirt: "#e8862a", pull: pull * 0.6 }, {

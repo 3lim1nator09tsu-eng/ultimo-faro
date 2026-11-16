@@ -128,9 +128,20 @@ export const MEDALS: Array<{ id: string; name: string; text: string; ok: (m: Med
 // ---------- bacheca ----------
 
 /** Versione del gioco: chi ospita la comunica all'admin, che vede se i comandi nuovi possono funzionare. */
-export const GAME_VERSION = "0.19.0";
+export const GAME_VERSION = "0.20.0";
 
 export const VERSION_NOTES: ChangeEntry[] = [
+  {
+    date: "2026-11-16",
+    title: "Versione 0.20: lo Slasher e più danno per tutti",
+    kind: "versione",
+    items: [
+      "Slasher: colpisce da vicino e in fretta, ogni terzo colpo è un critico; 33 danni al secondo al primo livello, 50 al secondo, circa 100 ai rami (1.300 Schegge)",
+      "Sanguinamento: ogni colpo dello Slasher aggiunge cariche; il nemico le perde nel tempo e ognuna è un danno. Se arrivano al massimo scatta l'emorragia, un colpo enorme (4.000 danni con lo Squartatore), poi per 5 secondi non sanguina",
+      "Spettri, ombre, pupazzi di neve e macchine non sanguinano",
+      "Tutte le torri fanno il 12% di danno in più (Star Cannon escluso)",
+    ],
+  },
   {
     date: "2026-11-12",
     title: "Versione 0.19: economia più ricca, Ingegnere rifatto",

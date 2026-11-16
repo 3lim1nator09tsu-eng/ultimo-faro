@@ -267,6 +267,20 @@ export const sfx = {
     tone("sine", 1180, 1180, 0.07, 0.04);
     tone("sine", 1570, 1570, 0.16, 0.045, { at: 0.06 });
   }),
+  slash: fx("slash", 70, () => {
+    noise(vary(2600), 6500, 0.07, 0.045, { type: "bandpass", q: 2.5, attack: 0.01 });
+    tone("triangle", vary(1900), 1200, 0.04, 0.012, { at: 0.03 });
+  }),
+  crit: fx("crit", 90, () => {
+    noise(3000, 8000, 0.09, 0.07, { type: "bandpass", q: 2 });
+    tone("sine", 2600, 3100, 0.12, 0.03, { at: 0.02 });
+    tone("triangle", 220, 110, 0.08, 0.06);
+  }),
+  bleed: fx("bleed", 200, () => {
+    tone("sine", 150, 45, 0.3, 0.2);
+    noise(900, 200, 0.22, 0.09, { type: "lowpass" });
+    noise(3500, 1500, 0.12, 0.04, { at: 0.02, q: 1.5 });
+  }, true),
   tip: fx("tip", 140, () => {
     tone("square", 2100, 2100, 0.03, 0.012);
     tone("sine", 1760, 1760, 0.12, 0.03, { at: 0.03 });

@@ -323,7 +323,7 @@ for (const vp of [{ width: 390, height: 700 }, { width: 844, height: 390 }]) {
   await page.waitForTimeout(200);
   while (await page.locator("#dialog").isVisible()) await page.locator("#dialog").tap();
   let st = await page.evaluate(() => window.__faro.state);
-  check(`${tag}: la prova ha tutte le 23 torri e niente premi`, st.sandbox && st.allowed.length === 23 && (await page.locator(".card").count()) === 23);
+  check(`${tag}: la prova ha tutte le 24 torri e niente premi`, st.sandbox && st.allowed.length === 24 && (await page.locator(".card").count()) === 24);
   const dmg = await page.evaluate(() => {
     const f = window.__faro;
     f.debug.send({ t: "build", kind: "balestra", cx: 5, cy: 3 });
@@ -592,7 +592,7 @@ for (const vp of [{ width: 390, height: 760 }, { width: 844, height: 390 }]) {
   await page.screenshot({ path: `${outDir}/12-menu.png` });
   check("il menu compare all'avvio", await page.locator("#menu").isVisible());
   check("Infinita è chiusa finché non si vince", await page.locator("#mInfinita").isDisabled());
-  check("l'Arsenale elenca 21 torri (le 2 admin restano nascoste)", (await page.locator("#arsenal .row").count()) === 21);
+  check("l'Arsenale elenca 22 torri (le 2 admin restano nascoste)", (await page.locator("#arsenal .row").count()) === 22);
   check("le sfide della settimana sono tre, con le Perle in premio", (await page.locator("#weekly .mission").count()) === 3 && /Perle/.test(await page.locator("#weekly").textContent()) && /cambiano tra/.test(await page.locator("#weeklyLeft").textContent()));
   check("la Stella Cometa si ottiene solo vincendo la Notte 5", (await page.locator('#arsenal button[data-kind="cometa"]').textContent()) === "Vinci la Notte 5");
   check("ci sono tre missioni attive", (await page.locator("#missions .mission").count()) === 3);

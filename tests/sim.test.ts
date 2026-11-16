@@ -1505,6 +1505,7 @@ test("Sfide della settimana: tre a settimana, uguali per tutti, premio una volta
 });
 
 import { BLEED_IMMUNE } from "../src/sim-core/sim";
+import { apexStats } from "../src/sim-core/content";
 
 test("Slasher: critico ogni terzo colpo, cariche di sanguinamento, emorragia al massimo e pausa di 5 secondi", () => {
   // Ai primi due livelli è una normale torre da mischia: 33 e 50 danni al secondo, niente sanguinamento.
@@ -1513,7 +1514,11 @@ test("Slasher: critico ogni terzo colpo, cariche di sanguinamento, emorragia al 
   assert.equal(dpsOf(TOWERS.slasher.levels[1]), 50);
   assert.equal(TOWERS.slasher.levels[0].bleedHit + TOWERS.slasher.levels[1].bleedHit, 0);
   assert.ok(dpsOf(TOWERS.slasher.levels[2]) < 50 && TOWERS.slasher.levels[2].bleedHit === 33, "al livello 3 perde un po' di danno e comincia a far sanguinare");
-  assert.ok(dpsOf(TOWERS.slasher.branches.A) >= 100 && dpsOf(TOWERS.slasher.branches.B) >= 100);
+  // Ai livelli 4 e 5 (ramo e Apex) colpisce due volte al secondo.
+  for (const br of ["A", "B"] as const) {
+    assert.equal(TOWERS.slasher.branches[br].cooldown, 5);
+    assert.equal(apexStats(TOWERS.slasher.branches[br]).cooldown, 5);
+  }
   {
     const plain = duel("slasher");
     for (let i = 0; i < 100; i++) step(plain.s, []);

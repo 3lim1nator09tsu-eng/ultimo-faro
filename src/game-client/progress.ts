@@ -128,9 +128,15 @@ export const MEDALS: Array<{ id: string; name: string; text: string; ok: (m: Med
 // ---------- bacheca ----------
 
 /** Versione del gioco: chi ospita la comunica all'admin, che vede se i comandi nuovi possono funzionare. */
-export const GAME_VERSION = "0.20.2";
+export const GAME_VERSION = "0.20.3";
 
 export const VERSION_NOTES: ChangeEntry[] = [
+  {
+    date: "2026-11-16",
+    title: "Versione 0.20.3: Slasher più lento ai livelli alti",
+    kind: "versione",
+    items: ["Squartatore e Lama danzante colpiscono due volte al secondo, anche da Apex: erano troppo forti"],
+  },
   {
     date: "2026-11-16",
     title: "Versione 0.20.2: Slasher, il sanguinamento parte dal livello 3",

@@ -567,8 +567,8 @@ export const TOWERS = {
       { ...base, cost: 700, damage: 10, cooldown: 3, range: 1600, critEvery: 3, critBp: 20000, bleedHit: 33, bleedMax: 412, bleedBurst: 1100, bleedDrain: 12, bleedLock: 50, bleedBp: 10000 },
     ],
     branches: {
-      A: { ...base, name: "Squartatore", summary: "Emorragie enormi: 4.000 danni quando esplodono", cost: 1500, damage: 23, cooldown: 3, range: 1600, critEvery: 3, critBp: 20000, bleedHit: 33, bleedMax: 412, bleedBurst: 4000, bleedDrain: 10, bleedLock: 50, bleedBp: 10000 },
-      B: { ...base, name: "Lama danzante", summary: "Colpi rapidissimi e critico triplo: il doppio dei tagli, emorragie più piccole", cost: 1400, damage: 17, cooldown: 2, range: 1800, critEvery: 3, critBp: 30000, bleedHit: 33, bleedMax: 412, bleedBurst: 2200, bleedDrain: 12, bleedLock: 50, bleedBp: 10000 },
+      A: { ...base, name: "Squartatore", summary: "Emorragie enormi: 4.000 danni quando esplodono", cost: 1500, damage: 23, cooldown: 5, range: 1600, critEvery: 3, critBp: 20000, bleedHit: 33, bleedMax: 412, bleedBurst: 4000, bleedDrain: 10, bleedLock: 50, bleedBp: 10000 },
+      B: { ...base, name: "Lama danzante", summary: "Critico triplo e portata più lunga, emorragie più piccole", cost: 1400, damage: 28, cooldown: 5, range: 1800, critEvery: 3, critBp: 30000, bleedHit: 33, bleedMax: 412, bleedBurst: 2800, bleedDrain: 12, bleedLock: 50, bleedBp: 10000 },
     },
   },
   executioner: {
@@ -904,7 +904,8 @@ export function apexStats(s: TowerStats): TowerStats {
   return {
     ...s,
     damage: up(s.damage, 22000),
-    cooldown: s.cooldown > 0 ? Math.max(1, up(s.cooldown, 8000)) : 0,
+    // Lo Slasher resta a due colpi al secondo anche da Apex.
+    cooldown: s.critEvery > 0 ? s.cooldown : s.cooldown > 0 ? Math.max(1, up(s.cooldown, 8000)) : 0,
     range: up(s.range, 11500),
     radius: up(s.radius, 12000),
     chains: s.chains ? s.chains + 4 : 0,

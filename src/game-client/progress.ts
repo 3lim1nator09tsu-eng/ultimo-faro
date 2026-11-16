@@ -128,9 +128,19 @@ export const MEDALS: Array<{ id: string; name: string; text: string; ok: (m: Med
 // ---------- bacheca ----------
 
 /** Versione del gioco: chi ospita la comunica all'admin, che vede se i comandi nuovi possono funzionare. */
-export const GAME_VERSION = "0.20.1";
+export const GAME_VERSION = "0.20.2";
 
 export const VERSION_NOTES: ChangeEntry[] = [
+  {
+    date: "2026-11-16",
+    title: "Versione 0.20.2: Slasher, il sanguinamento parte dal livello 3",
+    kind: "versione",
+    items: [
+      "Ai livelli 1 e 2 lo Slasher è una normale torre da mischia: 33 e 50 danni al secondo, con il critico ogni terzo colpo",
+      "Dal livello 3 perde un po' di danno diretto e comincia a far sanguinare: 33 cariche a colpo, emorragia a 412; ogni carica persa è un danno",
+      "Costa meno ai primi livelli: 280 e 150 cash",
+    ],
+  },
   {
     date: "2026-11-16",
     title: "Versione 0.20.1: Slasher ritoccato",

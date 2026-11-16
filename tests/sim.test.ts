@@ -1507,10 +1507,21 @@ test("Sfide della settimana: tre a settimana, uguali per tutti, premio una volta
 import { BLEED_IMMUNE } from "../src/sim-core/sim";
 
 test("Slasher: critico ogni terzo colpo, cariche di sanguinamento, emorragia al massimo e pausa di 5 secondi", () => {
-  const { s, t, e } = duel("slasher");
+  // Ai primi due livelli è una normale torre da mischia: 33 e 50 danni al secondo, niente sanguinamento.
+  const dpsOf = (x: { damage: number; critBp: number; cooldown: number }) => Math.round((x.damage * (2 + x.critBp / 10000) * 10) / 3 / x.cooldown);
+  assert.equal(dpsOf(TOWERS.slasher.levels[0]), 33);
+  assert.equal(dpsOf(TOWERS.slasher.levels[1]), 50);
+  assert.equal(TOWERS.slasher.levels[0].bleedHit + TOWERS.slasher.levels[1].bleedHit, 0);
+  assert.ok(dpsOf(TOWERS.slasher.levels[2]) < 50 && TOWERS.slasher.levels[2].bleedHit === 33, "al livello 3 perde un po' di danno e comincia a far sanguinare");
+  assert.ok(dpsOf(TOWERS.slasher.branches.A) >= 100 && dpsOf(TOWERS.slasher.branches.B) >= 100);
+  {
+    const plain = duel("slasher");
+    for (let i = 0; i < 100; i++) step(plain.s, []);
+    assert.ok(!plain.e.bleed && plain.e.hp < 1e6, "al livello 1 colpisce ma non fa sanguinare");
+  }
+  const { s, t, e } = duel("slasher", 3);
   const st = towerStats(t);
   assert.equal(st.critEvery, 3);
-  assert.equal(Math.round((st.damage * (2 + st.critBp / 10000) * 10) / 3 / st.cooldown), 33, "33 danni al secondo al primo livello");
   const crits: boolean[] = [];
   let bursts = 0, burstAt = -1, burstAmount = 0;
   let peak = 0;
@@ -1532,9 +1543,9 @@ test("Slasher: critico ogni terzo colpo, cariche di sanguinamento, emorragia al 
   assert.equal(burstAmount, st.bleedBurst);
   // Smette di colpire: le cariche calano fino a zero e ognuna è un danno.
   for (let i = 0; i < 300 && (e.bleed ?? 0) < 20; i++) step(s, []);
+  step(s, [{ t: "sell", id: t.id }]);
   const had = e.bleed ?? 0;
   assert.ok(had > 0, "ha cariche addosso");
-  step(s, [{ t: "sell", id: t.id }]);
   const hp = e.hp;
   for (let i = 0; i < 400 && (e.bleed ?? 0) > 0; i++) step(s, []);
   assert.equal(e.bleed ?? 0, 0);
@@ -1546,7 +1557,7 @@ test("Slasher: critico ogni terzo colpo, cariche di sanguinamento, emorragia al 
   assert.equal(st.bleedMax, 412);
   // La pausa vale solo per chi ha appena avuto l'emorragia: un altro nemico sanguina subito.
   {
-    const two = duel("slasher");
+    const two = duel("slasher", 3);
     const other = { ...two.e, id: two.s.nextId++, hp: 5e5, maxHp: 1e6 };
     two.e.bleedLock = 40;
     two.s.enemies.push(other);
@@ -1574,7 +1585,7 @@ test("Slasher: critico ogni terzo colpo, cariche di sanguinamento, emorragia al 
     assert.ok(stunned, "mentre una torre normale viene stordita");
   }
   // Chi non ha sangue non sanguina.
-  const ghost = duel("slasher");
+  const ghost = duel("slasher", 3);
   assert.ok(BLEED_IMMUNE.includes("pupazzo"));
   ghost.e.kind = "pupazzo" as never;
   for (let i = 0; i < 40; i++) step(ghost.s, []);

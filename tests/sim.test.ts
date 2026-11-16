@@ -1538,7 +1538,41 @@ test("Slasher: critico ogni terzo colpo, cariche di sanguinamento, emorragia al 
   const hp = e.hp;
   for (let i = 0; i < 400 && (e.bleed ?? 0) > 0; i++) step(s, []);
   assert.equal(e.bleed ?? 0, 0);
-  assert.equal(hp - e.hp, had, "perde tanta vita quante cariche aveva");
+  // Le cariche calano a scatti di bleedDrain; ogni scatto vale la sua parte di danno.
+  let owed = 0;
+  for (let left = had; left > 0; left -= Math.min(left, st.bleedDrain)) owed += Math.floor((Math.min(left, st.bleedDrain) * st.bleedBp) / 10000);
+  assert.equal(hp - e.hp, owed, "perde vita in proporzione alle cariche che aveva");
+  assert.equal(st.bleedHit, 33);
+  assert.equal(st.bleedMax, 412);
+  // La pausa vale solo per chi ha appena avuto l'emorragia: un altro nemico sanguina subito.
+  {
+    const two = duel("slasher");
+    const other = { ...two.e, id: two.s.nextId++, hp: 5e5, maxHp: 1e6 };
+    two.e.bleedLock = 40;
+    two.s.enemies.push(other);
+    for (let i = 0; i < 12; i++) step(two.s, []);
+    assert.equal(two.e.bleed ?? 0, 0, "chi è in pausa non accumula");
+    two.e.hp = 1; // ora il più forte è l'altro
+    for (let i = 0; i < 12; i++) step(two.s, []);
+    assert.ok((other.bleed ?? 0) > 0, "l'altro sanguina anche se il primo è in pausa");
+  }
+  // Niente stordisce lo Slasher: né sabotatori, né la lava.
+  {
+    const sab = duel("slasher");
+    sab.e.kind = "sabotatore" as never;
+    sab.e.act = 0;
+    sab.e.stun = 0;
+    sab.e.speedBp = 0;
+    for (let i = 0; i < 60; i++) step(sab.s, []);
+    assert.equal(sab.t.stun, 0, "il Sabotatore non lo ferma");
+    const cmp = duel("pistolero");
+    cmp.e.kind = "sabotatore" as never;
+    cmp.e.act = 0;
+    cmp.e.stun = 0;
+    let stunned = false;
+    for (let i = 0; i < 60; i++) { step(cmp.s, []); stunned ||= cmp.t.stun > 0; }
+    assert.ok(stunned, "mentre una torre normale viene stordita");
+  }
   // Chi non ha sangue non sanguina.
   const ghost = duel("slasher");
   assert.ok(BLEED_IMMUNE.includes("pupazzo"));

@@ -128,9 +128,19 @@ export const MEDALS: Array<{ id: string; name: string; text: string; ok: (m: Med
 // ---------- bacheca ----------
 
 /** Versione del gioco: chi ospita la comunica all'admin, che vede se i comandi nuovi possono funzionare. */
-export const GAME_VERSION = "0.20.0";
+export const GAME_VERSION = "0.20.1";
 
 export const VERSION_NOTES: ChangeEntry[] = [
+  {
+    date: "2026-11-16",
+    title: "Versione 0.20.1: Slasher ritoccato",
+    kind: "versione",
+    items: [
+      "Niente può stordire lo Slasher: né sabotatori, né boss, né la lava",
+      "Ogni colpo aggiunge 33 cariche di sanguinamento e l'emorragia scatta a 412, a tutti i livelli",
+      "Ai livelli bassi ogni carica persa vale meno di un danno; con lo Squartatore vale un danno pieno",
+    ],
+  },
   {
     date: "2026-11-16",
     title: "Versione 0.20: lo Slasher e più danno per tutti",

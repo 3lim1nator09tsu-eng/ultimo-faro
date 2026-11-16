@@ -268,7 +268,8 @@ export interface TowerStats {
   bleedHit: number; // cariche di sanguinamento per colpo
   bleedMax: number; // cariche a cui il sanguinamento esplode
   bleedBurst: number; // danni dell'esplosione, ignorano l'armatura
-  bleedDrain: number; // cariche perse (e danni subiti) ogni mezzo secondo
+  bleedDrain: number; // cariche perse ogni mezzo secondo
+  bleedBp: number; // danno per ogni carica persa (10000 = un danno a carica)
   bleedLock: number; // tick prima che il nemico possa sanguinare di nuovo
   // Star Cannon: si carica col tempo, chi gioca decide quando sparare
   chargeTicks: number; // tick per la carica piena; 0 = non è un cannone
@@ -304,6 +305,7 @@ export interface TowerDef {
   exclusive?: "admin" | "evento"; // solo per gli admin, oppure premio dell'evento
   maxPerPlayer?: number; // quante se ne possono piazzare per giocatore
   size?: number; // lato in caselle: 2 = occupa un quadrato di 4 caselle
+  stunImmune?: boolean; // niente la stordisce: sabotatori, boss, lava
   apex: string; // nome della torre al livello 6
   levels: TowerLevel[]; // livelli 1-3
   branches: Record<Branch, BranchDef>; // livello 4
@@ -370,6 +372,7 @@ const base: TowerStats = {
   bleedMax: 0,
   bleedBurst: 0,
   bleedDrain: 0,
+  bleedBp: 10000,
   bleedLock: 0,
   chargeTicks: 0,
   cannonMin: 0,
@@ -551,20 +554,21 @@ export const TOWERS = {
   slasher: {
     apex: "L'Ombra Rossa",
     name: "Slasher",
-    role: "Colpisce da vicino e in fretta: critico ogni terzo colpo, e i nemici sanguinano fino a un'emorragia",
+    role: "Colpisce da vicino e in fretta: critico ogni terzo colpo, i nemici sanguinano fino a un'emorragia. Niente lo stordisce",
     family: "attacco",
     damageType: "cinetico",
     target: "strong",
     unlock: 1300,
     maxPerPlayer: 5,
+    stunImmune: true,
     levels: [
-      { ...base, cost: 400, damage: 10, cooldown: 4, range: 1500, critEvery: 3, critBp: 20000, bleedHit: 6, bleedMax: 60, bleedBurst: 150, bleedDrain: 3, bleedLock: 50 },
-      { ...base, cost: 300, damage: 15, cooldown: 4, range: 1500, critEvery: 3, critBp: 20000, bleedHit: 9, bleedMax: 80, bleedBurst: 450, bleedDrain: 4, bleedLock: 50 },
-      { ...base, cost: 600, damage: 16, cooldown: 3, range: 1600, critEvery: 3, critBp: 20000, bleedHit: 12, bleedMax: 110, bleedBurst: 1100, bleedDrain: 5, bleedLock: 50 },
+      { ...base, cost: 400, damage: 10, cooldown: 4, range: 1500, critEvery: 3, critBp: 20000, bleedHit: 33, bleedMax: 412, bleedBurst: 150, bleedDrain: 8, bleedLock: 50, bleedBp: 2500 },
+      { ...base, cost: 300, damage: 15, cooldown: 4, range: 1500, critEvery: 3, critBp: 20000, bleedHit: 33, bleedMax: 412, bleedBurst: 450, bleedDrain: 10, bleedLock: 50, bleedBp: 4000 },
+      { ...base, cost: 600, damage: 16, cooldown: 3, range: 1600, critEvery: 3, critBp: 20000, bleedHit: 33, bleedMax: 412, bleedBurst: 1100, bleedDrain: 12, bleedLock: 50, bleedBp: 6000 },
     ],
     branches: {
-      A: { ...base, name: "Squartatore", summary: "Emorragie enormi: 22 cariche a colpo, 4.000 danni quando esplodono", cost: 1500, damage: 23, cooldown: 3, range: 1600, critEvery: 3, critBp: 20000, bleedHit: 22, bleedMax: 150, bleedBurst: 4000, bleedDrain: 8, bleedLock: 50 },
-      B: { ...base, name: "Lama danzante", summary: "Colpi rapidissimi e critico triplo: il doppio dei tagli, emorragie più piccole", cost: 1400, damage: 17, cooldown: 2, range: 1800, critEvery: 3, critBp: 30000, bleedHit: 10, bleedMax: 130, bleedBurst: 2200, bleedDrain: 6, bleedLock: 50 },
+      A: { ...base, name: "Squartatore", summary: "Emorragie enormi: 4.000 danni quando esplodono", cost: 1500, damage: 23, cooldown: 3, range: 1600, critEvery: 3, critBp: 20000, bleedHit: 33, bleedMax: 412, bleedBurst: 4000, bleedDrain: 10, bleedLock: 50, bleedBp: 10000 },
+      B: { ...base, name: "Lama danzante", summary: "Colpi rapidissimi e critico triplo: il doppio dei tagli, emorragie più piccole", cost: 1400, damage: 17, cooldown: 2, range: 1800, critEvery: 3, critBp: 30000, bleedHit: 33, bleedMax: 412, bleedBurst: 2200, bleedDrain: 12, bleedLock: 50, bleedBp: 6000 },
     },
   },
   executioner: {
@@ -927,7 +931,6 @@ export function apexStats(s: TowerStats): TowerStats {
     cashAmount: up(s.cashAmount, 15000),
     burnDamage: up(s.burnDamage, 22000),
     bleedBurst: up(s.bleedBurst, 22000),
-    bleedHit: up(s.bleedHit, 13000),
     accBurst: s.accBurst ? up(s.accBurst, 14000) : 0,
     accCharge: s.accCharge ? Math.max(10, up(s.accCharge, 7000)) : 0,
     accTick: s.accTick ? 1 : 0,

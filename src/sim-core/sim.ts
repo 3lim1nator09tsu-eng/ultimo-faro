@@ -80,6 +80,7 @@ export interface Enemy {
   burnBy?: number; // torre che l'ha acceso
   bleed?: number; // Slasher: cariche di sanguinamento accumulate
   bleedDrain?: number; // cariche perse ogni mezzo secondo
+  bleedBp?: number; // danno per carica persa
   bleedLock?: number; // tick prima di poter sanguinare di nuovo
   bleedBy?: number; // torre che l'ha ferito per ultima
   frozen?: number; // tick di congelamento rimasti
@@ -1372,7 +1373,7 @@ function startWave(state: GameState, events: GameEvent[]): void {
     events.push({ e: "blizzard", on: true });
   }
   if (tw.lava.length && state.wave % LAVA.every === 0) {
-    for (const t of state.towers) if (onLava(state, t)) t.stun = Math.max(t.stun, LAVA.stun);
+    for (const t of state.towers) if (onLava(state, t) && !TOWERS[t.kind].stunImmune) t.stun = Math.max(t.stun, LAVA.stun);
     events.push({ e: "eruption" });
   }
   level.map.laneOpen.forEach((w, lane) => {
@@ -1738,7 +1739,7 @@ function sabotage(state: GameState, events: GameEvent[]): void {
     let target: Tower | null = null;
     let best = 0;
     for (const t of state.towers) {
-      if (t.stun > 0 || t.immune > 0) continue;
+      if (t.stun > 0 || t.immune > 0 || TOWERS[t.kind].stunImmune) continue;
       const dx = t.x - e.x;
       const dy = t.y - e.y;
       const d = dx * dx + dy * dy;
@@ -1760,7 +1761,7 @@ function sabotage(state: GameState, events: GameEvent[]): void {
 
 function stunTowersNear(state: GameState, x: number, y: number, range: number, ticks: number): void {
   for (const t of state.towers) {
-    if (t.immune > 0 || !inRange(x, y, t.x, t.y, range)) continue;
+    if (t.immune > 0 || TOWERS[t.kind].stunImmune || !inRange(x, y, t.x, t.y, range)) continue;
     t.stun = Math.max(t.stun, ticks);
   }
 }
@@ -1993,7 +1994,7 @@ export function step(state: GameState, commands: Command[] = []): GameEvent[] {
       // Sanguinamento: le cariche calano e ognuna persa è un danno, finché non arrivano a zero.
       const lost = Math.min(e.bleed, Math.max(1, e.bleedDrain ?? 1));
       e.bleed -= lost;
-      const done = applyDamage(e, lost);
+      const done = applyDamage(e, Math.floor((lost * (e.bleedBp ?? 10000)) / 10000));
       const by = state.towers.find((t) => t.id === e.bleedBy);
       if (by) by.damageDone += done;
     }
@@ -2139,6 +2140,7 @@ export function step(state: GameState, commands: Command[] = []): GameEvent[] {
       if (s.bleedHit > 0 && target.hp > 0 && !(target.bleedLock ?? 0) && !BLEED_IMMUNE.includes(target.kind)) {
         target.bleed = (target.bleed ?? 0) + s.bleedHit;
         target.bleedDrain = Math.max(target.bleedDrain ?? 0, s.bleedDrain);
+        target.bleedBp = Math.max(target.bleedBp ?? 0, s.bleedBp);
         target.bleedBy = t.id;
         if (target.bleed >= s.bleedMax) {
           // Emorragia: un colpo solo, grosso, che ignora l'armatura; poi il nemico non sanguina per un po'.
@@ -2339,6 +2341,8 @@ export function hashState(state: GameState): string {
     mix(e.burnT ?? 0);
     mix(e.bleed ?? 0);
     mix(e.bleedLock ?? 0);
+    mix(e.bleedBp ?? 0);
+    mix(e.bleedDrain ?? 0);
     mix(e.frozen ?? 0);
     mix(e.lane);
     mix(e.dist);

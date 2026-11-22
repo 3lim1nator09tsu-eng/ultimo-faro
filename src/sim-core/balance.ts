@@ -3,7 +3,7 @@
 // (globale dal server, poi le prove locali dell'admin). Lo stesso insieme di valori
 // va dato a tutti i dispositivi di una partita, altrimenti la simulazione diverge.
 import { Branch, EVENT_LEVELS, LEVELS, MAX_RANK, RANK_COSTS, TOWERS, TOWER_ORDER, TowerKind, TowerStats } from "./content";
-import { HARDCORE, ModeDef, NIGHTS, NightDef, SURVIVAL, clearModeCache } from "./modes";
+import { HARDCORE, ModeDef, NIGHTS, NightDef, SURVIVAL, VOIDCORE, clearModeCache } from "./modes";
 
 export type LevelKey = "1" | "2" | "3" | Branch | "A2" | "B2";
 export interface TowerOv {
@@ -122,7 +122,7 @@ export function fromShown(unit: Unit, v: number): number {
 
 // ---------- modalità ----------
 
-export const ALL_MODES: ModeDef[] = [...SURVIVAL, HARDCORE, ...NIGHTS];
+export const ALL_MODES: ModeDef[] = [...SURVIVAL, HARDCORE, VOIDCORE, ...NIGHTS];
 export const modeKey = (m: ModeDef) => (m.id === "natale" ? `natale:${(m as NightDef).night}` : m.id);
 export const modeByKey = (k: string) => ALL_MODES.find((m) => modeKey(m) === k) ?? null;
 const ALL_MAPS = [...LEVELS, ...EVENT_LEVELS];

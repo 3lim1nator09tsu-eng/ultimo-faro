@@ -12,7 +12,8 @@ export type EnemyKind =
   | "spettro" | "cavaliere" | "recaduto"
   | "brinato" | "orso" | "regina"
   | "elfo" | "pupazzetto" | "folletto" | "renna" | "pupazzo" | "befana" | "krampus"
-  | "dohoter" | "risvegliato" | "ombra" | "araldo" | "lancia" | "creator" | "jackobot" | "zucchetta";
+  | "dohoter" | "risvegliato" | "ombra" | "araldo" | "lancia" | "creator" | "jackobot" | "zucchetta"
+  | "larva" | "divoratore" | "squarcio" | "voidcaster";
 export type TowerKind =
   | "balestra" | "mortaio" | "soffio" | "cecchino" | "bobina" | "officina" | "grammofono" | "capitano" | "medico" | "arpione" | "mitragliera" | "purificatore"
   | "custode" | "campana" | "cometa" | "kingpin" | "sledger" | "executioner" | "starcannon" | "accelerator" | "ingegnere" | "pistolero" | "piromante" | "slasher" | "gladiatore";
@@ -20,7 +21,7 @@ export type Branch = "A" | "B";
 export type EnemyClass = "carne" | "corazza" | "meccanico";
 export type DamageType = "cinetico" | "gelo" | "elettrico" | "nessuno";
 export type AbilityId = "fascio" | "gelata";
-export type GameMode = "campagna" | "infinita" | "hardcore" | "easy" | "medium" | "molten" | "fallen" | "frost" | "natale";
+export type GameMode = "campagna" | "infinita" | "hardcore" | "voidcore" | "easy" | "medium" | "molten" | "fallen" | "frost" | "natale";
 export type Mod = "benedetto" | "gonfio" | "agile" | "provocatore" | "corazzato" | "schermato" | "spettrale" | "scisso";
 export type Track = "danno" | "gittata" | "sconto";
 export type Cell = readonly [number, number];
@@ -178,6 +179,18 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
     summon: { kind: "orso", count: 1, every: 100 }, song: { range: 4500, every: 100, stun: 40 }, steal: { every: 60, amount: 40 },
     phases: [8000, 6000, 4000, 2000], phaseShieldBp: 2500,
   },
+  // ---- Voidcore ----
+  larva: { name: "Larva del Vuoto", plural: "Larve del Vuoto", cls: "carne", hp: 64, speed: 118, armor: 0, bounty: 7, lifeDamage: 2, hidden: true },
+  divoratore: { name: "Divoratore", plural: "Divoratori", cls: "corazza", hp: 560, speed: 38, armor: 60, bounty: 34, lifeDamage: 8, regenBp: 3, slowImmune: true },
+  squarcio: {
+    name: "Squarcio", plural: "Squarci", cls: "carne", hp: 300, speed: 60, armor: 25, bounty: 26, lifeDamage: 5,
+    charge: { every: 50, ticks: 12, speedBp: 34000 }, split: { kind: "larva", count: 3 },
+  },
+  // Non si può colpire finché il Leviatano è vivo; quando il Leviatano cade, lo rianima a ripetizione.
+  voidcaster: {
+    name: "Il Voidcaster", plural: "Voidcaster", cls: "corazza", hp: 150, speed: 15, armor: 45, bounty: 150, lifeDamage: 1000, slowImmune: true,
+    summon: { kind: "larva", count: 2, every: 110 }, song: { range: 3800, every: 130, stun: 35 },
+  },
   // Boss dell'admin: vita fissa, non dipende da modalità, ondata o numero di giocatori. Non toglie i premi.
   dohoter: { name: "Dohoter Gang", plural: "Dohoter Gang", cls: "corazza", hp: 67000, speed: 22, armor: 30, bounty: 40, lifeDamage: 10 },
 };
@@ -186,7 +199,7 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
 export const ADMIN_BOSSES: EnemyKind[] = ["dohoter"];
 
 /** Nemici che fanno da boss (anche se compaiono come rinforzi). */
-export const BOSS_KINDS: EnemyKind[] = ["annegato", "sirena", "leviatano", "colosso", "recaduto", "regina", "folletto", "renna", "pupazzo", "befana", "krampus"];
+export const BOSS_KINDS: EnemyKind[] = ["voidcaster", "annegato", "sirena", "leviatano", "colosso", "recaduto", "regina", "folletto", "renna", "pupazzo", "befana", "krampus"];
 
 // Moltiplicatori di tipo, come nella tabella del piano.
 export const TYPE_BP: Record<DamageType, Record<EnemyClass, number>> = {
@@ -1365,6 +1378,8 @@ export const RULES = {
   startLives: 20,
   hardcoreLives: 10,
   hardcoreCash: 220, // cash iniziale in più in Hardcore
+  voidcoreLives: 5,
+  voidcoreCash: 220,
   prepTicks: 200,
   firstPrepTicks: 300,
   skipBonusPerSecond: 2,

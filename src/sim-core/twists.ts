@@ -83,6 +83,15 @@ export const BLIZZARD = { every: 4, radius: 3000, slowBp: 14000, braziers: 2, ex
 /** Se il Re Caduto cade entro 45 secondi dalla sua comparsa, si risveglia. */
 export const HIDDEN = { window: 450, hpMul: 3.5, creatorMul: 3, jackMul: 2.5, escortBp: 14000, eclipseBp: 2000, schegge: 1500, perle: 25 };
 
+// ---------- Voidcore: il Voidcaster ----------
+
+/**
+ * Finché il Leviatano è vivo il Voidcaster non si può colpire. Quando il Leviatano cade, dopo reviveTicks il Voidcaster
+ * lo rianima con una parte della sua vita massima: 150/1200 la prima volta, poi 50/1200 in più a ogni rianimazione.
+ */
+export const VOID = { reviveTicks: 150, firstNum: 150, stepNum: 50, den: 1200 };
+export const reviveHp = (maxHp: number, n: number) => Math.min(maxHp, Math.floor((maxHp * (VOID.firstNum + VOID.stepNum * (n - 1))) / VOID.den));
+
 // ---------- Notte 5: momenti rapidi ----------
 
 export const QTE_SYMBOLS = ["Campana", "Stella", "Fiocco", "Albero", "Pacco", "Pupazzo"];

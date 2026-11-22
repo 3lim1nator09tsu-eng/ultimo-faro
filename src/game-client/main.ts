@@ -3,7 +3,8 @@ import { ADMIN_ONLY, EVENT_TOWER, KINGPIN_QUEUE, SURVIVAL_MAPS, UNITS, UNIT_ORDE
 import { Command, Enemy, GameEvent, levelHpBp, sentrySpot, GameOptions, GameState, modBit, playerCount, hiddenWon, canPlace, covers, sizeOf, abilityCdOf, allowedOf, cashOf, apexBlock, apexPrice, applyCommands, modsOf, perleFor, cellEmerged, createGame, effStats, hashState, isBuildable, laneIsOpen, levelOf, rankedStats, restore, rewardFor, sellValue, specPrice, statsIn, snapshot, starsFor, step, upgradePrice, waveCount, wavePreview } from "../sim-core/sim";
 import { playBot } from "../sim-core/bot";
 import { drawTwist, qteKey, renderAim, renderChoice, renderQte, renderTwist, twistToast } from "./twist-ui";
-import { HARDCORE, ModeDef, NIGHTS, SURVIVAL, disgeloFor, modeDef } from "../sim-core/modes";
+import { HARDCORE, ModeDef, NIGHTS, SURVIVAL, VOIDCORE, disgeloFor, modeDef } from "../sim-core/modes";
+import { POISONS, VOID, reviveHp } from "../sim-core/twists";
 import { GrantPayload, LocalTransport, Net, RealtimeTransport, Transport, roomCode } from "./net";
 import { NetMatch, Player, Setup } from "./netplay";
 import { renderLobby, renderOnline } from "./online-ui";
@@ -352,7 +353,7 @@ function loadMeta(raw: string | null = store.get("faro.meta.v1")): Meta {
       if (v && typeof v === "object") for (const k of keys) if (k in (v as object)) out[k] = n((v as Record<string, unknown>)[k], 0, 1e6, 0);
       return out;
     };
-    const modeKeys = [...SURVIVAL.map((x) => x.id as string), "hardcore"];
+    const modeKeys = [...SURVIVAL.map((x) => x.id as string), "hardcore", "voidcore", "nascosta"];
     const nightKeys = NIGHTS.map((x) => String(x.night));
     m.modeWins = keyed(d.modeWins, modeKeys);
     m.modeBest = keyed(d.modeBest, modeKeys);
@@ -370,7 +371,7 @@ function loadMeta(raw: string | null = store.get("faro.meta.v1")): Meta {
 const levelOpen = (i: number) => i === 0 || (meta.wins[LEVELS[i - 1].id] ?? 0) > 0;
 const modeOpen = (m: ModeDef) => !m.unlock || (meta.modeWins[m.unlock] ?? 0) > 0;
 const nightOpen = (n: number) => n === 1 || (meta.nightWins[String(n - 1)] ?? 0) > 0;
-const modeName = (id: string) => (id === "hardcore" ? "Hardcore" : SURVIVAL.find((x) => x.id === id)?.name ?? id);
+const modeName = (id: string) => (id === "hardcore" ? "Hardcore" : id === "voidcore" ? "Voidcore" : SURVIVAL.find((x) => x.id === id)?.name ?? id);
 /** Il Disgelo dipende dalla data di questo dispositivo; in multigiocatore vale quella di chi ospita. */
 function disgelo() {
   const d = new Date();
@@ -1264,6 +1265,18 @@ function handleEvents(events: GameEvent[]) {
         toast(`${bossLabel()}: un canto stordisce le torri`);
         sfx.song();
         break;
+      case "revive":
+        // Il Voidcaster riporta indietro il Leviatano.
+        fx.push({ kind: "ring", x: ev.x, y: ev.y, r: 2600, color: "#b07cff", born: now, life: 1100 });
+        fx.push({ kind: "ring", x: ev.x, y: ev.y, r: 1500, color: "#e3b3ff", born: now, life: 800 });
+        fx.push({ kind: "float", x: ev.x, y: ev.y - 900, text: `Rianimato! ${fmt(ev.hp)} vita`, color: "#d7b8ff", born: now, life: 1600 });
+        toast(`Il Voidcaster rianima il Leviatano (${ev.n}ª volta): ${fmt(ev.hp)} di vita`);
+        flash = 0.9;
+        sfx.revive();
+        break;
+      case "poisoned":
+        toast(`Il Vuoto sceglie il veleno: ${POISONS[ev.index].map((m) => MODS[m].name).join(" + ")} per le prossime 10 ondate`);
+        break;
       case "roar":
         fx.push({ kind: "ring", x: ev.x, y: ev.y, r: ev.radius, color: COLORS.coral, born: now, life: 900 });
         toast(`${bossLabel()} ruggisce e si copre di scudi`);
@@ -1629,7 +1642,7 @@ function finish(phase: "won" | "lost") {
     ? `Hai superato ${state.cleared} ondate, con ${state.kills} nemici abbattuti. Il tuo record qui è l'ondata ${meta.bestWave[state.levelId] ?? 0}.`
     : `${won ? `${waveCount(state)} ondate respinte` : `Hai resistito fino all'ondata ${state.wave} di ${waveCount(state)}`}, con ${state.kills} nemici abbattuti e ${state.lives} ${state.lives === 1 ? "vita rimasta" : "vite rimaste"}.`;
   const next = LEVELS[idx + 1];
-  const unlockedMode = won && md && state.mode !== "natale" ? SURVIVAL.concat(HARDCORE).filter((x) => x.unlock === state.mode).map((x) => x.name) : [];
+  const unlockedMode = won && md && state.mode !== "natale" ? SURVIVAL.concat(HARDCORE, VOIDCORE).filter((x) => x.unlock === state.mode).map((x) => x.name) : [];
   const tip =
     state.mode === "campagna" && firstWin
       ? ` Hai sbloccato Infinita${next ? ` e il livello ${next.name}` : ""}.`
@@ -1885,7 +1898,7 @@ function modeCard(m: ModeDef, host: HTMLElement) {
   const wins = meta.modeWins[m.id] ?? 0;
   const best = meta.modeBest[m.id] ?? 0;
   const card = document.createElement("div");
-  card.className = `level modeCard${open ? "" : " closed"}${m.id === "hardcore" ? " hcCard" : ""}`;
+  card.className = `level modeCard${open ? "" : " closed"}${m.id === "hardcore" ? " hcCard" : m.id === "voidcore" ? " hcCard vcCard" : ""}`;
   card.style.setProperty("--accent", m.color);
   const head = document.createElement("div");
   head.className = "levelHead";
@@ -1931,6 +1944,7 @@ function renderModes() {
   host.innerHTML = "";
   for (const m of SURVIVAL) modeCard(m, host);
   modeCard(HARDCORE, host);
+  modeCard(VOIDCORE, host);
 }
 
 function renderNights() {
@@ -2440,6 +2454,7 @@ const adminApi: AdminApi = {
       adminMeta(() => {
         LEVELS.forEach((l) => (meta.wins[l.id] = Math.max(1, meta.wins[l.id] ?? 0)));
         SURVIVAL.forEach((m) => (meta.modeWins[m.id] = Math.max(1, meta.modeWins[m.id] ?? 0)));
+        meta.modeWins.hardcore = Math.max(1, meta.modeWins.hardcore ?? 0);
         NIGHTS.slice(0, 4).forEach((n) => (meta.nightWins[String(n.night)] = Math.max(1, meta.nightWins[String(n.night)] ?? 0)));
       }, "Livelli, modalità e Notti aperti"),
     missions: () => adminMeta(() => meta.missions.forEach((m) => {
@@ -3632,10 +3647,22 @@ function rangeRing(x: number, y: number, r: number, color: string) {
 
 function updateBossBar() {
   const bar = $("bossBar");
-  const b = state.enemies.find((e) => e.boss);
+  // Voidcore: si segue il Voidcaster quando è scoperto, altrimenti il Leviatano che lo protegge.
+  const caster = state.enemies.find((e) => e.kind === "voidcaster" && e.hp > 0);
+  const lev = state.enemies.find((e) => e.kind === "leviatano" && e.boss && e.hp > 0);
+  const b = caster && !caster.ward ? caster : lev ?? state.enemies.find((e) => e.boss);
   bar.hidden = !b || inMenu;
   if (!b) return;
   setText($("bossName"), b.kind === "bruto" ? "Grande Bruto" : ENEMIES[b.kind].name);
+  if (caster && state.vc) {
+    const next = reviveHp(state.vc.levMax, state.vc.revives + 1);
+    setText($("bossInfo"), caster.ward
+      ? `Il Voidcaster è intoccabile finché il Leviatano vive · rianimazioni: ${state.vc.revives}`
+      : `Voidcaster scoperto! Rianima il Leviatano tra ${Math.ceil((VOID.reviveTicks - state.vc.timer) / TICKS_PER_SECOND)} s con ${fmt(next)} di vita`);
+    $("bossHp").style.setProperty("--p", String(Math.max(0, b.hp) / b.maxHp));
+    $("bossShield").style.setProperty("--p", String(Math.min(1, b.shield / b.maxHp)));
+    return;
+  }
   $("bossHp").style.setProperty("--p", String(Math.max(0, b.hp) / b.maxHp));
   $("bossShield").style.setProperty("--p", String(Math.min(1, b.shield / b.maxHp)));
   const mods = modsOf(b.mods).map((m) => MODS[m].name).join(", ");

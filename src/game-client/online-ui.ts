@@ -37,6 +37,7 @@ export interface OnlineApi {
 export const MATCH_MODES: Array<[string, string]> = [
   ...SURVIVAL.map((m): [string, string] => [m.id, m.name]),
   ["hardcore", "Hardcore"],
+  ["voidcore", "Voidcore"],
   ...NIGHTS.map((n): [string, string] => [`natale:${n.night}`, `Notte ${n.night}`]),
   ["campagna", "Campagna"],
 ];

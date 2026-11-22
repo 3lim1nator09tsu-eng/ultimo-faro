@@ -596,7 +596,7 @@ for (const vp of [{ width: 390, height: 760 }, { width: 844, height: 390 }]) {
   check("le sfide della settimana sono tre, con le Perle in premio", (await page.locator("#weekly .mission").count()) === 3 && /Perle/.test(await page.locator("#weekly").textContent()) && /cambiano tra/.test(await page.locator("#weeklyLeft").textContent()));
   check("la Stella Cometa si ottiene solo vincendo la Notte 5", (await page.locator('#arsenal button[data-kind="cometa"]').textContent()) === "Vinci la Notte 5");
   check("ci sono tre missioni attive", (await page.locator("#missions .mission").count()) === 3);
-  check("le medaglie sono 18", (await page.locator("#medals .medal").count()) === 18);
+  check("le medaglie sono 19", (await page.locator("#medals .medal").count()) === 19);
   check("Easy aperta, Medium e Hardcore chiuse", !(await page.locator('[data-survival="easy"]').isDisabled()) && (await page.locator('[data-survival="medium"]').isDisabled()) && (await page.locator('[data-survival="hardcore"]').isDisabled()));
   check("Notte 1 aperta, Notte 2 chiusa", !(await page.locator('[data-night="1"]').isDisabled()) && (await page.locator('[data-night="2"]').isDisabled()));
   check("il Disgelo è indicato nel menu", /forza \d+%/.test(await page.locator("#disgelo").textContent()));

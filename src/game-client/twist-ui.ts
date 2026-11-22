@@ -177,7 +177,7 @@ export function renderTwist(host: HTMLElement, bar: HTMLElement, state: GameStat
   if (tw.contract) chips.push([`Contratto: ${CONTRACTS[tw.contract].name}`, "bad", CONTRACTS[tw.contract].text]);
   if (tw.discountWaves) chips.push([`Sconto -25% (${tw.discountWaves})`, "good", "Torri e miglioramenti scontati"]);
   if (tw.bountyWaves) chips.push([`Taglie +50% (${tw.bountyWaves})`, "good", "Ogni nemico vale di più"]);
-  if (tw.poison >= 0 && state.mode === "hardcore") chips.push([`Veleno: ${POISONS[tw.poison].map((m) => MODS[m].name).join(" + ")}`, "bad", "Modificatori di questo blocco"]);
+  if (tw.poison >= 0 && (state.mode === "hardcore" || state.mode === "voidcore")) chips.push([`Veleno: ${POISONS[tw.poison].map((m) => MODS[m].name).join(" + ")}`, "bad", "Modificatori di questo blocco"]);
   if (state.mode === "molten" && eruptionNext(state) && state.phase === "prep") chips.push(["Eruzione alla prossima ondata!", "bad", "Le torri sulle bocche di lava si fermeranno"]);
   if (state.mode === "frost" && (tw.blizzard || blizzardNext(state))) chips.push([tw.blizzard ? "Bufera in corso" : "Bufera alla prossima ondata!", "bad", "Nella bufera le torri lontane dai bracieri sparano più piano"]);
   if (state.mode === "natale" && state.night === 5 && tw.qteWins + tw.qteFails > 0) chips.push([`Momenti rapidi: ${tw.qteWins} vinti, ${tw.qteFails} persi`, "", "Ai mini-boss e a ogni quarto di vita di Krampus"]);

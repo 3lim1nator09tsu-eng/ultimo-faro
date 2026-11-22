@@ -1,7 +1,7 @@
 // Sim.Core del prototipo: stessa partita su ogni dispositivo a parità di seed e comandi.
 // Regole: solo numeri interi nello stato, nessun Math.random, nessun orologio, nessuna funzione
 // trigonometrica. Le divisioni tra interi passano sempre da Math.floor.
-import { HIDDEN } from "./twists";
+import { HIDDEN, VOID, reviveHp } from "./twists";
 import { AIMS, Aim, BLIZZARD, CONTRACTS, CONTRACT_IDS, LAVA, MERCHANT_IDS, ORDER_IDS, Order, POISONS, QTE, QTE_SYMBOLS, RELIC_IDS, OfferKind, Twist, contractReward, merchantGold, newTwist } from "./twists";
 import {
   ABILITIES,
@@ -84,6 +84,7 @@ export interface Enemy {
   bleedLock?: number; // tick prima di poter sanguinare di nuovo
   bleedBy?: number; // torre che l'ha ferito per ultima
   frozen?: number; // tick di congelamento rimasti
+  ward?: boolean; // Voidcaster protetto dal Leviatano: non si può colpire
 }
 
 /** Seconda scossa dello Sledger (ramo B): colpisce di nuovo gli stessi nemici. */
@@ -210,6 +211,7 @@ export interface GameState {
   units: Unit[];
   quakes?: Quake[];
   hidden?: { bossAt: number; bossId: number; on: boolean; lostInHidden?: boolean; kingHp?: number; stage?: number }; // Fallen: onda nascosta
+  vc?: { levMax: number; lifeDamage: number; revives: number; timer: number }; // Voidcore: rianimazioni del Leviatano
   tw: Twist; // scelte della modalità: offerte, contratti, reliquie, bracieri, momenti rapidi
 }
 
@@ -303,6 +305,8 @@ export type GameEvent =
   | { e: "swing"; from: number; x: number; y: number; tx: number; ty: number; range: number; cone: number; fire?: boolean }
   | { e: "sentry"; from: number; n: number }
   | { e: "tip"; x: number; y: number; amount: number }
+  | { e: "revive"; x: number; y: number; hp: number; n: number }
+  | { e: "poisoned"; index: number }
   | { e: "sweep"; from: number; x: number; y: number; tx: number; ty: number; range: number }
   | { e: "warcry"; x: number; y: number }
   | { e: "slash"; from: number; x: number; y: number; tx: number; ty: number; crit: boolean }
@@ -732,7 +736,7 @@ function priced(state: GameState, v: number): number {
 /** Gruppi dell'ondata con veleno (Hardcore) e contratto (Medium) applicati. */
 function twistGroups(state: GameState, waveIndex: number, groups: WaveGroup[]): WaveGroup[] {
   const tw = state.tw;
-  const poison = state.mode === "hardcore" && tw.poison >= 0 && waveIndex >= 10 ? POISONS[tw.poison] : null;
+  const poison = (state.mode === "hardcore" || state.mode === "voidcore") && tw.poison >= 0 && waveIndex >= 10 ? POISONS[tw.poison] : null;
   const c = tw.contract && waveIndex === state.wave ? CONTRACTS[tw.contract] : null;
   if (!poison && !c) return groups;
   return groups.map((g) => {
@@ -767,6 +771,11 @@ function offersAfterWave(state: GameState, events: GameEvent[]) {
   if (state.mode === "easy" && c % 5 === 0) makeOffer(state, "mercante", draw(state, MERCHANT_IDS, 3), events);
   else if (state.mode === "medium" && c >= 2 && c + 1 < total) makeOffer(state, "contratto", draw(state, CONTRACT_IDS, 2), events);
   else if (state.mode === "hardcore" && c % 10 === 0) makeOffer(state, "veleno", draw(state, POISONS.map((_, i) => String(i)), 2), events);
+  else if (state.mode === "voidcore" && c % 10 === 0) {
+    // Voidcore non fa scegliere: il veleno del blocco successivo lo decide il Vuoto.
+    state.tw.poison = randomInt(state, POISONS.length);
+    events.push({ e: "poisoned", index: state.tw.poison });
+  }
 }
 
 function chooseOffer(state: GameState, pick: number, events: GameEvent[]) {
@@ -1473,6 +1482,7 @@ function enemyDamage(e: Enemy, base: number, type: DamageType, pierce: boolean, 
 }
 
 function applyDamage(e: Enemy, dmg: number): number {
+  if (e.ward) return 0;
   if (e.shield > 0) {
     const taken = Math.min(e.shield, dmg);
     e.shield -= taken;
@@ -1483,6 +1493,7 @@ function applyDamage(e: Enemy, dmg: number): number {
 }
 
 function hit(state: GameState, enemy: Enemy, t: Tower, stats: TowerStats, amount: number, events?: GameEvent[]): void {
+  if (enemy.ward) return;
   const type = TOWERS[t.kind].damageType;
   // Combo tra torri: colpi cinetici su nemici fermi, fulmini su nemici rallentati dal gelo.
   let combo = "";
@@ -1537,6 +1548,42 @@ function newEnemy(state: GameState, kind: EnemyKind, lane: number, dist: number,
     mods, shield: 0, mark: 0, markBp: 10000, sacred: 0, summonCd: def.summon ? def.summon.every : 0, songCd: def.song ? Math.floor(def.song.every / 2) : 0, phase: 0,
     skillCd: def.steal ? def.steal.every : def.charge ? def.charge.every : 0, chargeLeft: 0,
   };
+}
+
+/**
+ * Voidcore. Finché un Leviatano è vivo il Voidcaster non si può colpire. Quando il Leviatano cade, il Voidcaster
+ * resta scoperto per VOID.reviveTicks, poi lo rianima accanto a sé con una parte sempre più grande della sua vita massima.
+ */
+function voidTick(state: GameState, events: GameEvent[]): void {
+  let lev: Enemy | null = null;
+  const casters: Enemy[] = [];
+  for (const e of state.enemies) {
+    if (e.hp <= 0) continue;
+    if (e.kind === "voidcaster") casters.push(e);
+    else if (e.kind === "leviatano" && e.boss && (!lev || e.maxHp > lev.maxHp)) lev = e;
+  }
+  if (lev) {
+    // Il Leviatano più grande in campo è quello che il Voidcaster riporterà indietro.
+    if (!state.vc || state.vc.levMax !== lev.maxHp) state.vc = { levMax: lev.maxHp, lifeDamage: lev.lifeDamage, revives: state.vc?.levMax === lev.maxHp ? state.vc.revives : 0, timer: 0 };
+    state.vc.timer = 0;
+  }
+  for (const c of casters) c.ward = !!lev;
+  if (lev || !casters.length || !state.vc) return;
+  state.vc.timer += 1;
+  if (state.vc.timer < VOID.reviveTicks) return;
+  const caster = casters[0];
+  state.vc.timer = 0;
+  state.vc.revives += 1;
+  const hp = reviveHp(state.vc.levMax, state.vc.revives);
+  const e = newEnemy(state, "leviatano", caster.lane, Math.max(0, caster.dist - 400), hp, 0, 0);
+  e.maxHp = state.vc.levMax;
+  e.boss = true;
+  e.lifeDamage = state.vc.lifeDamage;
+  // Niente scudi di fase: rinasce già ferito.
+  e.phase = 99;
+  state.enemies.push(e);
+  for (const c of casters) c.ward = true;
+  events.push({ e: "revive", x: e.x, y: e.y, hp, n: state.vc.revives });
 }
 
 function clearDead(state: GameState, events: GameEvent[]): void {
@@ -1614,7 +1661,7 @@ function clearDead(state: GameState, events: GameEvent[]): void {
 
 /** Una torre vede il nemico? Gli invisibili si vedono solo con il rilevamento. */
 export const isHidden = (e: Enemy) => !!ENEMIES[e.kind].hidden || (e.mods & modBit("spettrale")) !== 0;
-export const canSee = (e: Enemy, s: TowerStats) => s.detect || !isHidden(e);
+export const canSee = (e: Enemy, s: TowerStats) => !e.ward && (s.detect || !isHidden(e));
 
 function pickTarget(state: GameState, t: Tower, s: TowerStats): Enemy | null {
   // Un Provocatore nel raggio obbliga la torre a colpire lui.
@@ -1950,6 +1997,7 @@ export function step(state: GameState, commands: Command[] = []): GameEvent[] {
   }
 
   spawnDue(state, events);
+  if (state.mode === "voidcore" || state.vc) voidTick(state, events);
   if (isNight5(state)) qteTick(state, events);
   updateSupport(state, events);
   sabotage(state, events);
@@ -2282,6 +2330,11 @@ export function hashState(state: GameState): string {
     mix(q.amount);
     for (const id of q.ids) mix(id);
   }
+  if (state.vc) {
+    mix(state.vc.levMax);
+    mix(state.vc.revives);
+    mix(state.vc.timer);
+  }
   if (state.hidden) {
     mix(state.hidden.stage ?? 0);
     mix(state.hidden.bossAt);
@@ -2359,6 +2412,7 @@ export function hashState(state: GameState): string {
     mix(e.bleedLock ?? 0);
     mix(e.bleedBp ?? 0);
     mix(e.bleedDrain ?? 0);
+    mix(e.ward ? 1 : 0);
     mix(e.frozen ?? 0);
     mix(e.lane);
     mix(e.dist);

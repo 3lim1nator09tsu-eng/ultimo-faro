@@ -1279,6 +1279,57 @@ const ENEMY: Record<string, Draw> = {
       limb(c0, hx + hr * 0.3, 0, hx - hr * 1.3, 0, hr * 0.34, "#7a1f25", lw * 0.6);
     },
   })),
+  // ---- Voidcore ----
+  larva: (c, s, step, frame) => {
+    // Larva del Vuoto: corpo a segmenti viola che ondeggia, occhietti chiari.
+    const lw = Math.max(1, s * 0.1);
+    c.globalAlpha = 0.9;
+    for (let i = 3; i >= 0; i--) {
+      const y = Math.sin(frame * 1.2 + i * 1.1) * 0.22 * s + step * 0.05 * s;
+      dot(c, (0.5 - i * 0.55) * s, y, s * (0.55 - i * 0.08), i % 2 ? "#3a1f5a" : "#5a2f8a", lw);
+    }
+    c.globalAlpha = 1;
+    for (const side of [-1, 1]) dot(c, 0.72 * s, side * 0.2 * s, 0.1 * s, "#e3b3ff");
+  },
+  divoratore: zombie({ skin: "#2a1d3a", shirt: "#1c1428", sleeve: "#3a2a55", bulk: 1.25, eyes: "#c06bff", headSize: 0.85 }, (s, _st, frame) => ({
+    chest: (lw) => {
+      // Bocca sul petto, con i denti.
+      oval(c0, 0.05 * s, 0, 0.32 * s, 0.62 * s, "#0a0610", lw * 0.8);
+      for (let i = -2; i <= 2; i++) shape(c0, [-0.1 * s, i * 0.22 * s, 0.2 * s, i * 0.22 * s + 0.08 * s, -0.1 * s, i * 0.22 * s + 0.16 * s], "#e9dcc0", 0);
+      for (const side of [-1, 1]) dot(c0, -0.2 * s, side * 1.15 * s, 0.32 * s, frame % 2 ? "#6a3fa0" : "#5a2f8a", lw);
+    },
+    hat: (hx, hr, lw) => horns(c0, hx, hr, lw, "#3a2a55", 0.8),
+  })),
+  squarcio: zombie({ skin: "#7a4ab0", shirt: "#2a1f3d", arms: "hold", reach: 1.1, eyes: "#ffffff" }, (s, step) => ({
+    back: (lw) => {
+      // Strappo nel vuoto dietro di lui.
+      shape(c0, [-0.4 * s, -0.9 * s, -1.6 * s, -0.4 * s + step * 0.1 * s, -1.1 * s, 0, -1.6 * s, 0.4 * s - step * 0.1 * s, -0.4 * s, 0.9 * s], "#0a0610", lw);
+    },
+    held: (lw) => {
+      for (const side of [-1, 1]) shape(c0, [1.2 * s, side * 0.3 * s, 1.9 * s, side * 0.55 * s, 1.25 * s, side * 0.7 * s], "#e3b3ff", lw * 0.6);
+    },
+  })),
+  voidcaster: zombie({ skin: "#d9c9ff", shirt: "#160f24", sleeve: "#2a1d45", arms: "side", head: "round", eyes: "#b07cff", bulk: 1.15 }, (s, step, frame) => ({
+    back: (lw) => {
+      cape(c0, s, step, "#0a0610", lw, 1.8);
+      // Frammenti di vuoto che gli girano intorno.
+      for (let i = 0; i < 5; i++) {
+        const a = (frame * Math.PI) / 6 + (i * TAU) / 5;
+        shape(c0, [Math.cos(a) * 1.9 * s, Math.sin(a) * 1.9 * s - 0.2 * s, Math.cos(a) * 1.9 * s + 0.2 * s, Math.sin(a) * 1.9 * s, Math.cos(a) * 1.9 * s, Math.sin(a) * 1.9 * s + 0.2 * s, Math.cos(a) * 1.9 * s - 0.2 * s, Math.sin(a) * 1.9 * s], i % 2 ? "#b07cff" : "#3a1f5a", lw * 0.5);
+      }
+    },
+    held: (lw) => {
+      // Due sfere di vuoto nelle mani.
+      for (const side of [-1, 1]) {
+        dot(c0, 0.25 * s, side * 1.2 * s, 0.42 * s, "#0a0610", lw);
+        dot(c0, 0.25 * s, side * 1.2 * s, 0.2 * s, frame % 2 ? "#e3b3ff" : "#b07cff");
+      }
+    },
+    hat: (hx, hr, lw) => {
+      hood(c0, hx, hr, lw, "#160f24");
+      crown(c0, hx - hr * 0.45, hr * 0.6, lw * 0.6, "#6a3fa0", "#e3b3ff");
+    },
+  })),
   lancia: zombie({ skin: "#2a2a33", shirt: "#3a3a46", arms: "hold", reach: 1, eyes: "#ff8a5c" }, (s) => ({
     held: (lw) => {
       limb(c0, -0.6 * s, -0.14 * s, 1.75 * s, -0.14 * s, 0.12 * s, "#6b4a2a", lw * 0.7);

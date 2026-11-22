@@ -140,7 +140,7 @@ export function decide(state: GameState, policy: BotPolicy): Command[] {
   const count = (k: TowerKind) => state.towers.filter((t) => t.kind === k).length;
   const kinds = enemiesIn(state.mode, levelOf(state), state.night);
   const saboteurs = kinds.has("sabotatore") || [...kinds].some((k) => ENEMIES[k].song || ENEMIES[k].deathFreeze);
-  const hidden = [...kinds].some((k) => ENEMIES[k].hidden) || state.mode === "hardcore";
+  const hidden = [...kinds].some((k) => ENEMIES[k].hidden) || state.mode === "hardcore" || state.mode === "voidcore";
   const w = state.wave;
   const upto = (cap: number, v: number) => Math.min(cap, v);
   const wants: Array<[TowerKind, number]> = [

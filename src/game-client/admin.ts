@@ -63,7 +63,7 @@ export function levelName(kind: TowerKind, lvl: LevelKey): string {
 export const modeLabel = (k: string) => {
   const m = modeByKey(k);
   if (!m) return k;
-  return m.id === "natale" ? m.name.split(" · ")[0] : m.id === "hardcore" ? "Hardcore" : m.name;
+  return m.id === "natale" ? m.name.split(" · ")[0] : m.id === "hardcore" ? "Hardcore" : m.id === "voidcore" ? "Voidcore" : m.name;
 };
 const mapName = (id: string) => {
   try {
@@ -154,6 +154,7 @@ function sandboxTab(body: HTMLElement, api: AdminApi) {
     ["infinita", "Infinita"],
     ...SURVIVAL.map((m): [string, string] => [m.id, `${m.name} · ${m.waves} ondate`]),
     ["hardcore", "Hardcore · 50 ondate"],
+    ["voidcore", "Voidcore · 50 ondate"],
     ...NIGHTS.map((n): [string, string] => [`natale:${n.night}`, `${n.name} (mappa fissa)`]),
   ];
   const mode = el("select", { id: "adMode" }, ...options.map(([value, text]) => el("option", { value, text })));

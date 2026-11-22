@@ -122,15 +122,28 @@ export const MEDALS: Array<{ id: string; name: string; text: string; ok: (m: Med
   { id: "inverno", name: "Fine dell'inverno", text: "Vinci Frost", ok: (m) => (m.modeWins.frost ?? 0) > 0 },
   { id: "vigilia", name: "Spirito della Vigilia", text: "Vinci una Notte di Natale", ok: (m) => Object.values(m.nightWins).some((v) => v > 0) },
   { id: "krampus", name: "Krampusnacht", text: "Vinci la Notte 5", ok: (m) => (m.nightWins["5"] ?? 0) > 0 },
+  { id: "vuoto", name: "Il Vuoto tace", text: "Vinci Voidcore", ok: (m) => (m.modeWins.voidcore ?? 0) > 0 },
   { id: "nascosta", name: "Il Re si risveglia", text: "Batti il Re Caduto entro 45 secondi in Fallen e supera l'onda nascosta", ok: (m) => (m.modeWins.nascosta ?? 0) > 0 },
 ];
 
 // ---------- bacheca ----------
 
 /** Versione del gioco: chi ospita la comunica all'admin, che vede se i comandi nuovi possono funzionare. */
-export const GAME_VERSION = "0.21.1";
+export const GAME_VERSION = "0.22.0";
 
 export const VERSION_NOTES: ChangeEntry[] = [
+  {
+    date: "2026-11-22",
+    title: "Versione 0.22: Voidcore",
+    kind: "versione",
+    items: [
+      "Nuova modalità Voidcore, si apre vincendo Hardcore: 50 ondate, 5 vite, modificatori dalla prima ondata e doppi dalla decima, nemici più duri e meno cash all'inizio",
+      "Ogni 10 ondate il veleno non si sceglie: lo decide il Vuoto",
+      "Nemici nuovi: Larva del Vuoto (veloce e invisibile), Squarcio (scatta e si apre in tre larve), Divoratore (corazzato, si rigenera, non rallenta)",
+      "Ondata 50: il Leviatano e il Voidcaster. Il Voidcaster non si può colpire finché il Leviatano è vivo; quando il Leviatano cade, dopo 15 secondi lo rianima, ogni volta con più vita (150, 200, 250… millesimi su 1.200 della vita massima). Bisogna abbattere il Voidcaster nella finestra",
+      "Premi: 16 Schegge e 2 Perle a ondata, 750 Schegge e 100 Perle per la vittoria; medaglia «Il Vuoto tace» e una sfida settimanale in più",
+    ],
+  },
   {
     date: "2026-11-16",
     title: "Versione 0.21.1: Gladiatore immune agli stordimenti",
@@ -518,6 +531,7 @@ export const WEEKLY: WeeklyDef[] = [
   { id: "frost-povero", text: "Vinci Frost senza Officine", perle: 12, ok: (r) => r.mode === "frost" && r.won && !r.kinds.includes("officina") },
   { id: "hardcore-25", text: "Arriva all'ondata 25 in Hardcore", perle: 12, ok: (r) => r.mode === "hardcore" && r.cleared >= 25 },
   { id: "hardcore-40", text: "Arriva all'ondata 40 in Hardcore", perle: 15, ok: (r) => r.mode === "hardcore" && r.cleared >= 40 },
+  { id: "voidcore-20", text: "Arriva all'ondata 20 in Voidcore", perle: 15, ok: (r) => r.mode === "voidcore" && r.cleared >= 20 },
   { id: "squadra", text: "Vinci una modalità qualsiasi in squadra", perle: 8, ok: (r) => r.won && r.players >= 2 && ["easy", "medium", "molten", "fallen", "frost", "hardcore"].includes(r.mode) },
 ];
 

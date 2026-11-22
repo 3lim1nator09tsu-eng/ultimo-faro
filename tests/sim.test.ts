@@ -1634,3 +1634,81 @@ test("Gladiatore: il fendente colpisce chi ha intorno, il Grido di guerra lo fa 
   assert.ok(again.some((x) => x.e === "reject") && !again.some((x) => x.e === "warcry"), "il grido deve ricaricarsi");
   assert.equal(hashState(restore(snapshot(s))), hashState(s));
 });
+
+import { VOID, reviveHp } from "../src/sim-core/twists";
+import { VOIDCORE } from "../src/sim-core/modes";
+
+test("Voidcore: rianimazioni del Leviatano a 150, 200, 250, 300 millesimi su 1.200", () => {
+  assert.deepEqual([1, 2, 3, 4].map((n) => reviveHp(1_200_000, n)), [150_000, 200_000, 250_000, 300_000]);
+  assert.equal(reviveHp(1_200_000, 99), 1_200_000, "mai oltre la vita massima");
+  assert.equal(VOIDCORE.unlock, "hardcore");
+  assert.ok(VOIDCORE.lives < HARDCORE.lives && VOIDCORE.modsFrom === 1, "più punitiva di Hardcore");
+  const last = modeWaveFor("voidcore", levelById("porto"), 49);
+  const lev = last.find((g) => g.enemy === "leviatano" && g.boss);
+  const vc = last.find((g) => g.enemy === "voidcaster" && g.boss);
+  assert.ok(lev && vc && vc.delay > lev.delay, "nell'ultima ondata arrivano il Leviatano e, subito dopo, il Voidcaster");
+});
+
+test("Voidcore: il Voidcaster è intoccabile finché il Leviatano vive, poi lo rianima con sempre più vita", () => {
+  const s = createGame(31, { mode: "voidcore", level: "porto", allowed: ["cecchino"] });
+  s.god = true;
+  s.cash = 90000;
+  const lvl = levelById("porto");
+  // Cecchino sulla casella libera più vicina al sentiero.
+  let spot: [number, number] = [5, 3], near = Infinity, at = 0;
+  for (let cy = 0; cy < 9; cy++) for (let cx = 0; cx < 16; cx++) {
+    if (!canPlace(s, "cecchino", cx, cy)) continue;
+    for (let d = 3000; d < 30000; d += 100) {
+      const p = lanePoint(lvl, 0, d);
+      const q = (p.x - (cx * 1000 + 500)) ** 2 + (p.y - (cy * 1000 + 500)) ** 2;
+      if (q < near) { near = q; spot = [cx, cy]; at = d; }
+    }
+  }
+  step(s, [{ t: "build", kind: "cecchino", cx: spot[0], cy: spot[1] }]);
+  toWave(s);
+  s.spawns = [];
+  s.enemies = [];
+  step(s, [{ t: "adminSpawn", enemy: "leviatano", count: 1, lane: 0, boss: true, hpMulBp: 1000000 }]);
+  step(s, [{ t: "adminSpawn", enemy: "voidcaster", count: 1, lane: 0, boss: true, hpMulBp: 1000000 }]);
+  for (let i = 0; i < 5; i++) step(s, []);
+  const caster = s.enemies.find((e) => e.kind === "voidcaster")!;
+  const hold = (e: typeof caster, d: number) => {
+    const p = lanePoint(lvl, 0, d);
+    Object.assign(e, { dist: d, x: p.x, y: p.y, stun: 99999 });
+  };
+  const levOf = () => s.enemies.find((e) => e.kind === "leviatano" && e.hp > 0);
+  hold(caster, at);
+  hold(levOf()!, at + 300);
+  // Il Leviatano è vivo: il Voidcaster non perde vita anche se il Cecchino spara.
+  const casterHp = caster.hp;
+  for (let i = 0; i < 60; i++) step(s, []);
+  assert.ok(caster.ward, "protetto");
+  assert.equal(caster.hp, casterHp, "nessun danno al Voidcaster");
+  assert.ok(s.towers[0].damageDone > 0, "il Cecchino colpisce il Leviatano");
+  const max = levOf()!.maxHp;
+  for (let n = 1; n <= 3; n++) {
+    levOf()!.hp = -1e9; // sotto zero: la rigenerazione non lo rimette in piedi
+    step(s, []);
+    step(s, []);
+    assert.ok(!caster.ward, `scoperto dopo la caduta ${n}`);
+    const before = caster.hp;
+    let revived: { hp: number; n: number } | null = null;
+    for (let i = 0; i < VOID.reviveTicks + 5 && !revived; i++) for (const ev of step(s, [])) if (ev.e === "revive") revived = ev;
+    assert.ok(caster.hp < before, "nella finestra il Voidcaster si può colpire");
+    assert.ok(revived, `rianimazione ${n}`);
+    assert.equal(revived!.n, n);
+    assert.equal(revived!.hp, reviveHp(max, n));
+    assert.equal(levOf()!.maxHp, max, "stessa vita massima");
+    assert.ok(caster.ward, "di nuovo protetto");
+    hold(levOf()!, at + 300);
+  }
+  // Abbattuto il Voidcaster nella finestra, il Leviatano non torna più.
+  levOf()!.hp = -1e9; // sotto zero: la rigenerazione non lo rimette in piedi
+  step(s, []);
+  step(s, []);
+  caster.hp = -1e9;
+  let again = false;
+  for (let i = 0; i < VOID.reviveTicks * 2; i++) for (const ev of step(s, [])) if (ev.e === "revive") again = true;
+  assert.ok(!again && !levOf(), "senza Voidcaster niente rianimazioni");
+  assert.equal(hashState(restore(snapshot(s))), hashState(s));
+});

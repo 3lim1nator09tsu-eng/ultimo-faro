@@ -336,6 +336,12 @@ export const sfx = {
     tone("sine", 880, 660, 0.8, 0.06, { attack: 0.1 });
     tone("sine", 1320, 990, 0.8, 0.025, { attack: 0.15 });
   }),
+  revive: fx("revive", 800, () => {
+    // Un risucchio verso il basso, poi il Leviatano che riemerge.
+    tone("sine", 1400, 90, 0.9, 0.06, { attack: 0.05 });
+    noise(6000, 200, 0.9, 0.06, { type: "bandpass", q: 1.5, attack: 0.1 });
+    for (const d of [-20, 0, 15]) tone("sawtooth", 55, 110, 1.3, 0.05, { at: 0.7, detune: d, attack: 0.2, lp: 800 });
+  }, true),
   roar: fx("roar", 800, () => {
     for (const d of [-14, 0, 11]) tone("sawtooth", 88, 38, 1.2, 0.06, { detune: d, attack: 0.05, lp: 700 });
     noise(400, 120, 1.1, 0.09, { type: "lowpass", attack: 0.08 });
@@ -365,6 +371,7 @@ const THEMES: Record<string, Theme> = {
   fallen: { bpm: 100, root: 36, scale: [0, 2, 3, 5, 7, 8, 11], chords: [0, 3, 4, 0], lead: "square", dark: true },
   frost: { bpm: 90, root: 42, scale: [0, 2, 4, 6, 7, 9, 11], chords: [0, 1, 4, 0], lead: "sine", bell: true },
   hardcore: { bpm: 124, root: 33, scale: MINOR, chords: [0, 6, 5, 4], lead: "sawtooth", dark: true },
+  voidcore: { bpm: 118, root: 31, scale: [0, 1, 3, 4, 6, 8, 10], chords: [0, 1, 4, 3], lead: "square", dark: true, bell: true },
   natale: { bpm: 104, root: 43, scale: MAJOR, chords: [0, 3, 4, 0], lead: "sine", bell: true },
   infinita: { bpm: 108, root: 40, scale: MINOR, chords: [0, 3, 5, 4], lead: "triangle" },
 };

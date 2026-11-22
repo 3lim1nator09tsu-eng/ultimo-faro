@@ -1,0 +1,40 @@
+// Voidcore, ultima ondata: il Leviatano e il Voidcaster protetto, poi scoperto, poi la rianimazione.
+import { createRequire } from "node:module";
+import { readFileSync } from "node:fs";
+const { chromium } = createRequire("/opt/npm-tools/node_modules/")("playwright");
+const body = readFileSync("dist/ultimo-faro.html", "utf8");
+const html = `<!doctype html><html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><style>[hidden]{display:none!important}body{margin:0}</style></head><body>${body}</body></html>`;
+const b = await chromium.launch();
+const page = await (await b.newContext({ viewport: { width: 1100, height: 620 }, deviceScaleFactor: 1 })).newPage();
+const errs = [];
+page.on("pageerror", (e) => errs.push(String(e)));
+await page.route("**/*", (r) => (r.request().url().startsWith("https://fonts") ? r.abort() : r.continue()));
+await page.setContent(html, { waitUntil: "load" });
+await page.waitForFunction(() => window.__faro);
+await page.evaluate(() => {
+  const f = window.__faro;
+  f.debug.restart(9, { mode: "voidcore", level: "porto", sandbox: true });
+  f.state.god = true;
+});
+while (await page.locator("#dialog").isVisible()) await page.locator("#dialog").click();
+await page.click("#go");
+await page.evaluate(() => {
+  const f = window.__faro;
+  f.state.spawns = [];
+  f.state.enemies = [];
+  for (const k of ["larva", "squarcio", "divoratore"]) f.debug.send({ t: "adminSpawn", enemy: k, count: 3 });
+  f.debug.send({ t: "adminSpawn", enemy: "leviatano", count: 1, lane: 0, boss: true, hpMulBp: 100000 });
+});
+await page.waitForTimeout(1500);
+await page.evaluate(() => window.__faro.debug.send({ t: "adminSpawn", enemy: "voidcaster", count: 1, lane: 0, boss: true, hpMulBp: 100000 }));
+await page.waitForTimeout(2500);
+await page.screenshot({ path: "dist/shots/98-voidcore-protetto.png" });
+await page.evaluate(() => { const l = window.__faro.state.enemies.find((e) => e.kind === "leviatano"); l.hp = -1e9; });
+await page.waitForTimeout(1200);
+await page.screenshot({ path: "dist/shots/98-voidcore-scoperto.png" });
+await page.waitForTimeout(16000);
+await page.screenshot({ path: "dist/shots/98-voidcore-rianimato.png" });
+const info = await page.evaluate(() => ({ boss: document.getElementById("bossInfo").textContent, vc: window.__faro.state.vc }));
+console.log(JSON.stringify(info));
+console.log(errs.length ? errs.join(" | ") : "nessun errore");
+await b.close();

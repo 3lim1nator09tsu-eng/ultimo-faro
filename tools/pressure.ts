@@ -17,6 +17,7 @@ const setups: Array<[string, GameOptions]> = [
   ["fallen r5", { mode: "fallen", allowed: SUPK, ranks: allRank(5) }],
   ["frost r5", { mode: "frost", allowed: SUPK, ranks: allRank(5) }],
   ["hardcore r5", { mode: "hardcore", allowed: HCK, ranks: allRank(5) }],
+  ["voidcore r5", { mode: "voidcore", allowed: HCK, ranks: allRank(5) }],
 ];
 const maps = ["porto", "foce", "marea", "lungomare"];
 for (const [label, opts] of setups) {

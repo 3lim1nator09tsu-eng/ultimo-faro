@@ -433,6 +433,7 @@ export function enemySize(e: Pick<Enemy, "kind" | "boss">): number {
     tizzone: 0.2, magmatico: 0.34, colosso: 0.66, spettro: 0.24, cavaliere: 0.34, recaduto: 0.62, risvegliato: 0.8, ombra: 0.22, araldo: 0.4, lancia: 0.34, brinato: 0.27, orso: 0.38, regina: 0.62,
     elfo: 0.19, pupazzetto: 0.28, folletto: 0.48, renna: 0.55, pupazzo: 0.7, befana: 0.56, krampus: 0.8,
     dohoter: 0.74, creator: 0.86, jackobot: 0.74, zucchetta: 0.2,
+    larva: 0.2, divoratore: 0.42, squarcio: 0.3, voidcaster: 0.72,
   };
   const r = base[e.kind] ?? 0.3;
   return e.kind === "bruto" && e.boss ? 0.53 : r;
@@ -587,6 +588,23 @@ export function drawEnemy(ctx: CanvasRenderingContext2D, e: Enemy, x: number, y:
   if (hidden) ctx.globalAlpha = 0.5;
   drawEnemyBody(ctx, e, x, y, T, heading, walkFrame(e, time, still), lit);
   if (hidden) ctx.globalAlpha = 1;
+  if (e.ward) {
+    // Protetto dal Leviatano: bolla viola che pulsa, nessun colpo passa.
+    const r = T * (enemySize(e) + 0.18);
+    ctx.save();
+    ctx.globalAlpha = 0.22 + (still ? 0 : 0.1 * Math.sin(time * 0.006));
+    ctx.fillStyle = "#b07cff";
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 0.9;
+    ctx.strokeStyle = "#e3b3ff";
+    ctx.lineWidth = Math.max(1.5, T * 0.04);
+    ctx.setLineDash([T * 0.12, T * 0.08]);
+    ctx.lineDashOffset = still ? 0 : -time * 0.02;
+    ctx.stroke();
+    ctx.restore();
+  }
   if (cached) {
     if (e.hp < e.maxHp) {
       const w = Math.round(T * (e.boss ? 1.1 : 0.5));

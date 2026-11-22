@@ -35,6 +35,7 @@ export interface ModeDef {
   doubleModsFrom: number;
   minis: BossStep[];
   boss: BossStep; // boss finale, nell'ultima ondata
+  coBoss?: BossStep; // secondo boss che arriva insieme al finale (Voidcore: il Voidcaster)
   schegge: { perWave: number; win: number };
   perle: { perWave: number; win: number; boss: number };
   unlock: GameMode | null; // modalità da vincere prima
@@ -228,6 +229,47 @@ export const HARDCORE: ModeDef = {
   mapHpBp: { lungomare: 13500, foce: 11500 },
 };
 
+// Voidcore: gli stessi modificatori di Hardcore, ma gli invisibili non arrivano prima della settima ondata.
+const MODS_VC: Mod[][] = [["agile"], ["corazzato"], ["gonfio"], ["benedetto"], ["schermato"], ["provocatore"], ["spettrale"], ["scisso"], ["agile", "gonfio"], ["benedetto", "corazzato"], ["spettrale", "agile"], ["provocatore", "schermato"], ["scisso", "gonfio"]];
+
+/** Voidcore: come Hardcore ma più punitiva. Cinque vite, modificatori dalla prima ondata, il Vuoto e il Voidcaster. */
+export const VOIDCORE: ModeDef = {
+  id: "voidcore",
+  name: "Voidcore",
+  sub: "50 ondate, 5 vite, modificatori da subito. Il Voidcaster rianima il Leviatano finché non lo fermi.",
+  color: "#b07cff",
+  waves: 50,
+  lives: RULES.voidcoreLives,
+  bonusCash: RULES.voidcoreCash,
+  curveA: 1500,
+  curveB: 85,
+  hpBp: 13600,
+  rampBp: 28000,
+  pool: [
+    e("risacca", 1, 10, 85, 8), e("corridore", 2, 7, 65, 7), e("larva", 8, 3, 50, 10), e("bruto", 5, 2, 40, 18), e("sabotatore", 7, 2, 22, 24),
+    e("tizzone", 9, 6, 65, 7), e("squarcio", 13, 2, 30, 20), e("magmatico", 15, 2, 28, 22), e("spettro", 18, 4, 50, 10),
+    e("divoratore", 22, 1, 25, 30), e("cavaliere", 26, 2, 28, 22), e("araldo", 30, 1, 20, 34), e("lancia", 34, 2, 25, 24), e("orso", 38, 1, 22, 28),
+  ],
+  maxGroups: 3,
+  modsFrom: 1,
+  modList: MODS_VC,
+  doubleModsFrom: 10,
+  minis: [
+    { wave: 10, kind: "divoratore", hpBp: 18000 },
+    { wave: 20, kind: "colosso", hpBp: 60000 },
+    { wave: 30, kind: "recaduto", hpBp: 60000 },
+    { wave: 40, kind: "regina", hpBp: 64000 },
+    { wave: 45, kind: "leviatano", hpBp: 60000 },
+  ],
+  boss: { wave: 50, kind: "leviatano", hpBp: 260000 },
+  coBoss: { wave: 50, kind: "voidcaster", hpBp: 120000 },
+  schegge: { perWave: 16, win: 750 },
+  perle: { perWave: 2, win: 100, boss: 8 },
+  unlock: "hardcore",
+  maps: ALL_MAPS,
+  mapHpBp: { lungomare: 13500, foce: 11500 },
+};
+
 // Notti di Natale. Volutamente quasi impossibili: il Disgelo le ammorbidisce durante dicembre.
 const NIGHT_POOL: PoolEntry[] = [
   e("elfo", 1, 6, 70, 7), e("pupazzetto", 1, 3, 45, 16), e("brinato", 3, 3, 45, 14), e("corridore", 4, 6, 60, 7),
@@ -280,6 +322,7 @@ export const isSurvival = (mode: GameMode) => SURVIVAL_IDS.includes(mode);
 /** La ricetta della modalità; null per Campagna e Infinita, che usano le ondate scritte a mano. */
 export function modeDef(mode: GameMode, nightN = 1): ModeDef | null {
   if (mode === "hardcore") return HARDCORE;
+  if (mode === "voidcore") return VOIDCORE;
   if (mode === "natale") return NIGHTS[Math.max(1, Math.min(NIGHTS.length, nightN)) - 1];
   return SURVIVAL.find((m) => m.id === mode) ?? null;
 }
@@ -357,7 +400,7 @@ export function modeWaves(m: ModeDef, level: LevelDef): WaveGroup[][] {
         groups[b] = { ...groups[b], mods: m.modList[(i + 4) % m.modList.length] };
       }
     }
-    for (const b of [...m.minis.filter((x) => x.wave === w), ...(m.boss.wave === w ? [m.boss] : [])]) {
+    for (const b of [...m.minis.filter((x) => x.wave === w), ...(m.boss.wave === w ? [m.boss] : []), ...(m.coBoss?.wave === w ? [m.coBoss] : [])]) {
       groups.push({
         enemy: b.kind,
         count: 1,
@@ -365,7 +408,7 @@ export function modeWaves(m: ModeDef, level: LevelDef): WaveGroup[][] {
         delay: 160 + 60 * groups.filter((x) => x.boss).length,
         lane: w % lanes,
         hpMulBp: hpMulFor(m, w, Math.floor((b.hpBp * mapBp) / 10000)),
-        lifeDamage: b === m.boss ? Math.max(ENEMIES[b.kind].lifeDamage, 20) : Math.min(ENEMIES[b.kind].lifeDamage, 6),
+        lifeDamage: b === m.boss || b === m.coBoss ? Math.max(ENEMIES[b.kind].lifeDamage, 20) : Math.min(ENEMIES[b.kind].lifeDamage, 6),
         boss: true,
         mods: b.mods,
       });

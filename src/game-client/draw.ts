@@ -400,12 +400,12 @@ export function drawFaro(ctx: CanvasRenderingContext2D, T: number, time: number,
 
 export const TRACK_COLORS: Record<Track, string> = { danno: "#e2714f", gittata: "#a5e4ec", sconto: "#9fd28b" };
 
-export function drawTowerShape(ctx: CanvasRenderingContext2D, kind: TowerKind, x: number, y: number, T: number, angle: number, level = 1, branch: Branch | null = null, time = 0, track: Track = "danno", kick = 0) {
+export function drawTowerShape(ctx: CanvasRenderingContext2D, kind: TowerKind, x: number, y: number, T: number, angle: number, level = 1, branch: Branch | null = null, time = 0, track: Track = "danno", kick = 0, spin = 0) {
   ctx.save();
   ctx.translate(x, y);
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
-  towerFigure(ctx, kind, T, angle, level, branch, time, kick, TRACK_COLORS[track]);
+  towerFigure(ctx, kind, T, angle, level, branch, time, kick, TRACK_COLORS[track], spin);
   ctx.restore();
 
   // Tacche di livello sotto la torre.

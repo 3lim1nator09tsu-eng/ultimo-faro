@@ -129,9 +129,20 @@ export const MEDALS: Array<{ id: string; name: string; text: string; ok: (m: Med
 // ---------- bacheca ----------
 
 /** Versione del gioco: chi ospita la comunica all'admin, che vede se i comandi nuovi possono funzionare. */
-export const GAME_VERSION = "0.22.0";
+export const GAME_VERSION = "0.23.0";
 
 export const VERSION_NOTES: ChangeEntry[] = [
+  {
+    date: "2026-11-23",
+    title: "Versione 0.23: il Juggernaut",
+    kind: "versione",
+    items: [
+      "Juggernaut: minigun pesantissimo, uno solo per giocatore (2.400 Schegge e 50 Perle). Deve girare 2 secondi prima di sparare e rallenta quando non ha bersagli; a pieni giri fa più danno di qualsiasi altra torre su un bersaglio solo",
+      "Dal livello 2 vede gli invisibili e spara 10 colpi al secondo",
+      "Zona fortificata: colpi più pesanti e un'area intorno a sé dove gli stordimenti a tutte le torri durano la metà (tre quarti in meno da Apex)",
+      "Arma sperimentale: +40% di danno ai boss (+60% da Apex) e prende giri più in fretta",
+    ],
+  },
   {
     date: "2026-11-22",
     title: "Versione 0.22: Voidcore",

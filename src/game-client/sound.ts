@@ -26,7 +26,7 @@ function build() {
   comp.attack.value = 0.004;
   comp.release.value = 0.18;
   master = ctx.createGain();
-  master.gain.value = 0.9;
+  master.gain.value = 0.82;
   meter = ctx.createAnalyser();
   meter.fftSize = 2048;
   master.connect(comp).connect(meter).connect(ctx.destination);
@@ -144,6 +144,10 @@ const GUNS: Record<string, () => void> = {
   mitragliera: fx("g-mitra", 45, () => {
     noise(vary(1900), 700, 0.045, 0.06, { q: 1.4 });
     tone("square", vary(150), 90, 0.04, 0.03);
+  }),
+  juggernaut: fx("g-jugg", 45, () => {
+    noise(vary(1200), 400, 0.05, 0.075, { q: 1.2 });
+    tone("square", vary(95), 55, 0.05, 0.05, { lp: 900 });
   }),
   kingpin: fx("g-kingpin", 60, () => {
     noise(vary(1300), 500, 0.06, 0.065, { q: 1 });

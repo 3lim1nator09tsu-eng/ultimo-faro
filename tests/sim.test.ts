@@ -499,7 +499,7 @@ test("divisione, gelo alla morte, furto e immunità al rallentamento", () => {
 
 test("sandbox e comandi admin: tutte le torri, nessun premio, vite infinite, salto d'ondata", () => {
   const s = createGame(1, { sandbox: true, allowed: ["balestra"] });
-  assert.equal(s.allowed.length, 25);
+  assert.equal(s.allowed.length, 26);
   assert.ok(s.cash >= 100000);
   step(s, [{ t: "adminGod", on: true }, { t: "adminSpawn", enemy: "corridore", count: 5, mods: ["agile"] }]);
   for (let i = 0; i < 600; i++) step(s, []);
@@ -1389,7 +1389,7 @@ import { WEEKLY, weekOf, weeklyCheck, weeklyFor } from "../src/game-client/progr
 import { BURN_EVERY, sentrySpot } from "../src/sim-core/sim";
 
 /** Un nemico fermo e robusto davanti a una torre appena costruita. */
-function duel(kind: "ingegnere" | "pistolero" | "piromante" | "slasher" | "gladiatore", level = 1) {
+function duel(kind: "ingegnere" | "pistolero" | "piromante" | "slasher" | "gladiatore" | "juggernaut", level = 1) {
   const s = createGame(77, { mode: "campagna", level: "porto", allowed: [kind] });
   s.cash = 90000;
   // La casella libera più vicina al sentiero: anche chi colpisce da vicino ci arriva.
@@ -1711,4 +1711,65 @@ test("Voidcore: il Voidcaster è intoccabile finché il Leviatano vive, poi lo r
   for (let i = 0; i < VOID.reviveTicks * 2; i++) for (const ev of step(s, [])) if (ev.e === "revive") again = true;
   assert.ok(!again && !levOf(), "senza Voidcaster niente rianimazioni");
   assert.equal(hashState(restore(snapshot(s))), hashState(s));
+});
+
+import { fortified } from "../src/sim-core/sim";
+
+test("Juggernaut: il minigun deve prendere giri prima di sparare e li perde senza bersagli", () => {
+  assert.equal(TOWERS.juggernaut.maxPerPlayer, 1, "uno solo per giocatore");
+  const { s, t, e } = duel("juggernaut");
+  const st = towerStats(t);
+  let first = -1;
+  for (let i = 0; i < st.revTicks + 10 && first < 0; i++) for (const ev of step(s, [])) if (ev.e === "shot" && ev.from === t.id) first = i;
+  assert.ok(first >= st.revTicks - 1, `primo colpo dopo i giri: tick ${first}, giri ${st.revTicks}`);
+  // A pieni giri spara alla sua cadenza.
+  let shots = 0;
+  for (let i = 0; i < st.cooldown * 10; i++) for (const ev of step(s, [])) if (ev.e === "shot" && ev.from === t.id) shots++;
+  assert.equal(shots, 10);
+  // Senza bersaglio rallenta; quando torna un nemico deve riprendere giri.
+  s.enemies = [];
+  for (let i = 0; i < st.revTicks; i++) step(s, []);
+  assert.equal(t.rev, 0);
+  s.enemies.push(e);
+  let quiet = 0;
+  for (let i = 0; i < st.revTicks - 2; i++) for (const ev of step(s, [])) if (ev.e === "shot" && ev.from === t.id) quiet++;
+  assert.equal(quiet, 0, "nessun colpo mentre riprende giri");
+  assert.ok(!TOWERS.juggernaut.levels[0].detect && TOWERS.juggernaut.levels[1].detect, "vede gli invisibili dal livello 2");
+  assert.equal(hashState(restore(snapshot(s))), hashState(s));
+});
+
+test("Juggernaut: Arma sperimentale +40% sui boss, Zona fortificata dimezza gli stordimenti alle torri vicine", () => {
+  const b = TOWERS.juggernaut.branches;
+  assert.equal(b.B.bossBp, 14000);
+  assert.equal(b.A.fortifyBp, 5000);
+  const hitOn = (boss: boolean) => {
+    const d = duel("juggernaut", 3);
+    d.s.cash = 1e6;
+    step(d.s, [{ t: "spec", id: d.t.id, branch: "B" }]);
+    d.e.boss = boss;
+    d.e.stun = 0;
+    d.e.speedBp = 0;
+    const hp = d.e.hp;
+    for (let i = 0; i < 60; i++) { d.e.stun = 0; step(d.s, []); }
+    return hp - d.e.hp;
+  };
+  const normal = hitOn(false);
+  const boss = hitOn(true);
+  assert.ok(normal > 0 && Math.abs(boss / normal - 1.4) < 0.05, `boss ${boss} contro ${normal}`);
+  // Zona fortificata.
+  const d = duel("juggernaut", 3);
+  d.s.cash = 1e6;
+  step(d.s, [{ t: "spec", id: d.t.id, branch: "A" }]);
+  const st = towerStats(d.t);
+  assert.equal(fortified(d.s, d.t, 40), 20, "nella zona lo stordimento dura la metà");
+  const far = { ...d.t, id: 999, x: d.t.x + st.fortifyRadius + 2000, y: d.t.y };
+  assert.equal(fortified(d.s, far, 40), 40, "fuori dalla zona niente sconto");
+  d.e.kind = "sabotatore" as never;
+  d.e.act = 0;
+  d.e.stun = 0;
+  d.e.speedBp = 0;
+  let worst = 0;
+  for (let i = 0; i < 40; i++) { step(d.s, []); worst = Math.max(worst, d.t.stun); }
+  const sab = ENEMIES.sabotatore.sabotage!;
+  assert.ok(worst > 0 && worst <= Math.ceil(sab.stun / 2), `stordimento massimo ${worst} su ${sab.stun}`);
 });

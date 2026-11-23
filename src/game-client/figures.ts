@@ -256,7 +256,7 @@ const FAMILY_PAD: Partial<Record<TowerKind, string>> = {
   officina: "#3b3324", grammofono: "#2c2440", capitano: "#22304a", medico: "#243a34", soffio: "#213744", purificatore: "#3b3524", campana: "#3b3324",
 };
 
-export function towerFigure(c: C, kind: TowerKind, T: number, angle: number, level: number, branch: Branch | null, time: number, kick: number, trackColor: string) {
+export function towerFigure(c: C, kind: TowerKind, T: number, angle: number, level: number, branch: Branch | null, time: number, kick: number, trackColor: string, spin = 0) {
   const accent = branch === "B" ? CORAL : branch === "A" ? BRASS : null;
   const gold = level >= 5;
   const lwB = Math.max(1, T * 0.03);
@@ -354,6 +354,64 @@ export function towerFigure(c: C, kind: TowerKind, T: number, angle: number, lev
           c.restore();
         },
         hat: (hx, hr, q) => helmet(c, hx, hr, q, "#48542c", "#39431f"),
+      });
+      break;
+    }
+    case "juggernaut": {
+      // Armatura pesante e minigun a canne rotanti: girano più in fretta man mano che prende giri.
+      c.rotate(angle);
+      const heavy = branch === "B" ? "#3a3f4a" : "#4a3a2a";
+      person(c, s * 1.12, { skin: "#d9a577", shirt: heavy, sleeve: "#2b3236", bulk: 1.18, pull: pull * 0.3, eyes: branch === "B" ? "#ffffff" : INK }, {
+        back: (q) => {
+          // Zaino delle munizioni e il nastro che va al minigun.
+          box(c, -1.2 * s, -0.7 * s, 0.62 * s, 1.4 * s, 0.14 * s, "#3a4247", q);
+          box(c, -1.1 * s, -0.55 * s, 0.4 * s, 1.1 * s, 0.08 * s, BRASS, q * 0.6);
+          c.strokeStyle = BRASS;
+          c.lineWidth = Math.max(1, s * 0.12);
+          c.setLineDash([s * 0.1, s * 0.06]);
+          c.beginPath();
+          c.moveTo(-0.7 * s, 0.5 * s);
+          c.quadraticCurveTo(0, 1.1 * s, 0.6 * s, 0.35 * s);
+          c.stroke();
+          c.setLineDash([]);
+        },
+        chest: (q) => {
+          // Spallacci grossi; dal livello 3 anche le piastre sul petto.
+          for (const side of [-1, 1]) dot(c, -0.05 * s, side * 1.08 * s, 0.42 * s, "#2b3236", q);
+          if (level >= 3) box(c, -0.3 * s, -0.55 * s, 0.6 * s, 1.1 * s, 0.1 * s, "#565e66", q * 0.7);
+          if (branch === "A") {
+            dot(c, 0.05 * s, 0, 0.3 * s, BRASS, q * 0.6);
+            dot(c, 0.05 * s, 0, 0.14 * s, "#4a3a2a");
+          }
+        },
+        held: (q) => {
+          c.save();
+          c.translate(-pull * 0.3 * s + (kick > 0 ? Math.sin(time * 0.11) * 0.04 * s : 0), 0);
+          box(c, 0.2 * s, -0.38 * s, 1.0 * s, 0.76 * s, 0.14 * s, "#2b3236", q);
+          box(c, 0.35 * s, 0.38 * s, 0.4 * s, 0.3 * s, 0.06 * s, "#3a4247", q * 0.7);
+          const n = level >= 3 ? 6 : 3;
+          const turn = time * (0.004 + 0.05 * spin);
+          const col = branch === "B" ? (spin >= 1 ? "#d7b8ff" : "#9f8fc0") : "#aab4ba";
+          for (let i = 0; i < n; i++) {
+            const y = Math.sin(turn + (i * TAU) / n) * 0.24 * s;
+            box(c, 1.15 * s, y - 0.06 * s, 1.15 * s, 0.12 * s, 0.05 * s, col, q * 0.6);
+          }
+          box(c, 1.15 * s, -0.36 * s, 0.14 * s, 0.72 * s, 0.05 * s, accent ?? DARK, q * 0.7);
+          box(c, 2.15 * s, -0.34 * s, 0.14 * s, 0.68 * s, 0.05 * s, DARK, q * 0.7);
+          if (spin > 0.05 && spin < 1) {
+            // Sta prendendo giri: le canne scaldano.
+            c.globalAlpha = spin * 0.6;
+            dot(c, 2.25 * s, 0, 0.22 * s, "#ff8a3a");
+            c.globalAlpha = 1;
+          }
+          flash(c, 2.5 * s, s * 1.1, kick);
+          c.restore();
+        },
+        hat: (hx, hr, q) => {
+          helmet(c, hx, hr, q, branch === "B" ? "#2b3236" : "#3a3f2a", "#1b2226");
+          // Visiera: una fessura sola, come un elmo pesante.
+          box(c, hx + hr * 0.35, -hr * 0.6, hr * 0.26, hr * 1.2, hr * 0.1, branch === "B" ? "#d7b8ff" : "#0a0f11", 0);
+        },
       });
       break;
     }

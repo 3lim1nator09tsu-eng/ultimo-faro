@@ -1,6 +1,6 @@
 // Client del prototipo: disegna lo stato, raccoglie i tocchi, non decide mai le regole.
 import { ADMIN_ONLY, EVENT_TOWER, KINGPIN_QUEUE, SURVIVAL_MAPS, UNITS, UNIT_ORDER, ABILITIES, APEX_RANK, AbilityId, ENEMIES, GameMode, HARDCORE_TOWERS, LEVELS, MODS, LOADOUT_SIZE, MAP_H, MAP_W, MAX_RANK, RANK_COSTS, RULES, STARTER_TOWERS, TICKS_PER_SECOND, TILE, TOWERS, TOWER_ORDER, TRACKS, TowerKind, Track, Branch, levelById } from "../sim-core/content";
-import { Command, Enemy, GameEvent, levelHpBp, sentrySpot, GameOptions, GameState, modBit, playerCount, hiddenWon, canPlace, covers, sizeOf, abilityCdOf, allowedOf, cashOf, apexBlock, apexPrice, applyCommands, modsOf, perleFor, cellEmerged, createGame, effStats, hashState, isBuildable, laneIsOpen, levelOf, rankedStats, restore, rewardFor, sellValue, specPrice, statsIn, snapshot, starsFor, step, upgradePrice, waveCount, wavePreview } from "../sim-core/sim";
+import { Command, Enemy, GameEvent, levelHpBp, sentrySpot, towerStats, GameOptions, GameState, modBit, playerCount, hiddenWon, canPlace, covers, sizeOf, abilityCdOf, allowedOf, cashOf, apexBlock, apexPrice, applyCommands, modsOf, perleFor, cellEmerged, createGame, effStats, hashState, isBuildable, laneIsOpen, levelOf, rankedStats, restore, rewardFor, sellValue, specPrice, statsIn, snapshot, starsFor, step, upgradePrice, waveCount, wavePreview } from "../sim-core/sim";
 import { playBot } from "../sim-core/bot";
 import { drawTwist, qteKey, renderAim, renderChoice, renderQte, renderTwist, twistToast } from "./twist-ui";
 import { HARDCORE, ModeDef, NIGHTS, SURVIVAL, VOIDCORE, disgeloFor, modeDef } from "../sim-core/modes";
@@ -176,7 +176,7 @@ const fired = new Map<number, number>();
 const popAt = new Map<number, number>();
 /** Ultimo aspetto di ogni nemico: direzione, vita e posizione, per girarlo, farlo lampeggiare e farlo cadere. */
 const shown = new Map<number, { e: Enemy; x: number; y: number; h: number; hp: number; hitAt: number }>();
-const KICK_MS: Partial<Record<TowerKind, number>> = { gladiatore: 320, slasher: 200, piromante: 520, pistolero: 150, sledger: 340, mortaio: 320, starcannon: 520, executioner: 420, arpione: 380, cecchino: 240, balestra: 220 };
+const KICK_MS: Partial<Record<TowerKind, number>> = { juggernaut: 90, gladiatore: 320, slasher: 200, piromante: 520, pistolero: 150, sledger: 340, mortaio: 320, starcannon: 520, executioner: 420, arpione: 380, cecchino: 240, balestra: 220 };
 
 interface Fx {
   kind: "tracer" | "blast" | "float" | "zap" | "beam" | "ring" | "cone" | "axe" | "corpse" | "flame" | "cut";
@@ -798,6 +798,7 @@ function statsLine(kind: TowerKind, level: number, branch: Branch | null, rank =
     return `Martellata a cono: ${s.damage} danni a ${s.maxTargets} nemici, ${num(TICKS_PER_SECOND / s.cooldown)} colpi/s, portata ${range}. Ogni colpo rallenta del ${pct(s.chillBp)} fino al ${pct(s.chillMax)}.${ice}${s.iceBreaker ? " Danno doppio a chi è gelato." : ""}${s.aftershockBp ? ` Seconda scossa del ${pct(s.aftershockBp)}.` : ""}`;
   }
   if (kind === "ingegnere") return `Chiodi: ${s.damage} danni, ${num(TICKS_PER_SECOND / s.cooldown)} colpi/s, gittata ${range}. Costruisce una torretta ogni ${num(s.sentryEvery / TICKS_PER_SECOND)} s, fino a ${s.sentryMax}: ognuna fa ${s.sentryDamage} danni, ${num(TICKS_PER_SECOND / s.sentryCooldown)} colpi/s. Le torrette restano tra un'ondata e l'altra.${s.pierce ? " Ignora l'armatura." : ""}${s.detect ? " Vede gli invisibili." : ""}`;
+  if (kind === "juggernaut") return `Minigun: ${s.damage} danni, ${num(TICKS_PER_SECOND / s.cooldown)} colpi/s a pieni giri, gittata ${range}. Prima di sparare deve girare per ${num(s.revTicks / TICKS_PER_SECOND)} s; senza bersagli rallenta e deve riprendere giri.${s.detect ? " Vede gli invisibili." : " Dal livello 2 vede gli invisibili."}${s.bossBp > 10000 ? ` Contro i boss fa il ${(s.bossBp - 10000) / 100}% di danno in più.` : ""}${s.fortifyRadius ? ` Zona fortificata (raggio ${num(s.fortifyRadius / TILE)}): le torri dentro restano stordite il ${s.fortifyBp / 100}% in meno.` : ""} Uno solo per giocatore.`;
   if (kind === "gladiatore") return `Fendente a tutto tondo: ${s.damage} danni a fino a ${s.sweep} nemici intorno, ${num(TICKS_PER_SECOND / s.cooldown)} colpi/s, portata ${range}.${s.pierce ? " Ignora l'armatura." : ""} Grido di guerra: per ${num(s.abilityTicks / TICKS_PER_SECOND)} s colpisce il ${s.abilityBp / 100}% più in fretta (${num((TICKS_PER_SECOND * (10000 + s.abilityBp)) / 10000 / s.cooldown)} colpi/s); si ricarica in ${num(s.abilityCooldown / TICKS_PER_SECOND)} s. Niente può stordire il Gladiatore.`;
   if (kind === "slasher") return `Lame: ${s.damage} danni, ${num(TICKS_PER_SECOND / s.cooldown)} colpi/s, portata ${range}; ogni ${s.critEvery}° colpo è un critico da ${Math.floor((s.damage * s.critBp) / 10000)} (in media ${num((s.damage * (s.critEvery - 1 + s.critBp / 10000) * TICKS_PER_SECOND) / s.critEvery / s.cooldown)} danni/s).${s.bleedHit ? ` Ogni colpo aggiunge ${s.bleedHit} cariche di sanguinamento: il nemico ne perde ${s.bleedDrain * 2} al secondo e subisce ${num((s.bleedDrain * 2 * s.bleedBp) / 10000)} danni al secondo finché non arrivano a zero. A ${s.bleedMax} cariche scatta l'emorragia: ${fmt(s.bleedBurst)} danni che ignorano l'armatura, poi quel nemico (solo lui) per ${num(s.bleedLock / TICKS_PER_SECOND)} s non sanguina. Non fa sanguinare spettri, ombre, pupazzi di neve e macchine.` : " Dal livello 3 i colpi fanno anche sanguinare."} Niente può stordire lo Slasher.`;
   if (kind === "pistolero") return `Revolver: ${s.damage} danni, ${num(TICKS_PER_SECOND / s.cooldown)} colpi/s, gittata ${range}. Ogni ${s.cashEvery} colpi a segno incassa ${s.cashAmount} cash.`;
@@ -2946,7 +2947,27 @@ function render(now: number) {
       ctx.stroke();
       ctx.globalAlpha = 1;
     }
-    drawTowerShape(ctx, t.kind, p.x, p.y, pxT * sizeOf(t.kind) * pop, angle, t.level, t.branch, reducedMotion ? 0 : now, t.track, kick);
+    let spin = 0;
+    if (t.kind === "juggernaut") {
+      const st = towerStats(t);
+      spin = st.revTicks ? Math.min(1, (t.rev ?? 0) / st.revTicks) : 0;
+      if (st.fortifyRadius > 0) {
+        // Zona fortificata: anello tratteggiato dorato intorno al Juggernaut.
+        ctx.save();
+        ctx.strokeStyle = COLORS.brass;
+        ctx.globalAlpha = 0.45;
+        ctx.lineWidth = Math.max(1.5, pxT * 0.035);
+        ctx.setLineDash([pxT * 0.18, pxT * 0.12]);
+        ctx.lineDashOffset = reducedMotion ? 0 : -now * 0.01;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, toPx(st.fortifyRadius, pxT), 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.fillStyle = "rgba(224,179,84,.05)";
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+    drawTowerShape(ctx, t.kind, p.x, p.y, pxT * sizeOf(t.kind) * pop, angle, t.level, t.branch, reducedMotion ? 0 : now, t.track, kick, spin);
     towerStatus(t, p.x, p.y, pxT, now);
     if (t.id === selectedId) {
       const r = cellRect(t.cx, t.cy);

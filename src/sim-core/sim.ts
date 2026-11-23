@@ -132,6 +132,7 @@ export interface Tower {
   sentryT?: number; // Ingegnere: tick di cantiere accumulati
   shots?: number; // Pistolero: colpi dall'ultimo incasso
   hits?: number; // Slasher: colpi dall'ultimo critico
+  rev?: number; // Juggernaut: quanto gira il minigun (fino a revTicks)
 }
 
 /** Unità del Kingpin: camminano dal Faro verso il mare e combattono i nemici che incontrano. */
@@ -1389,7 +1390,7 @@ function startWave(state: GameState, events: GameEvent[]): void {
     events.push({ e: "blizzard", on: true });
   }
   if (tw.lava.length && state.wave % LAVA.every === 0) {
-    for (const t of state.towers) if (onLava(state, t) && !TOWERS[t.kind].stunImmune) t.stun = Math.max(t.stun, LAVA.stun);
+    for (const t of state.towers) if (onLava(state, t) && !TOWERS[t.kind].stunImmune) t.stun = Math.max(t.stun, fortified(state, t, LAVA.stun));
     events.push({ e: "eruption" });
   }
   level.map.laneOpen.forEach((w, lane) => {
@@ -1807,16 +1808,27 @@ function sabotage(state: GameState, events: GameEvent[]): void {
       e.act = 5;
       continue;
     }
-    target.stun = sab.stun;
+    target.stun = fortified(state, target, sab.stun);
     e.act = sab.every;
     events.push({ e: "sabotage", x: e.x, y: e.y, tx: target.x, ty: target.y });
   }
 }
 
+/** Stordimento ridotto dalla zona fortificata di un Juggernaut vicino (vale la zona più forte). */
+export function fortified(state: GameState, t: Tower, ticks: number): number {
+  let cut = 0;
+  for (const j of state.towers) {
+    if (j.kind !== "juggernaut" || !j.branch) continue;
+    const s = towerStats(j);
+    if (s.fortifyBp > cut && inRange(j.x, j.y, t.x, t.y, s.fortifyRadius)) cut = s.fortifyBp;
+  }
+  return Math.floor((ticks * (10000 - cut)) / 10000);
+}
+
 function stunTowersNear(state: GameState, x: number, y: number, range: number, ticks: number): void {
   for (const t of state.towers) {
     if (t.immune > 0 || TOWERS[t.kind].stunImmune || !inRange(x, y, t.x, t.y, range)) continue;
-    t.stun = Math.max(t.stun, ticks);
+    t.stun = Math.max(t.stun, fortified(state, t, ticks));
   }
 }
 
@@ -2125,6 +2137,12 @@ export function step(state: GameState, commands: Command[] = []): GameEvent[] {
         const from = sentrySpot(t, i);
         events.push({ e: "shot", from: -1, to: aimAt.id, x: from.x, y: from.y, tx: aimAt.x, ty: aimAt.y });
       }
+    }
+    if (s.revTicks > 0) {
+      // Juggernaut: il minigun gira finché ha un bersaglio, rallenta quando non ne ha; spara solo a pieni giri.
+      const seen = pickTarget(state, t, s);
+      t.rev = seen ? Math.min(s.revTicks, (t.rev ?? 0) + 1) : Math.max(0, (t.rev ?? 0) - 2);
+      if (t.rev < s.revTicks) continue;
     }
     if (s.cooldown === 0 || t.cooldown > 0) continue;
     if (s.pulseAll) {
@@ -2452,6 +2470,7 @@ export function hashState(state: GameState): string {
     mix(t.sentryT ?? 0);
     mix(t.shots ?? 0);
     mix(t.hits ?? 0);
+    mix(t.rev ?? 0);
     for (const c of t.sentries ?? []) mix(c + 1);
     mix(t.abilityCd);
     mix(t.abilityLeft);

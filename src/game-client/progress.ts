@@ -129,9 +129,18 @@ export const MEDALS: Array<{ id: string; name: string; text: string; ok: (m: Med
 // ---------- bacheca ----------
 
 /** Versione del gioco: chi ospita la comunica all'admin, che vede se i comandi nuovi possono funzionare. */
-export const GAME_VERSION = "0.25.0";
+export const GAME_VERSION = "0.25.1";
 
 export const VERSION_NOTES: ChangeEntry[] = [
+  {
+    date: "2026-11-24",
+    title: "Versione 0.25.1: Ingegnere e Juggernaut corretti",
+    kind: "versione",
+    items: [
+      "Ingegnere: le torrette tornano a nascere intorno a lui; gittata molto più ampia (da 5 a 6 caselle per l'Ingegnere, da 4,2 a 5,2 per le torrette)",
+      "Juggernaut: costa meno (800 per piazzarlo), gittata da 5 a 6,2 caselle, prende giri più in fretta (1,2 s) e ora fa più danno per cash di qualsiasi altra torre",
+    ],
+  },
   {
     date: "2026-11-24",
     title: "Versione 0.25: Ingegnere rifatto",

@@ -1719,6 +1719,7 @@ test("Juggernaut: il minigun deve prendere giri prima di sparare e li perde senz
   assert.equal(TOWERS.juggernaut.maxPerPlayer, 1, "uno solo per giocatore");
   const { s, t, e } = duel("juggernaut");
   const st = towerStats(t);
+  t.rev = 0;
   let first = -1;
   for (let i = 0; i < st.revTicks + 10 && first < 0; i++) for (const ev of step(s, [])) if (ev.e === "shot" && ev.from === t.id) first = i;
   assert.ok(first >= st.revTicks - 1, `primo colpo dopo i giri: tick ${first}, giri ${st.revTicks}`);
@@ -1810,24 +1811,17 @@ test("Torri d'oro: solo per chi le ha attive, con i loro bonus", () => {
   assert.ok((d.e.burnT ?? 0) > 0, "il Tizzone brucia con il Piromante d'oro");
 });
 
-import { placeSentries } from "../src/sim-core/sim";
+import { sentrySpot } from "../src/sim-core/sim";
 
-test("Ingegnere rifatto: torrette lungo il sentiero, ramo da guerra e ramo di controllo", () => {
+test("Ingegnere rifatto: torrette intorno a lui, ramo da guerra e ramo di controllo", () => {
   const lvl = levelById("porto");
-  // Le torrette stanno a bordo strada, dentro la gittata dell'Ingegnere.
-  const { s, t } = duel("ingegnere", 3);
-  const spots = placeSentries(s, t, 3, towerStats(t).range);
-  assert.equal(spots.length, 6);
-  for (let i = 0; i < 3; i++) {
-    const x = spots[i * 2], y = spots[i * 2 + 1];
-    let near = Infinity;
-    for (let d = 0; d < 40000; d += 100) {
-      const p = lanePoint(lvl, 0, d);
-      near = Math.min(near, Math.hypot(p.x - x, p.y - y));
-    }
-    assert.ok(near <= 500, `torretta ${i} a ${Math.round(near)} dal sentiero`);
-    assert.ok(Math.hypot(x - t.x, y - t.y) <= towerStats(t).range, "dentro la gittata");
+  // Le torrette stanno intorno all'Ingegnere, vicinissime.
+  const { t } = duel("ingegnere", 3);
+  for (let i = 0; i < 6; i++) {
+    const at = sentrySpot(t, i);
+    assert.ok(Math.hypot(at.x - t.x, at.y - t.y) <= 1000, `torretta ${i} accanto alla torre`);
   }
+  assert.ok(towerStats(t).range >= 5000 && towerStats(t).sentryRange >= 4000, "gittata ampia");
   assert.ok(TOWERS.ingegnere.levels[1].detect && !TOWERS.ingegnere.levels[0].detect);
   // Ramo da guerra: torrette che ignorano l'armatura; da Apex razzi che esplodono.
   const war = TOWERS.ingegnere.branches.A;

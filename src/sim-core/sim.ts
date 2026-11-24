@@ -131,7 +131,6 @@ export interface Tower {
   accOn?: boolean; // Accelerator: true durante la raffica
   lock?: number; // Accelerator: id del bersaglio agganciato
   sentries?: number[]; // Ingegnere: una voce per torretta costruita, con i tick al prossimo colpo
-  spots?: number[]; // Ingegnere: dove stanno le torrette (x, y a coppie), lungo il sentiero
   sentryHits?: number[]; // Ingegnere: colpi di ogni torretta, per lo stordimento ogni tot colpi
   empCd?: number; // Ingegnere: tick alla prossima granata EMP
   sentryT?: number; // Ingegnere: tick di cantiere accumulati
@@ -885,44 +884,8 @@ export const BLEED_IMMUNE: EnemyKind[] = ["spettro", "ombra", "pupazzetto", "pup
 export const BURN_EVERY = 5;
 const SENTRY_SPOTS = [-620, -620, 620, -620, 620, 620, -620, 620, 0, -880, 0, 880];
 /** Dove sta la torretta numero i dell'Ingegnere, in unità di mappa. */
-export const sentrySpot = (t: Pick<Tower, "x" | "y"> & { spots?: number[] }, i: number) =>
-  t.spots && t.spots.length >= i * 2 + 2 ? { x: t.spots[i * 2], y: t.spots[i * 2 + 1] } : { x: t.x + SENTRY_SPOTS[(i % 6) * 2], y: t.y + SENTRY_SPOTS[(i % 6) * 2 + 1] };
-
-/**
- * Come in TDS, le torrette si piazzano lungo il sentiero dentro la gittata dell'Ingegnere, distribuite per tutto il tratto,
- * a bordo strada dalla parte della torre. Solo calcoli interi: ogni dispositivo le mette negli stessi punti.
- */
-export function placeSentries(state: GameState, t: Tower, n: number, range: number): number[] {
-  const level = levelOf(state);
-  const geo = geometry(level);
-  const cand: number[] = [];
-  for (let l = 0; l < geo.lanes.length; l++) {
-    for (let d = 0; d <= geo.lengths[l]; d += 250) {
-      const p = lanePoint(level, l, d);
-      const x = Math.floor(p.x);
-      const y = Math.floor(p.y);
-      if (inRange(t.x, t.y, x, y, Math.floor((range * 9) / 10))) cand.push(x, y);
-    }
-  }
-  const out: number[] = [];
-  const total = cand.length / 2;
-  for (let i = 0; i < n; i++) {
-    if (!total) {
-      out.push(t.x + SENTRY_SPOTS[(i % 6) * 2], t.y + SENTRY_SPOTS[(i % 6) * 2 + 1]);
-      continue;
-    }
-    const k = Math.floor(((i * 2 + 1) * total) / (n * 2));
-    const x = cand[k * 2];
-    const y = cand[k * 2 + 1];
-    // Mezzo passo verso la torre: la torretta sta sul bordo, non in mezzo alla strada.
-    const dx = t.x - x;
-    const dy = t.y - y;
-    const len = Math.floor(Math.sqrt(dx * dx + dy * dy)) || 1;
-    const off = Math.min(380, len);
-    out.push(x + Math.trunc((dx * off) / len), y + Math.trunc((dy * off) / len));
-  }
-  return out;
-}
+/** Le torrette stanno intorno all'Ingegnere, ai quattro angoli e poi sopra e sotto. */
+export const sentrySpot = (t: Pick<Tower, "x" | "y">, i: number) => ({ x: t.x + SENTRY_SPOTS[(i % 6) * 2], y: t.y + SENTRY_SPOTS[(i % 6) * 2 + 1] });
 
 /** Bersaglio di una torretta: il primo nemico nella sua gittata, misurata da dove sta lei. */
 function sentryTarget(state: GameState, x: number, y: number, s: TowerStats): Enemy | null {
@@ -2186,8 +2149,6 @@ export function step(state: GameState, commands: Command[] = []): GameEvent[] {
       const list = (t.sentries ??= []);
       const hits = (t.sentryHits ??= []);
       if (list.length > s.sentryMax) list.length = s.sentryMax;
-      // Le torrette si ridistribuiscono lungo il sentiero quando cambia il loro numero o la gittata dell'Ingegnere.
-      if (!t.spots || t.spots.length !== s.sentryMax * 2) t.spots = placeSentries(state, t, s.sentryMax, s.range);
       if (list.length < s.sentryMax) {
         // La prima torretta è pronta subito; le altre richiedono il tempo di cantiere.
         t.sentryT = (t.sentryT ?? (list.length ? 0 : s.sentryEvery)) + 1;
@@ -2567,7 +2528,6 @@ export function hashState(state: GameState): string {
     mix(t.rev ?? 0);
     mix(t.gold ? 1 : 0);
     for (const c of t.sentries ?? []) mix(c + 1);
-    for (const c of t.spots ?? []) mix(c);
     for (const c of t.sentryHits ?? []) mix(c);
     mix(t.empCd ?? 0);
     mix(t.abilityCd);

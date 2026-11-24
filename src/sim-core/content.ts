@@ -533,7 +533,7 @@ export const TOWERS = {
   ingegnere: {
     apex: "Fabbrica d'Assedio",
     name: "Ingegnere",
-    role: "Piazza torrette lungo il sentiero che sparano da sole: il grosso del danno lo fanno loro. Dal livello 4 scegli tra torrette devastanti o controllo della folla",
+    role: "Costruisce torrette intorno a sé che sparano da sole: il grosso del danno lo fanno loro. Dal livello 4 scegli tra torrette devastanti o controllo della folla",
     family: "attacco",
     damageType: "cinetico",
     target: "first",
@@ -541,18 +541,18 @@ export const TOWERS = {
     perle: 20,
     maxPerPlayer: 4,
     levels: [
-      { ...base, cost: 600, damage: 12, cooldown: 10, range: 3200, sentryMax: 1, sentryEvery: 60, sentryDamage: 22, sentryCooldown: 4, sentryRange: 2200 },
-      { ...base, cost: 550, damage: 16, cooldown: 9, range: 3400, sentryMax: 2, sentryEvery: 55, sentryDamage: 26, sentryCooldown: 4, sentryRange: 2300, detect: true },
-      { ...base, cost: 1000, damage: 22, cooldown: 8, range: 3600, sentryMax: 3, sentryEvery: 50, sentryDamage: 29, sentryCooldown: 3, sentryRange: 2400, detect: true },
+      { ...base, cost: 600, damage: 12, cooldown: 10, range: 5000, sentryMax: 1, sentryEvery: 60, sentryDamage: 25, sentryCooldown: 4, sentryRange: 4200 },
+      { ...base, cost: 550, damage: 16, cooldown: 9, range: 5300, sentryMax: 2, sentryEvery: 55, sentryDamage: 29, sentryCooldown: 4, sentryRange: 4400, detect: true },
+      { ...base, cost: 1000, damage: 22, cooldown: 8, range: 5600, sentryMax: 3, sentryEvery: 50, sentryDamage: 29, sentryCooldown: 3, sentryRange: 4700, detect: true },
     ],
     branches: {
       A: {
         ...base, name: "Torrette da guerra", summary: "Tre torrette pesantissime che ignorano l'armatura e sparano a raffica: il danno più alto su un bersaglio",
-        cost: 2200, damage: 30, cooldown: 8, range: 3800, sentryMax: 3, sentryEvery: 40, sentryDamage: 56, sentryCooldown: 2, sentryRange: 2800, pierce: true, detect: true,
+        cost: 2200, damage: 30, cooldown: 8, range: 6000, sentryMax: 3, sentryEvery: 40, sentryDamage: 56, sentryCooldown: 2, sentryRange: 5200, pierce: true, detect: true,
       },
       B: {
         ...base, name: "Controllo del campo", summary: "Quattro torrette che rallentano chi colpiscono e lo stordiscono ogni quattro colpi; ogni 6 s una granata EMP stordisce tutti in un'area",
-        cost: 1900, damage: 24, cooldown: 8, range: 3800, sentryMax: 4, sentryEvery: 40, sentryDamage: 28, sentryCooldown: 3, sentryRange: 2600, detect: true,
+        cost: 1900, damage: 24, cooldown: 8, range: 6000, sentryMax: 4, sentryEvery: 40, sentryDamage: 28, sentryCooldown: 3, sentryRange: 5000, detect: true,
         chillBp: 1800, chillMax: 4500, sentryStunEvery: 4, sentryStun: 10, empEvery: 60, empRadius: 1500, empStun: 18,
       },
     },
@@ -606,13 +606,13 @@ export const TOWERS = {
     perle: 50,
     maxPerPlayer: 1,
     levels: [
-      { ...base, cost: 1100, damage: 28, cooldown: 2, range: 3000, revTicks: 20 },
-      { ...base, cost: 600, damage: 23, cooldown: 1, range: 3200, revTicks: 18, detect: true },
-      { ...base, cost: 1300, damage: 44, cooldown: 1, range: 3500, revTicks: 18, detect: true },
+      { ...base, cost: 800, damage: 28, cooldown: 2, range: 5000, revTicks: 12 },
+      { ...base, cost: 500, damage: 24, cooldown: 1, range: 5300, revTicks: 10, detect: true },
+      { ...base, cost: 1000, damage: 46, cooldown: 1, range: 5600, revTicks: 10, detect: true },
     ],
     branches: {
-      A: { ...base, name: "Zona fortificata", summary: "Colpi più pesanti e una zona intorno a sé dove gli stordimenti alle torri durano la metà", cost: 2600, damage: 168, cooldown: 2, range: 3700, revTicks: 18, detect: true, fortifyRadius: 2600, fortifyBp: 5000 },
-      B: { ...base, name: "Arma sperimentale", summary: "Proiettili speciali: +40% di danno ai boss, e gira più in fretta", cost: 3000, damage: 94, cooldown: 1, range: 3800, revTicks: 14, detect: true, bossBp: 14000 },
+      A: { ...base, name: "Zona fortificata", summary: "Colpi più pesanti e una zona intorno a sé dove gli stordimenti alle torri durano la metà", cost: 2000, damage: 178, cooldown: 2, range: 6000, revTicks: 10, detect: true, fortifyRadius: 2600, fortifyBp: 5000 },
+      B: { ...base, name: "Arma sperimentale", summary: "Proiettili speciali: +40% di danno ai boss, e gira più in fretta", cost: 2300, damage: 98, cooldown: 1, range: 6200, revTicks: 8, detect: true, bossBp: 14000 },
     },
   },
   gladiatore: {

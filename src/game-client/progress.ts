@@ -129,9 +129,18 @@ export const MEDALS: Array<{ id: string; name: string; text: string; ok: (m: Med
 // ---------- bacheca ----------
 
 /** Versione del gioco: chi ospita la comunica all'admin, che vede se i comandi nuovi possono funzionare. */
-export const GAME_VERSION = "0.25.1";
+export const GAME_VERSION = "0.25.2";
 
 export const VERSION_NOTES: ChangeEntry[] = [
+  {
+    date: "2026-11-24",
+    title: "Versione 0.25.2: Voidcore di nuovo più dura",
+    kind: "versione",
+    items: [
+      "Voidcore: 6 vite invece di 8, nemici con circa il 10% di vita in più a inizio partita e fino al 20% in più verso la fine, Squarci e Divoratori più resistenti, Colosso dell'ondata 20 più robusto",
+      "Restano i correttivi contro il muro dell'ondata 20: i Magmatici evocati costano una vita sola e arrivano meno spesso",
+    ],
+  },
   {
     date: "2026-11-24",
     title: "Versione 0.25.1: Ingegnere e Juggernaut corretti",

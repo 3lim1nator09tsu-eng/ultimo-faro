@@ -243,8 +243,8 @@ export const VOIDCORE: ModeDef = {
   bonusCash: RULES.voidcoreCash,
   curveA: 1300,
   curveB: 70,
-  hpBp: 15000,
-  rampBp: 21000,
+  hpBp: 16500,
+  rampBp: 25000,
   pool: [
     e("risacca", 1, 10, 85, 8), e("corridore", 2, 7, 65, 7), e("larva", 8, 3, 50, 10), e("bruto", 5, 2, 40, 18), e("sabotatore", 7, 2, 22, 24),
     e("tizzone", 9, 6, 65, 7), e("squarcio", 13, 2, 30, 20), e("magmatico", 15, 2, 28, 22), e("spettro", 18, 4, 50, 10),
@@ -256,7 +256,7 @@ export const VOIDCORE: ModeDef = {
   doubleModsFrom: 10,
   minis: [
     { wave: 10, kind: "divoratore", hpBp: 18000 },
-    { wave: 20, kind: "colosso", hpBp: 36000 },
+    { wave: 20, kind: "colosso", hpBp: 42000 },
     { wave: 30, kind: "recaduto", hpBp: 60000 },
     { wave: 40, kind: "regina", hpBp: 64000 },
     { wave: 45, kind: "leviatano", hpBp: 60000 },

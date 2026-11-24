@@ -181,9 +181,9 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
   },
   // ---- Voidcore ----
   larva: { name: "Larva del Vuoto", plural: "Larve del Vuoto", cls: "carne", hp: 64, speed: 118, armor: 0, bounty: 7, lifeDamage: 1, hidden: true },
-  divoratore: { name: "Divoratore", plural: "Divoratori", cls: "corazza", hp: 420, speed: 38, armor: 60, bounty: 34, lifeDamage: 5, regenBp: 3, slowImmune: true },
+  divoratore: { name: "Divoratore", plural: "Divoratori", cls: "corazza", hp: 470, speed: 38, armor: 60, bounty: 34, lifeDamage: 5, regenBp: 3, slowImmune: true },
   squarcio: {
-    name: "Squarcio", plural: "Squarci", cls: "carne", hp: 200, speed: 60, armor: 25, bounty: 26, lifeDamage: 3,
+    name: "Squarcio", plural: "Squarci", cls: "carne", hp: 240, speed: 60, armor: 25, bounty: 26, lifeDamage: 3,
     charge: { every: 50, ticks: 12, speedBp: 34000 }, split: { kind: "larva", count: 3 },
   },
   // Non si può colpire finché il Leviatano è vivo; quando il Leviatano cade, lo rianima a ripetizione.
@@ -1481,7 +1481,7 @@ export const RULES = {
   startLives: 20,
   hardcoreLives: 10,
   hardcoreCash: 220, // cash iniziale in più in Hardcore
-  voidcoreLives: 8,
+  voidcoreLives: 6,
   voidcoreCash: 220,
   prepTicks: 200,
   firstPrepTicks: 300,

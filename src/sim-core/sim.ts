@@ -2,6 +2,7 @@
 // Regole: solo numeri interi nello stato, nessun Math.random, nessun orologio, nessuna funzione
 // trigonometrica. Le divisioni tra interi passano sempre da Math.floor.
 import { HIDDEN, VOID, reviveHp } from "./twists";
+import { GOLDEN, goldenStats } from "./content";
 import { AIMS, Aim, BLIZZARD, CONTRACTS, CONTRACT_IDS, LAVA, MERCHANT_IDS, ORDER_IDS, Order, POISONS, QTE, QTE_SYMBOLS, RELIC_IDS, OfferKind, Twist, contractReward, merchantGold, newTwist } from "./twists";
 import {
   ABILITIES,
@@ -119,6 +120,7 @@ export interface Tower {
   bufDetect: number; // 1 se un Capitano vicino gli fa vedere gli invisibili
   owner: number; // giocatore che l'ha costruita (0 in solitaria)
   rank: number; // rango permanente del proprietario per questa torre
+  gold?: boolean; // variante d'oro del proprietario
   spawnCd: number; // Kingpin: tick alla prossima evocazione
   spawnN: number; // Kingpin: unità evocate finora
   queue: UnitKind[]; // Kingpin: la coda che si ripete, fino a 4 posti
@@ -204,6 +206,7 @@ export interface GameState {
   eventBp: number; // forza dell'evento (Disgelo)
   allowed: TowerKind[];
   ranks: Record<TowerKind, number>;
+  golden?: TowerKind[]; // varianti d'oro attive del primo giocatore
   abilityCd: Record<AbilityId, number>;
   enemies: Enemy[];
   towers: Tower[];
@@ -221,6 +224,7 @@ export interface PlayerPurse {
   abilityCd: Record<AbilityId, number>;
   allowed: TowerKind[];
   ranks: Record<TowerKind, number>;
+  golden?: TowerKind[];
 }
 
 export interface GameOptions {
@@ -228,13 +232,15 @@ export interface GameOptions {
   level?: string;
   allowed?: TowerKind[];
   ranks?: Partial<Record<TowerKind, number>>;
+  /** Varianti d'oro attive (solitaria). */
+  golden?: TowerKind[];
   sandbox?: boolean;
   night?: number;
   eventBp?: number;
   /** Livello del giocatore: più è alto, più vita hanno i nemici (fino a un tetto). */
   plevel?: number;
   /** Multigiocatore: squadra e ranghi di ogni giocatore, il primo è chi ospita. */
-  players?: Array<{ allowed: TowerKind[]; ranks: Partial<Record<TowerKind, number>>; level?: number }>;
+  players?: Array<{ allowed: TowerKind[]; ranks: Partial<Record<TowerKind, number>>; level?: number; golden?: TowerKind[] }>;
 }
 
 export type Command = CommandBody & { p?: number }; // p: giocatore che manda il comando (0 in solitaria)
@@ -473,12 +479,15 @@ function randomInt(state: GameState, maxExclusive: number): number {
 // ---------- statistiche e costi ----------
 
 /** Valori della torre al suo livello, senza rango. */
-export function towerStats(t: Pick<Tower, "kind" | "level" | "branch">): TowerStats {
+export function towerStats(t: Pick<Tower, "kind" | "level" | "branch"> & { gold?: boolean }): TowerStats {
   const def = TOWERS[t.kind];
-  if (t.level >= 5 && t.branch) return def.branches2 ? def.branches2[t.branch] : apexStats(def.branches[t.branch]);
-  if (t.level >= 4 && t.branch) return def.branches[t.branch];
-  return def.levels[t.level - 1];
+  const s =
+    t.level >= 5 && t.branch ? (def.branches2 ? def.branches2[t.branch] : apexStats(def.branches[t.branch])) : t.level >= 4 && t.branch ? def.branches[t.branch] : def.levels[t.level - 1];
+  return t.gold ? goldenStats(t.kind, s) : s;
 }
+
+const cleanGolden = (list?: TowerKind[]) => (list ?? []).filter((k, i, a) => !!GOLDEN[k] && a.indexOf(k) === i);
+export const goldenOf = (s: GameState, p = 0): TowerKind[] => (p <= 0 || !s.others[p - 1] ? s.golden ?? [] : s.others[p - 1].golden ?? []);
 
 export function apexPrice(state: GameState, t: Tower): number {
   if (!t.branch) return 0;
@@ -498,7 +507,7 @@ export function apexBlock(state: GameState, t: Tower): string | null {
 }
 
 /** Valori con il rango permanente: +10% di danno, rallentamento, rendita e supporto per ogni rango. */
-export function rankedStats(t: Pick<Tower, "kind" | "level" | "branch">, rank: number): TowerStats {
+export function rankedStats(t: Pick<Tower, "kind" | "level" | "branch"> & { gold?: boolean }, rank: number): TowerStats {
   const s = towerStats(t);
   const r = Math.max(1, Math.min(MAX_RANK, rank | 0));
   if (r === 1) return s;
@@ -664,7 +673,7 @@ export function createGame(seed: number, opts: GameOptions = {}): GameState {
   const levelId = mode === "natale" && m && "map" in m ? (m as { map: string }).map : opts.level;
   const level = levelById(levelId ?? "porto");
   const startCash = opts.sandbox ? 100000 : level.startCash + (m ? m.bonusCash : 0);
-  const others: PlayerPurse[] = (team ?? []).slice(1, 4).map((pl) => ({ cash: startCash, abilityCd: { fascio: 0, gelata: 0 }, allowed: pick(pl.allowed), ranks: cleanRanks(pl.ranks) }));
+  const others: PlayerPurse[] = (team ?? []).slice(1, 4).map((pl) => ({ cash: startCash, abilityCd: { fascio: 0, gelata: 0 }, allowed: pick(pl.allowed), ranks: cleanRanks(pl.ranks), golden: cleanGolden(pl.golden) }));
   const state: GameState = {
     seed: clean,
     rng: clean,
@@ -694,6 +703,7 @@ export function createGame(seed: number, opts: GameOptions = {}): GameState {
     eventBp: mode === "natale" ? Math.max(1000, Math.min(30000, opts.eventBp ?? 10000)) : 10000,
     allowed: pick(team ? team[0].allowed : opts.allowed),
     ranks,
+    golden: cleanGolden(team ? team[0].golden : opts.golden),
     abilityCd: { fascio: 0, gelata: 0 },
     enemies: [],
     towers: [],
@@ -899,7 +909,7 @@ function swing(state: GameState, t: Tower, s: TowerStats, target: Enemy, events:
     const iced = (e.frozen ?? 0) > 0 || (e.chill ?? 0) > 0;
     hit(state, e, t, s, s.iceBreaker && iced ? s.damage * 2 : s.damage, events);
     chillEnemy(state, e, s, events);
-    if (s.burnDamage > 0 && e.hp > 0 && !BURN_IMMUNE.includes(e.kind)) {
+    if (s.burnDamage > 0 && e.hp > 0 && (s.burnAll || !BURN_IMMUNE.includes(e.kind))) {
       // Le fiamme restano addosso: vale la bruciatura più forte, la durata riparte.
       if (s.burnDamage >= (e.burn ?? 0)) {
         e.burn = s.burnDamage;
@@ -1088,6 +1098,7 @@ function applyCommand(state: GameState, cmd: Command, events: GameEvent[]): void
         bufDetect: 0,
         owner: p,
         rank: ranksOf(state, p)[cmd.kind] ?? 1,
+        ...(goldenOf(state, p).includes(cmd.kind) ? { gold: true } : {}),
         spawnCd: 20,
         spawnN: 0,
         queue: cmd.kind === "kingpin" ? ["scagnozzo"] : [],
@@ -1862,6 +1873,8 @@ function enemyActs(state: GameState, events: GameEvent[]): void {
           const child = newEnemy(state, kind, e.lane, dist, minionHp(state, kind), e.mods & (modBit("agile") | modBit("corazzato")), (i * 120) % 361 - 180);
           // I boss evocati da un boss non contano come boss.
           child.summonCd = ENEMIES[kind].summon ? ENEMIES[kind].summon!.every * 2 : 0;
+          // Chi è evocato a metà strada non ha tutto il percorso davanti: se passa costa una vita sola.
+          child.lifeDamage = Math.min(child.lifeDamage, 1);
           born.push(child);
         }
         events.push({ e: "summon", x: e.x, y: e.y });
@@ -2408,6 +2421,7 @@ export function hashState(state: GameState): string {
   mix(state.eventBp);
   for (const k of state.allowed) str(k);
   for (const k of TOWER_ORDER) mix(state.ranks[k]);
+  for (const k of state.golden ?? []) str(k);
   mix(state.abilityCd.fascio);
   mix(state.abilityCd.gelata);
   mix(state.hpScaleBp);
@@ -2417,6 +2431,7 @@ export function hashState(state: GameState): string {
     mix(o.abilityCd.gelata);
     for (const k of o.allowed) str(k);
     for (const k of TOWER_ORDER) mix(o.ranks[k]);
+    for (const k of o.golden ?? []) str(k);
   }
   for (const e of state.enemies) {
     mix(e.id);
@@ -2471,6 +2486,7 @@ export function hashState(state: GameState): string {
     mix(t.shots ?? 0);
     mix(t.hits ?? 0);
     mix(t.rev ?? 0);
+    mix(t.gold ? 1 : 0);
     for (const c of t.sentries ?? []) mix(c + 1);
     mix(t.abilityCd);
     mix(t.abilityLeft);

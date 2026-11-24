@@ -120,7 +120,7 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
   magmatico: { name: "Magmatico", plural: "Magmatici", cls: "corazza", hp: 210, speed: 52, armor: 30, bounty: 22, lifeDamage: 3, split: { kind: "tizzone", count: 2 } },
   colosso: {
     name: "Colosso di Brace", plural: "Colossi di Brace", cls: "corazza", hp: 150, speed: 34, armor: 45, bounty: 40, lifeDamage: 15,
-    slowImmune: true, summon: { kind: "magmatico", count: 1, every: 90 }, phases: [6600, 3300], phaseShieldBp: 2000,
+    slowImmune: true, summon: { kind: "magmatico", count: 1, every: 130 }, phases: [6600, 3300], phaseShieldBp: 2000,
   },
   // ---- Fallen ----
   spettro: { name: "Spettro", plural: "Spettri", cls: "carne", hp: 58, speed: 112, armor: 0, bounty: 9, lifeDamage: 1, hidden: true },
@@ -180,10 +180,10 @@ export const ENEMIES: Record<EnemyKind, EnemyDef> = {
     phases: [8000, 6000, 4000, 2000], phaseShieldBp: 2500,
   },
   // ---- Voidcore ----
-  larva: { name: "Larva del Vuoto", plural: "Larve del Vuoto", cls: "carne", hp: 64, speed: 118, armor: 0, bounty: 7, lifeDamage: 2, hidden: true },
-  divoratore: { name: "Divoratore", plural: "Divoratori", cls: "corazza", hp: 560, speed: 38, armor: 60, bounty: 34, lifeDamage: 8, regenBp: 3, slowImmune: true },
+  larva: { name: "Larva del Vuoto", plural: "Larve del Vuoto", cls: "carne", hp: 64, speed: 118, armor: 0, bounty: 7, lifeDamage: 1, hidden: true },
+  divoratore: { name: "Divoratore", plural: "Divoratori", cls: "corazza", hp: 420, speed: 38, armor: 60, bounty: 34, lifeDamage: 5, regenBp: 3, slowImmune: true },
   squarcio: {
-    name: "Squarcio", plural: "Squarci", cls: "carne", hp: 300, speed: 60, armor: 25, bounty: 26, lifeDamage: 5,
+    name: "Squarcio", plural: "Squarci", cls: "carne", hp: 200, speed: 60, armor: 25, bounty: 26, lifeDamage: 3,
     charge: { every: 50, ticks: 12, speedBp: 34000 }, split: { kind: "larva", count: 3 },
   },
   // Non si può colpire finché il Leviatano è vivo; quando il Leviatano cade, lo rianima a ripetizione.
@@ -276,6 +276,7 @@ export interface TowerStats {
   burnDamage: number; // danni ogni mezzo secondo, ignorano l'armatura
   burnTicks: number; // durata della bruciatura
   // Slasher: colpi ravvicinati, critico ogni tot colpi, sanguinamento che si accumula
+  burnAll: boolean; // Piromante d'Oro: brucia anche i nemici di brace
   revTicks: number; // Juggernaut: tick di rotazione del minigun prima di sparare; 0 = spara subito
   fortifyRadius: number; // Juggernaut A: raggio della zona fortificata
   fortifyBp: number; // quanto accorcia gli stordimenti alle torri nella zona (10000 = li annulla)
@@ -383,6 +384,7 @@ const base: TowerStats = {
   cashAmount: 0,
   burnDamage: 0,
   burnTicks: 0,
+  burnAll: false,
   revTicks: 0,
   fortifyRadius: 0,
   fortifyBp: 0,
@@ -961,6 +963,50 @@ export const HARDCORE_TOWERS: TowerKind[] = ["arpione", "mitragliera", "purifica
 // Apex: il livello 6 della torre, uno per tipo e per partita, con il rango permanente almeno 3.
 export const APEX_RANK = 3;
 export const APEX_COST_BP = 25000; // costo rispetto alla specializzazione scelta
+// ---------- varianti d'oro ----------
+
+/** Versione d'oro di una torre: si compra con le Perle e, se attiva, sostituisce la torre normale per chi la possiede. */
+export interface GoldenDef {
+  name: string;
+  perle: number;
+  perk: string; // in una riga, per l'Arsenale
+  dmgBp?: number;
+  rangeBp?: number;
+  cashBp?: number; // incasso del Pistolero
+  unitBp?: number; // forza degli scagnozzi del Kingpin
+  burnBp?: number;
+  detect?: boolean; // vede gli invisibili da subito
+  pierce?: boolean; // ignora l'armatura da subito
+  burnAll?: boolean;
+}
+
+export const GOLDEN: Partial<Record<TowerKind, GoldenDef>> = {
+  balestra: { name: "Balestra d'Oro", perle: 40, perk: "+20% danno e vede gli invisibili dal livello 1", dmgBp: 12000, detect: true },
+  cecchino: { name: "Cecchino d'Oro", perle: 50, perk: "+20% danno, +10% gittata e colpi che ignorano l'armatura", dmgBp: 12000, rangeBp: 11000, pierce: true },
+  pistolero: { name: "Pistolero d'Oro", perle: 45, perk: "+10% danno e incassa il doppio", dmgBp: 11000, cashBp: 20000 },
+  piromante: { name: "Piromante d'Oro", perle: 50, perk: "Bruciatura +40% e brucia anche i nemici di brace", burnBp: 14000, burnAll: true },
+  mitragliera: { name: "Mitragliera d'Oro", perle: 60, perk: "+20% danno e +10% gittata", dmgBp: 12000, rangeBp: 11000 },
+  kingpin: { name: "Kingpin d'Oro", perle: 70, perk: "+15% danno e scagnozzi più forti del 20%", dmgBp: 11500, unitBp: 12000 },
+};
+export const GOLDEN_KINDS = Object.keys(GOLDEN) as TowerKind[];
+
+export function goldenStats(kind: TowerKind, s: TowerStats): TowerStats {
+  const g = GOLDEN[kind];
+  if (!g) return s;
+  const up = (v: number, bp?: number) => (bp ? Math.floor((v * bp) / 10000) : v);
+  return {
+    ...s,
+    damage: up(s.damage, g.dmgBp),
+    range: up(s.range, g.rangeBp),
+    cashAmount: up(s.cashAmount, g.cashBp),
+    unitBp: s.unitSet ? up(s.unitBp, g.unitBp) : s.unitBp,
+    burnDamage: up(s.burnDamage, g.burnBp),
+    detect: s.detect || !!g.detect,
+    pierce: s.pierce || !!g.pierce,
+    burnAll: s.burnAll || !!g.burnAll,
+  };
+}
+
 export function apexStats(s: TowerStats): TowerStats {
   const up = (v: number, bp: number) => Math.floor((v * bp) / 10000);
   return {
@@ -1407,7 +1453,7 @@ export const RULES = {
   startLives: 20,
   hardcoreLives: 10,
   hardcoreCash: 220, // cash iniziale in più in Hardcore
-  voidcoreLives: 5,
+  voidcoreLives: 8,
   voidcoreCash: 220,
   prepTicks: 200,
   firstPrepTicks: 300,

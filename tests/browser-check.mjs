@@ -428,6 +428,37 @@ for (const vp of [{ width: 390, height: 760 }, { width: 844, height: 390 }]) {
   await context.close();
 }
 
+// ---------- torri d'oro ----------
+{
+  const { page, errors, context } = await open({ width: 420, height: 860 }, { menu: true });
+  await page.waitForTimeout(200);
+  await page.evaluate(() => {
+    const m = window.__faro.debug.meta;
+    if (!m.unlocked.includes("cecchino")) m.unlocked.push("cecchino");
+    m.perle = 60;
+    window.__faro.debug.setSchegge(m.schegge);
+  });
+  const btn = page.locator('#arsenal button[data-gold="cecchino"]');
+  check("l'Arsenale offre la variante d'oro di una torre posseduta", (await btn.count()) === 1 && /Perle/.test(await btn.textContent()));
+  await btn.tap();
+  const m1 = await page.evaluate(() => ({ perle: window.__faro.debug.meta.perle, on: window.__faro.debug.meta.goldOn }));
+  check(`comprata con le Perle e attiva (${JSON.stringify(m1)})`, m1.perle === 10 && m1.on.includes("cecchino"));
+  await page.locator('#arsenal button[data-gold="cecchino"]').tap();
+  const off = await page.evaluate(() => window.__faro.debug.meta.goldOn.includes("cecchino"));
+  check("si spegne senza ripagarla", !off && (await page.evaluate(() => window.__faro.debug.meta.perle)) === 10);
+  await page.locator('#arsenal button[data-gold="cecchino"]').tap();
+  const gold = await page.evaluate(() => {
+    const f = window.__faro;
+    f.debug.restart(4, { mode: "easy", level: "porto", allowed: ["cecchino"], golden: f.debug.meta.goldOn });
+    f.state.cash = 5000;
+    for (let cy = 0; cy < 9 && !f.state.towers.length; cy++) for (let cx = 0; cx < 16 && !f.state.towers.length; cx++) f.debug.send({ t: "build", kind: "cecchino", cx, cy });
+    return f.state.towers[0]?.gold;
+  });
+  check("in partita il Cecchino è d'oro", gold === true);
+  check(`torri d'oro: nessun errore ${errors.join(" | ")}`, errors.length === 0);
+  await context.close();
+}
+
 // ---------- sfide della settimana ----------
 {
   const { page, errors, context } = await open({ width: 420, height: 860 });

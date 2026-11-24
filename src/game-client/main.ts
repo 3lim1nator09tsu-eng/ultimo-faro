@@ -1,5 +1,5 @@
 // Client del prototipo: disegna lo stato, raccoglie i tocchi, non decide mai le regole.
-import { ADMIN_ONLY, EVENT_TOWER, KINGPIN_QUEUE, SURVIVAL_MAPS, UNITS, UNIT_ORDER, ABILITIES, APEX_RANK, AbilityId, ENEMIES, GameMode, HARDCORE_TOWERS, LEVELS, MODS, LOADOUT_SIZE, MAP_H, MAP_W, MAX_RANK, RANK_COSTS, RULES, STARTER_TOWERS, TICKS_PER_SECOND, TILE, TOWERS, TOWER_ORDER, TRACKS, TowerKind, Track, Branch, levelById } from "../sim-core/content";
+import { GOLDEN, ADMIN_ONLY, EVENT_TOWER, KINGPIN_QUEUE, SURVIVAL_MAPS, UNITS, UNIT_ORDER, ABILITIES, APEX_RANK, AbilityId, ENEMIES, GameMode, HARDCORE_TOWERS, LEVELS, MODS, LOADOUT_SIZE, MAP_H, MAP_W, MAX_RANK, RANK_COSTS, RULES, STARTER_TOWERS, TICKS_PER_SECOND, TILE, TOWERS, TOWER_ORDER, TRACKS, TowerKind, Track, Branch, levelById } from "../sim-core/content";
 import { Command, Enemy, GameEvent, levelHpBp, sentrySpot, towerStats, GameOptions, GameState, modBit, playerCount, hiddenWon, canPlace, covers, sizeOf, abilityCdOf, allowedOf, cashOf, apexBlock, apexPrice, applyCommands, modsOf, perleFor, cellEmerged, createGame, effStats, hashState, isBuildable, laneIsOpen, levelOf, rankedStats, restore, rewardFor, sellValue, specPrice, statsIn, snapshot, starsFor, step, upgradePrice, waveCount, wavePreview } from "../sim-core/sim";
 import { playBot } from "../sim-core/bot";
 import { drawTwist, qteKey, renderAim, renderChoice, renderQte, renderTwist, twistToast } from "./twist-ui";
@@ -263,6 +263,8 @@ const lineKey = () => (state.mode === "natale" ? `natale:${state.night}` : state
 interface Meta {
   v: 2;
   weekly?: WeeklyState; // sfide della settimana già riuscite
+  goldOwned?: TowerKind[]; // varianti d'oro comprate
+  goldOn?: TowerKind[]; // varianti d'oro attive
   schegge: number;
   earned: number;
   unlocked: TowerKind[];
@@ -318,6 +320,8 @@ function loadMeta(raw: string | null = store.get("faro.meta.v1")): Meta {
     m.earned = n(d.earned, 0, 1e9, 0);
     m.introSeen = !!d.introSeen;
     if (Array.isArray(d.unlocked)) for (const k of d.unlocked) if (TOWER_ORDER.includes(k) && !m.unlocked.includes(k)) m.unlocked.push(k);
+    if (Array.isArray(d.goldOwned)) m.goldOwned = d.goldOwned.filter((k, i, a) => !!GOLDEN[k] && a.indexOf(k) === i);
+    if (Array.isArray(d.goldOn)) m.goldOn = d.goldOn.filter((k, i, a) => (m.goldOwned ?? []).includes(k) && a.indexOf(k) === i);
     for (const k of TOWER_ORDER) m.ranks[k] = n(d.ranks?.[k], 1, MAX_RANK, 1);
     if (d.v === 2) {
       m.stars = record(d.stars, 3);
@@ -922,7 +926,7 @@ function updatePanel() {
   if (t) {
     const def = TOWERS[t.kind];
     const two = def.branches2 && t.branch ? def.branches2[t.branch] : null;
-    setText($("dName"), t.level >= 5 ? (two ? two.name : def.apex) : t.branch ? def.branches[t.branch].name : def.name);
+    setText($("dName"), (t.level >= 5 ? (two ? two.name : def.apex) : t.branch ? def.branches[t.branch].name : t.gold ? GOLDEN[t.kind]!.name : def.name) + (t.gold && t.branch ? " d'Oro" : ""));
     const rank = t.rank ?? 1;
     const foreign = t.owner !== myP;
     setText($("dLevel"), `${t.level >= 5 && !two ? "Apex" : `Livello ${t.level}`}${rank > 1 ? ` · Rango ${rank}` : ""}`);
@@ -1672,7 +1676,7 @@ let myP = 0;
 const myCash = () => cashOf(state, myP);
 const myAllowed = () => allowedOf(state, myP);
 function newMatch(mode: GameMode, level = state.levelId, seed = newSeed(), opts?: GameOptions) {
-  const o = opts ?? { mode, level, allowed: meta.loadout, ranks: meta.ranks };
+  const o = opts ?? { mode, level, allowed: meta.loadout, ranks: meta.ranks, golden: activeGolden() };
   // I nemici crescono con il livello del giocatore, fino al tetto.
   if (!o.players && o.plevel === undefined) o.plevel = levelFromXp(meta.xp).level;
   lastOpts = o;
@@ -1731,7 +1735,7 @@ function restart() {
 }
 
 function playNight(n: number) {
-  newMatch("natale", NIGHTS[n - 1].map, newSeed(), { mode: "natale", night: n, eventBp: disgelo().bp, allowed: meta.loadout, ranks: meta.ranks });
+  newMatch("natale", NIGHTS[n - 1].map, newSeed(), { mode: "natale", night: n, eventBp: disgelo().bp, allowed: meta.loadout, ranks: meta.ranks, golden: activeGolden() });
 }
 
 // ---------- menu e Arsenale ----------
@@ -1829,12 +1833,13 @@ function renderMenu() {
     const icon = document.createElement("canvas");
     icon.width = 76;
     icon.height = 76;
-    drawTowerShape(icon.getContext("2d")!, kind, 38, 38, 76, -0.6);
+    const goldOn = activeGolden().includes(kind);
+    drawTowerShape(icon.getContext("2d")!, kind, 38, 38, 76, -0.6, 1, null, 0, "danno", 0, 0, goldOn);
     const text = document.createElement("div");
     text.className = "rowText";
     const rank = meta.ranks[kind];
     const name = document.createElement("b");
-    name.textContent = def.name;
+    name.textContent = goldOn ? GOLDEN[kind]!.name : def.name;
     const role = document.createElement("small");
     const apexNote = owned && rank < APEX_RANK ? ` · Apex dal rango ${APEX_RANK}` : "";
     role.textContent = owned ? `${def.role} · Rango ${rank}/${MAX_RANK}${apexNote}` : HARDCORE_TOWERS.includes(kind) ? `Torre Hardcore. ${def.role}` : def.role;
@@ -1888,6 +1893,32 @@ function renderMenu() {
       if (inSquad && meta.loadout.length === 1) sq.disabled = true;
       sq.addEventListener("click", () => toggleSquad(kind));
       btns.append(sq);
+      const g = GOLDEN[kind];
+      if (g) {
+        // Variante d'oro: si compra con le Perle, poi si accende e spegne.
+        const gb = document.createElement("button");
+        gb.className = "goldBtn";
+        gb.dataset.gold = kind;
+        const has = (meta.goldOwned ?? []).includes(kind);
+        if (!has) {
+          gb.textContent = `D'oro · ${g.perle} Perle`;
+          gb.title = g.perk;
+          if (meta.perle < g.perle) {
+            gb.disabled = true;
+            gb.title = `${g.perk}. Servono ${g.perle} Perle`;
+          }
+        } else {
+          gb.setAttribute("aria-pressed", String(goldOn));
+          gb.textContent = goldOn ? "D'oro: attiva" : "D'oro: spenta";
+          gb.title = g.perk;
+        }
+        gb.addEventListener("click", () => buyGolden(kind));
+        btns.append(gb);
+        const perk = document.createElement("small");
+        perk.className = "goldPerk";
+        perk.textContent = `${g.name}: ${g.perk}`;
+        text.append(perk);
+      }
     }
     row.append(icon, text, btns);
     host.append(row);
@@ -2057,7 +2088,7 @@ async function checkServer() {
 }
 
 function me(): Player {
-  return { id: net.session?.userId ?? `ospite-${newSeed() >>> 0}`, name: net.session?.username ?? "ospite", loadout: [...meta.loadout], ranks: { ...meta.ranks }, level: levelFromXp(meta.xp).level, seen: Date.now() };
+  return { id: net.session?.userId ?? `ospite-${newSeed() >>> 0}`, name: net.session?.username ?? "ospite", loadout: [...meta.loadout], ranks: { ...meta.ranks }, level: levelFromXp(meta.xp).level, golden: activeGolden(), seen: Date.now() };
 }
 
 function transportFor(code: string, local: boolean): Transport {
@@ -2398,6 +2429,31 @@ function priceText(p: { schegge: number; perle: number }) {
   return parts.join(" + ") || "gratis";
 }
 
+/** Varianti d'oro comprate e attive. */
+function activeGolden(): TowerKind[] {
+  return (meta.goldOn ?? []).filter((k) => (meta.goldOwned ?? []).includes(k) && meta.unlocked.includes(k));
+}
+
+function buyGolden(kind: TowerKind) {
+  wakeAudio();
+  const g = GOLDEN[kind];
+  if (!g || !meta.unlocked.includes(kind)) return;
+  meta.goldOwned ??= [];
+  meta.goldOn ??= [];
+  if (!meta.goldOwned.includes(kind)) {
+    if (meta.perle < g.perle) return;
+    meta.perle -= g.perle;
+    meta.goldOwned.push(kind);
+    meta.goldOn.push(kind);
+    toast(`${g.name} sbloccata e attiva`);
+    sfx.apex();
+  } else if (meta.goldOn.includes(kind)) {
+    meta.goldOn = meta.goldOn.filter((k) => k !== kind);
+  } else meta.goldOn.push(kind);
+  saveMeta();
+  renderMenu();
+}
+
 function buyFromArsenal(kind: TowerKind) {
   wakeAudio();
   const owned = meta.unlocked.includes(kind);
@@ -2434,7 +2490,7 @@ const adminApi: AdminApi = {
   startSandbox(level, mode, night, eventBp) {
     if (!isAdmin()) return;
     $("adminPanel").hidden = true;
-    newMatch(mode, level, newSeed(), { mode, level, sandbox: true, ranks: meta.ranks, night, eventBp });
+    newMatch(mode, level, newSeed(), { mode, level, sandbox: true, ranks: meta.ranks, golden: activeGolden(), night, eventBp });
     toast("Partita di prova: tutte le torri, nessun premio");
   },
   setSpeed(n) {
@@ -2967,7 +3023,7 @@ function render(now: number) {
         ctx.restore();
       }
     }
-    drawTowerShape(ctx, t.kind, p.x, p.y, pxT * sizeOf(t.kind) * pop, angle, t.level, t.branch, reducedMotion ? 0 : now, t.track, kick, spin);
+    drawTowerShape(ctx, t.kind, p.x, p.y, pxT * sizeOf(t.kind) * pop, angle, t.level, t.branch, reducedMotion ? 0 : now, t.track, kick, spin, !!t.gold);
     towerStatus(t, p.x, p.y, pxT, now);
     if (t.id === selectedId) {
       const r = cellRect(t.cx, t.cy);

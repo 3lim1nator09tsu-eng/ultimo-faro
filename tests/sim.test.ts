@@ -1773,3 +1773,39 @@ test("Juggernaut: Arma sperimentale +40% sui boss, Zona fortificata dimezza gli 
   const sab = ENEMIES.sabotatore.sabotage!;
   assert.ok(worst > 0 && worst <= Math.ceil(sab.stun / 2), `stordimento massimo ${worst} su ${sab.stun}`);
 });
+
+import { GOLDEN, GOLDEN_KINDS, goldenStats } from "../src/sim-core/content";
+
+test("Torri d'oro: solo per chi le ha attive, con i loro bonus", () => {
+  assert.ok(GOLDEN_KINDS.length >= 5);
+  const s = createGame(8, {
+    mode: "easy",
+    level: "porto",
+    players: [
+      { allowed: ["balestra", "piromante"], ranks: {}, golden: ["balestra", "piromante", "custode" as never] },
+      { allowed: ["balestra"], ranks: {} },
+    ],
+  });
+  s.cash = 9000;
+  s.others[0].cash = 9000;
+  const free: Array<[number, number]> = [];
+  for (let cy = 0; cy < 9; cy++) for (let cx = 0; cx < 16; cx++) if (canPlace(s, "balestra", cx, cy)) free.push([cx, cy]);
+  step(s, [{ t: "build", kind: "balestra", cx: free[0][0], cy: free[0][1], p: 0 }, { t: "build", kind: "balestra", cx: free[1][0], cy: free[1][1], p: 1 }]);
+  const mine = s.towers.find((t) => t.owner === 0)!;
+  const theirs = s.towers.find((t) => t.owner === 1)!;
+  assert.ok(mine.gold && !theirs.gold, "la variante d'oro vale solo per chi la possiede");
+  assert.deepEqual(s.golden, ["balestra", "piromante"], "le torri senza variante d'oro vengono ignorate");
+  const a = towerStats(mine);
+  const b = towerStats(theirs);
+  assert.equal(a.damage, Math.floor((b.damage * GOLDEN.balestra!.dmgBp!) / 10000));
+  assert.ok(a.detect && !b.detect, "vede gli invisibili dal livello 1");
+  assert.equal(hashState(restore(snapshot(s))), hashState(s));
+  // Piromante d'oro: brucia anche i nemici di brace.
+  const fire = goldenStats("piromante", TOWERS.piromante.levels[0]);
+  assert.ok(fire.burnAll && fire.burnDamage > TOWERS.piromante.levels[0].burnDamage);
+  const d = duel("piromante");
+  d.t.gold = true;
+  d.e.kind = "tizzone" as never;
+  step(d.s, []);
+  assert.ok((d.e.burnT ?? 0) > 0, "il Tizzone brucia con il Piromante d'oro");
+});

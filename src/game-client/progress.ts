@@ -129,9 +129,20 @@ export const MEDALS: Array<{ id: string; name: string; text: string; ok: (m: Med
 // ---------- bacheca ----------
 
 /** Versione del gioco: chi ospita la comunica all'admin, che vede se i comandi nuovi possono funzionare. */
-export const GAME_VERSION = "0.23.0";
+export const GAME_VERSION = "0.24.0";
 
 export const VERSION_NOTES: ChangeEntry[] = [
+  {
+    date: "2026-11-24",
+    title: "Versione 0.24: torri d'oro e Voidcore più giusta",
+    kind: "versione",
+    items: [
+      "Torri d'oro: Balestra, Cecchino, Pistolero, Piromante, Mitragliera e Kingpin hanno una variante d'oro da comprare con le Perle nell'Arsenale. Una volta comprata si accende e si spegne quando vuoi, e vale solo per le tue torri",
+      "Balestra d'Oro vede gli invisibili da subito; Cecchino d'Oro ignora l'armatura; Pistolero d'Oro incassa il doppio; Piromante d'Oro brucia anche i nemici di brace; Mitragliera e Kingpin d'Oro fanno più danno",
+      "Voidcore: 8 vite invece di 5, vita dei nemici più regolare tra un'ondata e l'altra, Squarci e Divoratori meno resistenti e meno dannosi se passano, Colosso dell'ondata 20 più leggero",
+      "In tutte le modalità: i nemici evocati da un boss (per esempio i Magmatici del Colosso) costano una vita sola se passano, e il Colosso li evoca meno spesso",
+    ],
+  },
   {
     date: "2026-11-23",
     title: "Versione 0.23: il Juggernaut",

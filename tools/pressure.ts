@@ -9,6 +9,7 @@ const allRank = (r: number) => Object.fromEntries(TOWER_ORDER.map((k) => [k, r])
 const MID: TowerKind[] = ["balestra", "mortaio", "soffio", "cecchino", "bobina", "officina"];
 const SUPK: TowerKind[] = ["balestra", "mortaio", "bobina", "cecchino", "capitano", "kingpin"];
 const HCK: TowerKind[] = ["mortaio", "bobina", "capitano", "mitragliera", "arpione", "kingpin"];
+const STRONG: TowerKind[] = ["mortaio", "bobina", "capitano", "juggernaut", "gladiatore", "kingpin"];
 const setups: Array<[string, GameOptions]> = [
   ["easy r1", { mode: "easy", allowed: MID }],
   ["easy r3", { mode: "easy", allowed: MID, ranks: allRank(3) }],
@@ -18,6 +19,8 @@ const setups: Array<[string, GameOptions]> = [
   ["frost r5", { mode: "frost", allowed: SUPK, ranks: allRank(5) }],
   ["hardcore r5", { mode: "hardcore", allowed: HCK, ranks: allRank(5) }],
   ["voidcore r5", { mode: "voidcore", allowed: HCK, ranks: allRank(5) }],
+  ["hardcore forte", { mode: "hardcore", allowed: STRONG, ranks: allRank(5) }],
+  ["voidcore forte", { mode: "voidcore", allowed: STRONG, ranks: allRank(5) }],
 ];
 const maps = ["porto", "foce", "marea", "lungomare"];
 for (const [label, opts] of setups) {

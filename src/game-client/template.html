@@ -223,6 +223,9 @@ table.board { width: 100%; border-collapse: collapse; font-variant-numeric: tabu
 .newsItem ul { margin: 4px 0 0; padding-left: 18px; }
 #arsenal .row.hardcore { border-color: #4a3f6e; }
 #arsenal button.pearl:not(:disabled) { border-color: #c9b8ff; color: #c9b8ff; }
+#arsenal button.goldBtn:not(:disabled) { border-color: var(--brass); color: var(--brass); }
+#arsenal button.goldBtn[aria-pressed="true"] { background: rgba(224,179,84,.22); color: #fff1c2; }
+#arsenal .goldPerk { display: block; color: var(--brass); opacity: .85; }
 #adminOpen { justify-self: start; border-color: var(--coral); color: var(--coral); }
 #bossBar { position: absolute; left: 50%; top: 8px; transform: translateX(-50%); width: min(80%, 420px); background: rgba(11,23,29,.92); border: 1px solid var(--coral); padding: 4px 8px 6px; line-height: 1.2; pointer-events: none; display: grid; gap: 3px; z-index: 1; }
 #bossBar b { font: 400 clamp(12px, 3.6vw, 16px) var(--caps); color: var(--coral); text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

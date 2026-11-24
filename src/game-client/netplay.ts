@@ -10,6 +10,7 @@ export interface Player {
   loadout: TowerKind[];
   ranks: Record<TowerKind, number>;
   level?: number;
+  golden?: TowerKind[];
   seen: number;
   host?: boolean;
 }
@@ -180,6 +181,7 @@ export class NetMatch {
         allowed: p.loadout.filter((k) => TOWER_ORDER.includes(k) && (!ADMIN_ONLY.includes(k) || this.adminIds.has(p.id))),
         ranks: p.ranks,
         level: p.level ?? 1,
+        golden: p.golden ?? [],
       })),
     };
   }

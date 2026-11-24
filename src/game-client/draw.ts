@@ -400,13 +400,76 @@ export function drawFaro(ctx: CanvasRenderingContext2D, T: number, time: number,
 
 export const TRACK_COLORS: Record<Track, string> = { danno: "#e2714f", gittata: "#a5e4ec", sconto: "#9fd28b" };
 
-export function drawTowerShape(ctx: CanvasRenderingContext2D, kind: TowerKind, x: number, y: number, T: number, angle: number, level = 1, branch: Branch | null = null, time = 0, track: Track = "danno", kick = 0, spin = 0) {
-  ctx.save();
-  ctx.translate(x, y);
-  ctx.lineCap = "round";
-  ctx.lineJoin = "round";
-  towerFigure(ctx, kind, T, angle, level, branch, time, kick, TRACK_COLORS[track], spin);
-  ctx.restore();
+/** Tela di appoggio per ridipingere d'oro le torri. */
+const goldCanvas = document.createElement("canvas");
+const goldMask = document.createElement("canvas");
+
+export function drawTowerShape(ctx: CanvasRenderingContext2D, kind: TowerKind, x: number, y: number, T: number, angle: number, level = 1, branch: Branch | null = null, time = 0, track: Track = "danno", kick = 0, spin = 0, gold = false) {
+  if (gold) {
+    // Variante d'oro: la figura si disegna a parte, poi si ricopre d'oro mantenendo ombre e luci.
+    const size = Math.ceil(T * (kind === "starcannon" ? 2.2 : 1.25)) + 4;
+    if (goldCanvas.width < size || goldCanvas.height < size) {
+      goldCanvas.width = size;
+      goldCanvas.height = size;
+    }
+    const g = goldCanvas.getContext("2d")!;
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.globalCompositeOperation = "source-over";
+    g.clearRect(0, 0, size, size);
+    g.translate(size / 2, size / 2);
+    g.lineCap = "round";
+    g.lineJoin = "round";
+    towerFigure(g, kind, T, angle, level, branch, time, kick, TRACK_COLORS[track], spin);
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    // Tinta d'oro con la luminosità della figura ("color"), poi si ritaglia sulla sagoma originale.
+    if (goldMask.width < size || goldMask.height < size) {
+      goldMask.width = size;
+      goldMask.height = size;
+    }
+    const mk = goldMask.getContext("2d")!;
+    mk.globalCompositeOperation = "copy";
+    mk.drawImage(goldCanvas, 0, 0);
+    g.globalCompositeOperation = "color";
+    g.fillStyle = "#e8b53a";
+    g.fillRect(0, 0, size, size);
+    g.globalCompositeOperation = "destination-in";
+    g.drawImage(goldMask, 0, 0);
+    g.globalCompositeOperation = "source-atop";
+    const shine = g.createLinearGradient(0, 0, size, size);
+    shine.addColorStop(0, "rgba(255,240,180,.35)");
+    shine.addColorStop(0.5, "rgba(255,215,90,.08)");
+    shine.addColorStop(1, "rgba(120,80,10,.25)");
+    g.fillStyle = shine;
+    g.fillRect(0, 0, size, size);
+    g.globalCompositeOperation = "source-over";
+    ctx.drawImage(goldCanvas, 0, 0, size, size, Math.round(x - size / 2), Math.round(y - size / 2), size, size);
+    // Un luccichio che passa ogni tanto.
+    const tw = ((time * 0.0007) % 1 + 1) % 1;
+    if (time && tw < 0.12) {
+      ctx.save();
+      ctx.globalAlpha = 1 - tw / 0.12;
+      ctx.fillStyle = "#fff6d6";
+      ctx.beginPath();
+      const sx = x + T * 0.28, sy = y - T * 0.3, r = T * 0.09;
+      ctx.moveTo(sx, sy - r);
+      ctx.lineTo(sx + r * 0.3, sy - r * 0.3);
+      ctx.lineTo(sx + r, sy);
+      ctx.lineTo(sx + r * 0.3, sy + r * 0.3);
+      ctx.lineTo(sx, sy + r);
+      ctx.lineTo(sx - r * 0.3, sy + r * 0.3);
+      ctx.lineTo(sx - r, sy);
+      ctx.lineTo(sx - r * 0.3, sy - r * 0.3);
+      ctx.fill();
+      ctx.restore();
+    }
+  } else {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    towerFigure(ctx, kind, T, angle, level, branch, time, kick, TRACK_COLORS[track], spin);
+    ctx.restore();
+  }
 
   // Tacche di livello sotto la torre.
   if (level > 1) {

@@ -969,7 +969,7 @@ export function towerFigure(c: C, kind: TowerKind, T: number, angle: number, lev
 }
 
 /** Torretta dell'Ingegnere: treppiede, corpo e canna, rivolta dove spara. */
-export function sentryFigure(c: C, T: number, angle: number, heavy: boolean, kick: number) {
+export function sentryFigure(c: C, T: number, angle: number, heavy: boolean, kick: number, cc = false) {
   const lw = Math.max(1, T * 0.025);
   for (let i = 0; i < 3; i++) {
     const a = (i * TAU) / 3 + 0.5;
@@ -978,8 +978,21 @@ export function sentryFigure(c: C, T: number, angle: number, heavy: boolean, kic
   c.save();
   c.rotate(angle);
   box(c, T * 0.02 - kick * T * 0.03, -T * 0.035, T * 0.2, T * 0.07, T * 0.02, "#3a4247", lw);
-  box(c, -T * 0.1, -T * 0.09, T * 0.18, T * 0.18, T * 0.04, heavy ? "#8f9ca3" : "#f0c93a", lw);
-  dot(c, -T * 0.01, 0, T * 0.03, heavy ? CORAL : "#e8862a");
+  if (heavy) {
+    // Torretta da guerra: doppia canna e corpo corazzato.
+    box(c, T * 0.02 - kick * T * 0.03, T * 0.04, T * 0.22, T * 0.06, T * 0.02, "#3a4247", lw);
+    box(c, -T * 0.13, -T * 0.12, T * 0.24, T * 0.24, T * 0.05, "#6b7680", lw);
+    dot(c, -T * 0.01, 0, T * 0.04, CORAL);
+  } else if (cc) {
+    // Torretta del controllo: antenna e corpo azzurro.
+    box(c, -T * 0.1, -T * 0.09, T * 0.18, T * 0.18, T * 0.04, "#5fb3dc", lw);
+    limb(c, -T * 0.06, 0, -T * 0.2, -T * 0.12, T * 0.02, "#e9fbff", lw * 0.5);
+    dot(c, -T * 0.2, -T * 0.12, T * 0.025, "#7fe3ff");
+    dot(c, -T * 0.01, 0, T * 0.03, "#e9fbff");
+  } else {
+    box(c, -T * 0.1, -T * 0.09, T * 0.18, T * 0.18, T * 0.04, "#f0c93a", lw);
+    dot(c, -T * 0.01, 0, T * 0.03, "#e8862a");
+  }
   if (kick > 0.5) star(c, T * 0.26, 0, T * 0.07, "#fff6d6", 4, 0.4, 0.4);
   c.restore();
 }

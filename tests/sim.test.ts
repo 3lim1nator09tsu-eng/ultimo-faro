@@ -1809,3 +1809,51 @@ test("Torri d'oro: solo per chi le ha attive, con i loro bonus", () => {
   step(d.s, []);
   assert.ok((d.e.burnT ?? 0) > 0, "il Tizzone brucia con il Piromante d'oro");
 });
+
+import { placeSentries } from "../src/sim-core/sim";
+
+test("Ingegnere rifatto: torrette lungo il sentiero, ramo da guerra e ramo di controllo", () => {
+  const lvl = levelById("porto");
+  // Le torrette stanno a bordo strada, dentro la gittata dell'Ingegnere.
+  const { s, t } = duel("ingegnere", 3);
+  const spots = placeSentries(s, t, 3, towerStats(t).range);
+  assert.equal(spots.length, 6);
+  for (let i = 0; i < 3; i++) {
+    const x = spots[i * 2], y = spots[i * 2 + 1];
+    let near = Infinity;
+    for (let d = 0; d < 40000; d += 100) {
+      const p = lanePoint(lvl, 0, d);
+      near = Math.min(near, Math.hypot(p.x - x, p.y - y));
+    }
+    assert.ok(near <= 500, `torretta ${i} a ${Math.round(near)} dal sentiero`);
+    assert.ok(Math.hypot(x - t.x, y - t.y) <= towerStats(t).range, "dentro la gittata");
+  }
+  assert.ok(TOWERS.ingegnere.levels[1].detect && !TOWERS.ingegnere.levels[0].detect);
+  // Ramo da guerra: torrette che ignorano l'armatura; da Apex razzi che esplodono.
+  const war = TOWERS.ingegnere.branches.A;
+  assert.ok(war.pierce && war.sentryDamage / war.sentryCooldown > 2.5 * (TOWERS.ingegnere.levels[2].sentryDamage / TOWERS.ingegnere.levels[2].sentryCooldown), "danno al secondo di ogni torretta più che doppio");
+  assert.ok(apexStats(war).sentrySplash > 0);
+  // Ramo di controllo: rallenta, stordisce ogni 4 colpi, granata EMP.
+  const d = duel("ingegnere", 3);
+  d.s.cash = 1e6;
+  step(d.s, [{ t: "spec", id: d.t.id, branch: "B" }]);
+  const st = towerStats(d.t);
+  assert.ok(st.chillBp > 0 && st.sentryStunEvery === 4 && st.empEvery > 0);
+  d.e.stun = 0;
+  d.e.speedBp = 10000;
+  const hold = { dist: d.e.dist, x: d.e.x, y: d.e.y };
+  let emp = 0, stunned = 0, slowed = 0;
+  for (let i = 0; i < 200; i++) {
+    Object.assign(d.e, hold);
+    for (const ev of step(d.s, [])) if (ev.e === "emp") emp++;
+    if (d.e.stun > 0) stunned++;
+    if ((d.e.chill ?? 0) > 0) slowed++;
+  }
+  assert.ok(emp >= 2, `granate EMP: ${emp}`);
+  assert.ok(stunned > 30 && slowed > 100, `stordito ${stunned} tick, rallentato ${slowed}`);
+  // I boss sono storditi per un terzo del tempo.
+  d.e.boss = true;
+  d.e.stun = 0;
+  for (let i = 0; i < 80; i++) { Object.assign(d.e, hold); step(d.s, []); assert.ok(d.e.stun <= Math.ceil(Math.max(st.sentryStun, st.empStun) / 3)); }
+  assert.equal(hashState(restore(snapshot(d.s))), hashState(d.s));
+});

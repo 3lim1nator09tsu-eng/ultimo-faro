@@ -129,9 +129,20 @@ export const MEDALS: Array<{ id: string; name: string; text: string; ok: (m: Med
 // ---------- bacheca ----------
 
 /** Versione del gioco: chi ospita la comunica all'admin, che vede se i comandi nuovi possono funzionare. */
-export const GAME_VERSION = "0.24.0";
+export const GAME_VERSION = "0.25.0";
 
 export const VERSION_NOTES: ChangeEntry[] = [
+  {
+    date: "2026-11-24",
+    title: "Versione 0.25: Ingegnere rifatto",
+    kind: "versione",
+    items: [
+      "Come in TDS, l'Ingegnere piazza le torrette lungo il sentiero dentro la sua gittata, distribuite su tutto il tratto; ognuna mira da sola ai nemici che ha vicino",
+      "Le torrette vedono gli invisibili dal livello 2",
+      "Torrette da guerra: tre torrette corazzate a doppia canna, 5 colpi al secondo, ignorano l'armatura. È il ramo con più danno su un bersaglio di tutto il gioco; da Apex sparano razzi che esplodono",
+      "Controllo del campo: quattro torrette che rallentano chi colpiscono e lo stordiscono ogni quattro colpi, più una granata EMP ogni 6 secondi che stordisce tutti in un'area. Sui boss gli stordimenti durano un terzo",
+    ],
+  },
   {
     date: "2026-11-24",
     title: "Versione 0.24: torri d'oro e Voidcore più giusta",

@@ -131,6 +131,9 @@ export interface Tower {
   accOn?: boolean; // Accelerator: true durante la raffica
   lock?: number; // Accelerator: id del bersaglio agganciato
   sentries?: number[]; // Ingegnere: una voce per torretta costruita, con i tick al prossimo colpo
+  spots?: number[]; // Ingegnere: dove stanno le torrette (x, y a coppie), lungo il sentiero
+  sentryHits?: number[]; // Ingegnere: colpi di ogni torretta, per lo stordimento ogni tot colpi
+  empCd?: number; // Ingegnere: tick alla prossima granata EMP
   sentryT?: number; // Ingegnere: tick di cantiere accumulati
   shots?: number; // Pistolero: colpi dall'ultimo incasso
   hits?: number; // Slasher: colpi dall'ultimo critico
@@ -314,6 +317,7 @@ export type GameEvent =
   | { e: "tip"; x: number; y: number; amount: number }
   | { e: "revive"; x: number; y: number; hp: number; n: number }
   | { e: "poisoned"; index: number }
+  | { e: "emp"; x: number; y: number; radius: number }
   | { e: "sweep"; from: number; x: number; y: number; tx: number; ty: number; range: number }
   | { e: "warcry"; x: number; y: number }
   | { e: "slash"; from: number; x: number; y: number; tx: number; ty: number; crit: boolean }
@@ -881,7 +885,60 @@ export const BLEED_IMMUNE: EnemyKind[] = ["spettro", "ombra", "pupazzetto", "pup
 export const BURN_EVERY = 5;
 const SENTRY_SPOTS = [-620, -620, 620, -620, 620, 620, -620, 620, 0, -880, 0, 880];
 /** Dove sta la torretta numero i dell'Ingegnere, in unità di mappa. */
-export const sentrySpot = (t: Pick<Tower, "x" | "y">, i: number) => ({ x: t.x + SENTRY_SPOTS[(i % 6) * 2], y: t.y + SENTRY_SPOTS[(i % 6) * 2 + 1] });
+export const sentrySpot = (t: Pick<Tower, "x" | "y"> & { spots?: number[] }, i: number) =>
+  t.spots && t.spots.length >= i * 2 + 2 ? { x: t.spots[i * 2], y: t.spots[i * 2 + 1] } : { x: t.x + SENTRY_SPOTS[(i % 6) * 2], y: t.y + SENTRY_SPOTS[(i % 6) * 2 + 1] };
+
+/**
+ * Come in TDS, le torrette si piazzano lungo il sentiero dentro la gittata dell'Ingegnere, distribuite per tutto il tratto,
+ * a bordo strada dalla parte della torre. Solo calcoli interi: ogni dispositivo le mette negli stessi punti.
+ */
+export function placeSentries(state: GameState, t: Tower, n: number, range: number): number[] {
+  const level = levelOf(state);
+  const geo = geometry(level);
+  const cand: number[] = [];
+  for (let l = 0; l < geo.lanes.length; l++) {
+    for (let d = 0; d <= geo.lengths[l]; d += 250) {
+      const p = lanePoint(level, l, d);
+      const x = Math.floor(p.x);
+      const y = Math.floor(p.y);
+      if (inRange(t.x, t.y, x, y, Math.floor((range * 9) / 10))) cand.push(x, y);
+    }
+  }
+  const out: number[] = [];
+  const total = cand.length / 2;
+  for (let i = 0; i < n; i++) {
+    if (!total) {
+      out.push(t.x + SENTRY_SPOTS[(i % 6) * 2], t.y + SENTRY_SPOTS[(i % 6) * 2 + 1]);
+      continue;
+    }
+    const k = Math.floor(((i * 2 + 1) * total) / (n * 2));
+    const x = cand[k * 2];
+    const y = cand[k * 2 + 1];
+    // Mezzo passo verso la torre: la torretta sta sul bordo, non in mezzo alla strada.
+    const dx = t.x - x;
+    const dy = t.y - y;
+    const len = Math.floor(Math.sqrt(dx * dx + dy * dy)) || 1;
+    const off = Math.min(380, len);
+    out.push(x + Math.trunc((dx * off) / len), y + Math.trunc((dy * off) / len));
+  }
+  return out;
+}
+
+/** Bersaglio di una torretta: il primo nemico nella sua gittata, misurata da dove sta lei. */
+function sentryTarget(state: GameState, x: number, y: number, s: TowerStats): Enemy | null {
+  let best: Enemy | null = null;
+  for (const e of state.enemies) {
+    if (e.hp <= 0 || !canSee(e, s) || !inRange(x, y, e.x, e.y, s.sentryRange)) continue;
+    if (!best || e.dist > best.dist || (e.dist === best.dist && e.id < best.id)) best = e;
+  }
+  return best;
+}
+
+/** Stordimento sui nemici: un terzo sui boss. */
+function stunEnemy(e: Enemy, ticks: number) {
+  if (e.hp <= 0) return;
+  e.stun = Math.max(e.stun, e.boss ? Math.floor(ticks / 3) : ticks);
+}
 
 const CONE_COS2: Record<number, number> = { 60: 7500, 70: 6710, 80: 5868, 90: 5000 };
 
@@ -2127,7 +2184,10 @@ export function step(state: GameState, commands: Command[] = []): GameEvent[] {
     if (s.sentryMax > 0) {
       // Ingegnere: il cantiere va avanti da solo; ogni torretta spara per conto suo sullo stesso bersaglio.
       const list = (t.sentries ??= []);
+      const hits = (t.sentryHits ??= []);
       if (list.length > s.sentryMax) list.length = s.sentryMax;
+      // Le torrette si ridistribuiscono lungo il sentiero quando cambia il loro numero o la gittata dell'Ingegnere.
+      if (!t.spots || t.spots.length !== s.sentryMax * 2) t.spots = placeSentries(state, t, s.sentryMax, s.range);
       if (list.length < s.sentryMax) {
         // La prima torretta è pronta subito; le altre richiedono il tempo di cantiere.
         t.sentryT = (t.sentryT ?? (list.length ? 0 : s.sentryEvery)) + 1;
@@ -2137,18 +2197,37 @@ export function step(state: GameState, commands: Command[] = []): GameEvent[] {
           events.push({ e: "sentry", from: t.id, n: list.length });
         }
       }
-      let aimAt: Enemy | null | undefined;
       for (let i = 0; i < list.length; i++) {
         if (list[i] > 0) {
           list[i] -= 1;
           continue;
         }
-        if (aimAt === undefined) aimAt = pickTarget(state, t, s);
-        if (!aimAt || aimAt.hp <= 0) break;
-        list[i] = s.sentryCooldown - 1;
-        hit(state, aimAt, t, s, s.sentryDamage, events);
         const from = sentrySpot(t, i);
+        const aimAt = sentryTarget(state, from.x, from.y, s);
+        if (!aimAt) continue;
+        list[i] = s.sentryCooldown - 1;
+        hits[i] = (hits[i] ?? 0) + 1;
+        if (s.sentrySplash > 0) {
+          // Razzo: esplode sul bersaglio e prende chi gli sta intorno.
+          const near = state.enemies.filter((e) => e.hp > 0 && canSee(e, s) && inRange(aimAt.x, aimAt.y, e.x, e.y, s.sentrySplash));
+          for (const e of near) hit(state, e, t, s, e === aimAt ? s.sentryDamage : Math.floor(s.sentryDamage / 2), events);
+          events.push({ e: "blast", x: aimAt.x, y: aimAt.y, radius: s.sentrySplash });
+        } else hit(state, aimAt, t, s, s.sentryDamage, events);
+        chillEnemy(state, aimAt, s, events);
+        if (s.sentryStunEvery > 0 && hits[i] % s.sentryStunEvery === 0) stunEnemy(aimAt, s.sentryStun);
         events.push({ e: "shot", from: -1, to: aimAt.id, x: from.x, y: from.y, tx: aimAt.x, ty: aimAt.y });
+      }
+      if (s.empEvery > 0) {
+        // Granata EMP: stordisce tutti nell'area intorno al primo nemico a tiro.
+        if ((t.empCd ?? 0) > 0) t.empCd = (t.empCd ?? 0) - 1;
+        else {
+          const at = pickTarget(state, t, s);
+          if (at) {
+            t.empCd = s.empEvery;
+            for (const e of state.enemies) if (e.hp > 0 && inRange(at.x, at.y, e.x, e.y, s.empRadius)) stunEnemy(e, s.empStun);
+            events.push({ e: "emp", x: at.x, y: at.y, radius: s.empRadius });
+          }
+        }
       }
     }
     if (s.revTicks > 0) {
@@ -2488,6 +2567,9 @@ export function hashState(state: GameState): string {
     mix(t.rev ?? 0);
     mix(t.gold ? 1 : 0);
     for (const c of t.sentries ?? []) mix(c + 1);
+    for (const c of t.spots ?? []) mix(c);
+    for (const c of t.sentryHits ?? []) mix(c);
+    mix(t.empCd ?? 0);
     mix(t.abilityCd);
     mix(t.abilityLeft);
     mix(t.owner);

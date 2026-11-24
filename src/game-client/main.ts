@@ -171,6 +171,8 @@ let lastCritText = 0;
 const matchKinds = new Set<string>();
 /** Ultimo colpo di ogni torretta dell'Ingegnere (id torre * 8 + numero). */
 const sentryShot = new Map<number, number>();
+/** Direzione di ogni torretta dell'Ingegnere. */
+const sentryAim = new Map<number, number>();
 /** Quando ha sparato ogni torre (rinculo) e quando è stata costruita o migliorata (saltello). */
 const fired = new Map<number, number>();
 const popAt = new Map<number, number>();
@@ -801,7 +803,7 @@ function statsLine(kind: TowerKind, level: number, branch: Branch | null, rank =
     const ice = s.freezeTicks ? ` Oltre il ${pct(s.chillMax)} di rallentamento congela per ${num(s.freezeTicks / TICKS_PER_SECOND)} s (non i boss né chi resiste al gelo).` : "";
     return `Martellata a cono: ${s.damage} danni a ${s.maxTargets} nemici, ${num(TICKS_PER_SECOND / s.cooldown)} colpi/s, portata ${range}. Ogni colpo rallenta del ${pct(s.chillBp)} fino al ${pct(s.chillMax)}.${ice}${s.iceBreaker ? " Danno doppio a chi è gelato." : ""}${s.aftershockBp ? ` Seconda scossa del ${pct(s.aftershockBp)}.` : ""}`;
   }
-  if (kind === "ingegnere") return `Chiodi: ${s.damage} danni, ${num(TICKS_PER_SECOND / s.cooldown)} colpi/s, gittata ${range}. Costruisce una torretta ogni ${num(s.sentryEvery / TICKS_PER_SECOND)} s, fino a ${s.sentryMax}: ognuna fa ${s.sentryDamage} danni, ${num(TICKS_PER_SECOND / s.sentryCooldown)} colpi/s. Le torrette restano tra un'ondata e l'altra.${s.pierce ? " Ignora l'armatura." : ""}${s.detect ? " Vede gli invisibili." : ""}`;
+  if (kind === "ingegnere") return `Piazza una torretta lungo il sentiero ogni ${num(s.sentryEvery / TICKS_PER_SECOND)} s, fino a ${s.sentryMax}, dentro la sua gittata (${range}). Ogni torretta: ${s.sentryDamage} danni, ${num(TICKS_PER_SECOND / s.sentryCooldown)} colpi/s, portata ${num(s.sentryRange / TILE)} da dove sta${s.sentrySplash ? `, razzi che esplodono (metà danno intorno)` : ""}.${s.chillBp ? " Rallentano chi colpiscono." : ""}${s.sentryStunEvery ? ` Ogni ${s.sentryStunEvery} colpi stordiscono il bersaglio per ${num(s.sentryStun / TICKS_PER_SECOND)} s (un terzo sui boss).` : ""}${s.empEvery ? ` Ogni ${num(s.empEvery / TICKS_PER_SECOND)} s una granata EMP stordisce tutti in un raggio di ${num(s.empRadius / TILE)} per ${num(s.empStun / TICKS_PER_SECOND)} s (un terzo sui boss).` : ""} L'Ingegnere spara anche lui: ${s.damage} danni. Le torrette restano tra un'ondata e l'altra.${s.pierce ? " Ignorano l'armatura." : ""}${s.detect ? " Vedono gli invisibili." : " Dal livello 2 vedono gli invisibili."}`;
   if (kind === "juggernaut") return `Minigun: ${s.damage} danni, ${num(TICKS_PER_SECOND / s.cooldown)} colpi/s a pieni giri, gittata ${range}. Prima di sparare deve girare per ${num(s.revTicks / TICKS_PER_SECOND)} s; senza bersagli rallenta e deve riprendere giri.${s.detect ? " Vede gli invisibili." : " Dal livello 2 vede gli invisibili."}${s.bossBp > 10000 ? ` Contro i boss fa il ${(s.bossBp - 10000) / 100}% di danno in più.` : ""}${s.fortifyRadius ? ` Zona fortificata (raggio ${num(s.fortifyRadius / TILE)}): le torri dentro restano stordite il ${s.fortifyBp / 100}% in meno.` : ""} Uno solo per giocatore.`;
   if (kind === "gladiatore") return `Fendente a tutto tondo: ${s.damage} danni a fino a ${s.sweep} nemici intorno, ${num(TICKS_PER_SECOND / s.cooldown)} colpi/s, portata ${range}.${s.pierce ? " Ignora l'armatura." : ""} Grido di guerra: per ${num(s.abilityTicks / TICKS_PER_SECOND)} s colpisce il ${s.abilityBp / 100}% più in fretta (${num((TICKS_PER_SECOND * (10000 + s.abilityBp)) / 10000 / s.cooldown)} colpi/s); si ricarica in ${num(s.abilityCooldown / TICKS_PER_SECOND)} s. Niente può stordire il Gladiatore.`;
   if (kind === "slasher") return `Lame: ${s.damage} danni, ${num(TICKS_PER_SECOND / s.cooldown)} colpi/s, portata ${range}; ogni ${s.critEvery}° colpo è un critico da ${Math.floor((s.damage * s.critBp) / 10000)} (in media ${num((s.damage * (s.critEvery - 1 + s.critBp / 10000) * TICKS_PER_SECOND) / s.critEvery / s.cooldown)} danni/s).${s.bleedHit ? ` Ogni colpo aggiunge ${s.bleedHit} cariche di sanguinamento: il nemico ne perde ${s.bleedDrain * 2} al secondo e subisce ${num((s.bleedDrain * 2 * s.bleedBp) / 10000)} danni al secondo finché non arrivano a zero. A ${s.bleedMax} cariche scatta l'emorragia: ${fmt(s.bleedBurst)} danni che ignorano l'armatura, poi quel nemico (solo lui) per ${num(s.bleedLock / TICKS_PER_SECOND)} s non sanguina. Non fa sanguinare spettri, ombre, pupazzi di neve e macchine.` : " Dal livello 3 i colpi fanno anche sanguinare."} Niente può stordire lo Slasher.`;
@@ -1135,7 +1137,10 @@ function handleEvents(events: GameEvent[]) {
           for (const t of state.towers) {
             for (let i = 0; i < (t.sentries?.length ?? 0); i++) {
               const at = sentrySpot(t, i);
-              if (at.x === ev.x && at.y === ev.y) sentryShot.set(t.id * 8 + i, now);
+              if (at.x === ev.x && at.y === ev.y) {
+                sentryShot.set(t.id * 8 + i, now);
+                sentryAim.set(t.id * 8 + i, Math.atan2(ev.ty - ev.y, ev.tx - ev.x));
+              }
             }
           }
           sfx.tick();
@@ -1170,6 +1175,12 @@ function handleEvents(events: GameEvent[]) {
         sfx.ratchet();
         break;
       }
+      case "emp":
+        // Granata EMP dell'Ingegnere: onda azzurra e scintille.
+        fx.push({ kind: "ring", x: ev.x, y: ev.y, r: ev.radius, color: "#7fe3ff", born: now, life: 500 });
+        fx.push({ kind: "zap", x: ev.x, y: ev.y, pts: [ev.x - ev.radius / 2, ev.y, ev.x, ev.y - ev.radius / 3, ev.x + ev.radius / 2, ev.y], color: "#7fe3ff", born: now, life: 220 });
+        sfx.zap();
+        break;
       case "sweep":
         fx.push({ kind: "ring", x: ev.x, y: ev.y, r: ev.range, color: "#ffffff", born: now, life: 220 });
         setAim(ev.from, ev.x, ev.y, ev.tx, ev.ty);
@@ -3084,14 +3095,15 @@ function render(now: number) {
   for (const t of state.towers) {
     if (!t.sentries?.length) continue;
     const heavy = t.branch === "A";
-    const ang = aim.has(t.id) ? aim.get(t.id)! + turn() : -0.6;
+    const cc = t.branch === "B";
     for (let i = 0; i < t.sentries.length; i++) {
       const at = sentrySpot(t, i);
       const q = S(at.x, at.y);
       const ago = now - (sentryShot.get(t.id * 8 + i) ?? -1e9);
+      const ang = (sentryAim.get(t.id * 8 + i) ?? (aim.get(t.id) ?? -0.6)) + turn();
       ctx.save();
       ctx.translate(q.x, q.y);
-      sentryFigure(ctx, pxT * 1.35, ang, heavy, reducedMotion || ago < 0 ? 0 : Math.max(0, 1 - ago / 140));
+      sentryFigure(ctx, pxT * (heavy ? 1.6 : 1.35), ang, heavy, reducedMotion || ago < 0 ? 0 : Math.max(0, 1 - ago / 140), cc);
       ctx.restore();
     }
   }

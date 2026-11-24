@@ -269,6 +269,13 @@ export interface TowerStats {
   sentryEvery: number; // tick per costruirne una
   sentryDamage: number;
   sentryCooldown: number;
+  sentryRange: number; // gittata di ogni torretta, misurata da dove sta
+  sentrySplash: number; // raggio dell'esplosione dei colpi delle torrette; 0 = colpo singolo
+  sentryStunEvery: number; // ogni quanti colpi una torretta stordisce il bersaglio; 0 = mai
+  sentryStun: number; // tick di stordimento (un terzo sui boss)
+  empEvery: number; // Ingegnere: tick tra una granata EMP e l'altra; 0 = niente granate
+  empRadius: number;
+  empStun: number;
   // Pistolero: ogni tot colpi incassa cash
   cashEvery: number; // colpi tra un incasso e l'altro; 0 = mai
   cashAmount: number;
@@ -380,6 +387,13 @@ const base: TowerStats = {
   sentryEvery: 0,
   sentryDamage: 0,
   sentryCooldown: 0,
+  sentryRange: 0,
+  sentrySplash: 0,
+  sentryStunEvery: 0,
+  sentryStun: 0,
+  empEvery: 0,
+  empRadius: 0,
+  empStun: 0,
   cashEvery: 0,
   cashAmount: 0,
   burnDamage: 0,
@@ -519,7 +533,7 @@ export const TOWERS = {
   ingegnere: {
     apex: "Fabbrica d'Assedio",
     name: "Ingegnere",
-    role: "Spara chiodi e costruisce torrette che sparano da sole: il grosso del danno lo fanno loro",
+    role: "Piazza torrette lungo il sentiero che sparano da sole: il grosso del danno lo fanno loro. Dal livello 4 scegli tra torrette devastanti o controllo della folla",
     family: "attacco",
     damageType: "cinetico",
     target: "first",
@@ -527,13 +541,20 @@ export const TOWERS = {
     perle: 20,
     maxPerPlayer: 4,
     levels: [
-      { ...base, cost: 660, damage: 35, cooldown: 8, range: 3200, sentryMax: 1, sentryEvery: 80, sentryDamage: 22, sentryCooldown: 5 },
-      { ...base, cost: 550, damage: 49, cooldown: 7, range: 3400, sentryMax: 2, sentryEvery: 70, sentryDamage: 27, sentryCooldown: 5 },
-      { ...base, cost: 990, damage: 65, cooldown: 7, range: 3600, sentryMax: 3, sentryEvery: 60, sentryDamage: 35, sentryCooldown: 4 },
+      { ...base, cost: 600, damage: 12, cooldown: 10, range: 3200, sentryMax: 1, sentryEvery: 60, sentryDamage: 22, sentryCooldown: 4, sentryRange: 2200 },
+      { ...base, cost: 550, damage: 16, cooldown: 9, range: 3400, sentryMax: 2, sentryEvery: 55, sentryDamage: 26, sentryCooldown: 4, sentryRange: 2300, detect: true },
+      { ...base, cost: 1000, damage: 22, cooldown: 8, range: 3600, sentryMax: 3, sentryEvery: 50, sentryDamage: 29, sentryCooldown: 3, sentryRange: 2400, detect: true },
     ],
     branches: {
-      A: { ...base, name: "Torrette pesanti", summary: "Quattro torrette corazzate che ignorano l'armatura", cost: 1980, damage: 111, cooldown: 6, range: 3800, sentryMax: 4, sentryEvery: 50, sentryDamage: 57, sentryCooldown: 4, pierce: true },
-      B: { ...base, name: "Officina da campo", summary: "Cinque torrette leggere, costruite in fretta, che vedono gli invisibili", cost: 1870, damage: 88, cooldown: 6, range: 4000, sentryMax: 5, sentryEvery: 35, sentryDamage: 27, sentryCooldown: 3, detect: true },
+      A: {
+        ...base, name: "Torrette da guerra", summary: "Tre torrette pesantissime che ignorano l'armatura e sparano a raffica: il danno più alto su un bersaglio",
+        cost: 2200, damage: 30, cooldown: 8, range: 3800, sentryMax: 3, sentryEvery: 40, sentryDamage: 56, sentryCooldown: 2, sentryRange: 2800, pierce: true, detect: true,
+      },
+      B: {
+        ...base, name: "Controllo del campo", summary: "Quattro torrette che rallentano chi colpiscono e lo stordiscono ogni quattro colpi; ogni 6 s una granata EMP stordisce tutti in un'area",
+        cost: 1900, damage: 24, cooldown: 8, range: 3800, sentryMax: 4, sentryEvery: 40, sentryDamage: 28, sentryCooldown: 3, sentryRange: 2600, detect: true,
+        chillBp: 1800, chillMax: 4500, sentryStunEvery: 4, sentryStun: 10, empEvery: 60, empRadius: 1500, empStun: 18,
+      },
     },
   },
   pistolero: {
@@ -1040,6 +1061,13 @@ export function apexStats(s: TowerStats): TowerStats {
     bossBp: s.bossBp > 10000 ? s.bossBp + 2000 : s.bossBp,
     sentryDamage: up(s.sentryDamage, 22000),
     sentryMax: s.sentryMax ? s.sentryMax + 1 : 0,
+    sentryRange: up(s.sentryRange, 11500),
+    // Da Apex le torrette da guerra sparano razzi che esplodono; quelle del controllo stordiscono più spesso.
+    sentrySplash: s.pierce && s.sentryMax ? 700 : s.sentrySplash,
+    sentryStunEvery: s.sentryStunEvery ? Math.max(2, s.sentryStunEvery - 1) : 0,
+    empEvery: s.empEvery ? up(s.empEvery, 7500) : 0,
+    empRadius: up(s.empRadius, 13000),
+    empStun: up(s.empStun, 13000),
     cashAmount: up(s.cashAmount, 15000),
     burnDamage: up(s.burnDamage, 22000),
     bleedBurst: up(s.bleedBurst, 22000),
